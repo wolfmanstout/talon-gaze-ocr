@@ -193,13 +193,16 @@ class GazeOcrActions:
         ):
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
-    def move_text_cursor_to_word(text: TimestampedText, position: str):
+    def move_text_cursor_to_word(
+        text: TimestampedText, position: str, include_whitespace: bool = False
+    ):
         """Moves text cursor near onscreen word."""
         if not gaze_ocr_controller.move_text_cursor_to_words(
             text.text,
             position,
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
+            include_whitespace=include_whitespace,
         ):
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
@@ -250,7 +253,9 @@ class GazeOcrActions:
             actions.key("shift:down")
             try:
                 actions.user.move_text_cursor_to_word(
-                    text_range.end, "before" if text_range.before_end else "after"
+                    text_range.end,
+                    "before" if text_range.before_end else "after",
+                    text_range.before_end,
                 )
             finally:
                 actions.key("shift:up")
