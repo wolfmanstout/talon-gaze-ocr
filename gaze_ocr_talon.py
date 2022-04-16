@@ -1,7 +1,10 @@
 from dataclasses import dataclass
+from math import floor
 from typing import Dict, Iterable, Optional, Sequence, Union
 
-from talon import Context, Module, actions, app, settings
+from talon import Context, Module, actions, app, cron, screen, settings
+from talon.canvas import Canvas
+from talon.types import rect
 from talon.grammar import Phrase
 
 import gaze_ocr
@@ -308,3 +311,37 @@ class GazeOcrActions:
             actions.user.dictation_insert(replacement)
         else:
             actions.insert(replacement)
+
+    def show_ocr_overlay(type: str):
+        """Display overlay over primary screen."""
+        gaze_ocr_controller.read_nearby()
+        contents = gaze_ocr_controller.latest_screen_contents()
+
+        def on_draw(c):
+            for line in contents.result.lines:
+                for word in line.words:
+                    if type.endswith("text"):
+                        c.paint.typeface = "arial"
+                        c.paint.textsize = floor(word.height)
+                        c.paint.style = c.paint.Style.FILL
+                        c.paint.color = "000000" if type == "black_text" else "ffffff"
+                        c.draw_text(word.text, word.left, word.top)
+                    elif type == "boxes":
+                        c.paint.style = c.paint.Style.STROKE
+                        c.paint.color = "888888"
+                        c.draw_rect(
+                            rect.Rect(
+                                x=word.left,
+                                y=word.top,
+                                width=word.width,
+                                height=word.height,
+                            )
+                        )
+                    else:
+                        raise RuntimeError(f"Type not recognized: {type}")
+
+            cron.after("3s", canvas.close)
+
+        canvas = Canvas.from_rect(screen.main_screen().rect)
+        canvas.register("draw", on_draw)
+        canvas.freeze()
