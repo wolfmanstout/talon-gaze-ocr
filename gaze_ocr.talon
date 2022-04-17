@@ -75,7 +75,7 @@ scroll down half:
 # [scroll] stop: '"[scroll] stop": Function(lambda: scroller.stop()),'()
 # scroll reset: '"scroll reset": Function(lambda: reset_scroller()),'()
 
-ocr show black [text]: user.show_ocr_overlay("black_text")
+ocr show [black] [text]: user.show_ocr_overlay("black_text")
 ocr show white [text]: user.show_ocr_overlay("white_text")
 ocr show boxes: user.show_ocr_overlay("boxes")
 (hover (seen | scene) | cursor move) <user.timestamped_prose>$: user.move_cursor_to_word(timestamped_prose)
