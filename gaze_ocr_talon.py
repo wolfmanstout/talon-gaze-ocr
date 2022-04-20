@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from math import floor
+from statistics import mean
 from typing import Dict, Iterable, Optional, Sequence, Union
+import PIL.Image
+import PIL.ImageStat
 
 from talon import Context, Module, actions, app, cron, screen, settings
 from talon.canvas import Canvas
@@ -194,7 +197,7 @@ class GazeOcrActions:
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
         ):
-            actions.user.show_ocr_overlay("black_text", f"{text.text}")
+            actions.user.show_ocr_overlay("text", f"{text.text}")
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
     def move_text_cursor_to_word(
@@ -208,7 +211,7 @@ class GazeOcrActions:
             click_offset_right=setting_ocr_click_offset_right.get(),
             include_whitespace=include_whitespace,
         ):
-            actions.user.show_ocr_overlay("black_text", f"{text.text}")
+            actions.user.show_ocr_overlay("text", f"{text.text}")
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
     def move_text_cursor_to_word_ignore_errors(text: TimestampedText, position: str):
@@ -219,7 +222,7 @@ class GazeOcrActions:
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
         ):
-            actions.user.show_ocr_overlay("black_text", f"{text.text}")
+            actions.user.show_ocr_overlay("text", f"{text.text}")
             print('Unable to find: "{}"'.format(text))
 
     def select_text(
@@ -242,7 +245,9 @@ class GazeOcrActions:
             after_start=after_start,
             before_end=before_end,
         ):
-            actions.user.show_ocr_overlay("black_text", f"{start.text}...{end.text}")
+            actions.user.show_ocr_overlay(
+                "text", f"{start.text}...{end.text if end else None}"
+            )
             raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
 
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
@@ -322,6 +327,9 @@ class GazeOcrActions:
         contents = gaze_ocr_controller.latest_screen_contents()
 
         def on_draw(c):
+            stat = PIL.ImageStat.Stat(contents.screenshot)
+            light_background = mean(stat.mean) > 128
+            debug_color = "000000" if light_background else "ffffff"
             if query:
                 c.paint.typeface = "arial"
                 c.paint.textsize = 30
@@ -334,15 +342,15 @@ class GazeOcrActions:
                 c.draw_text(query, x=main_screen.x + main_screen.width / 2, y=20)
             for line in contents.result.lines:
                 for word in line.words:
-                    if type.endswith("text"):
+                    if type == "text":
                         c.paint.typeface = "arial"
                         c.paint.textsize = floor(word.height)
                         c.paint.style = c.paint.Style.FILL
-                        c.paint.color = "000000" if type == "black_text" else "ffffff"
+                        c.paint.color = debug_color
                         c.draw_text(word.text, word.left, word.top)
                     elif type == "boxes":
                         c.paint.style = c.paint.Style.STROKE
-                        c.paint.color = "888888"
+                        c.paint.color = debug_color
                         c.draw_rect(
                             rect.Rect(
                                 x=word.left,
