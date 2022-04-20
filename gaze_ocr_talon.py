@@ -194,6 +194,7 @@ class GazeOcrActions:
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
         ):
+            actions.user.show_ocr_overlay("black_text", f"{text.text}")
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
     def move_text_cursor_to_word(
@@ -207,6 +208,7 @@ class GazeOcrActions:
             click_offset_right=setting_ocr_click_offset_right.get(),
             include_whitespace=include_whitespace,
         ):
+            actions.user.show_ocr_overlay("black_text", f"{text.text}")
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
     def move_text_cursor_to_word_ignore_errors(text: TimestampedText, position: str):
@@ -217,6 +219,7 @@ class GazeOcrActions:
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
         ):
+            actions.user.show_ocr_overlay("black_text", f"{text.text}")
             print('Unable to find: "{}"'.format(text))
 
     def select_text(
@@ -239,6 +242,7 @@ class GazeOcrActions:
             after_start=after_start,
             before_end=before_end,
         ):
+            actions.user.show_ocr_overlay("black_text", f"{start.text}...{end.text}")
             raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
 
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
@@ -312,12 +316,22 @@ class GazeOcrActions:
         else:
             actions.insert(replacement)
 
-    def show_ocr_overlay(type: str):
+    def show_ocr_overlay(type: str, query: str = ""):
         """Display overlay over primary screen."""
         gaze_ocr_controller.read_nearby()
         contents = gaze_ocr_controller.latest_screen_contents()
 
         def on_draw(c):
+            if query:
+                c.paint.typeface = "arial"
+                c.paint.textsize = 30
+                c.paint.style = c.paint.Style.FILL
+                c.paint.color = "FFFFFF"
+                main_screen = screen.main_screen()
+                c.draw_text(query, x=main_screen.x + main_screen.width / 2, y=20)
+                c.paint.style = c.paint.Style.STROKE
+                c.paint.color = "000000"
+                c.draw_text(query, x=main_screen.x + main_screen.width / 2, y=20)
             for line in contents.result.lines:
                 for word in line.words:
                     if type.endswith("text"):
