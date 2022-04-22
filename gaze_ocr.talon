@@ -104,6 +104,6 @@ select <user.prose_range>$:
     user.perform_ocr_action(ocr_actions, ocr_modifiers or "", prose_range)
 replace [{user.ocr_modifiers}] [seen | scene] <user.prose_range> with <user.prose>$:
     user.replace_text(ocr_modifiers or "", prose_range, prose)
-phones (seen | scene) <user.timestamped_homophone>$:
-    user.select_text(timestamped_homophone)
+phones (seen | scene) <user.timestamped_prose>$:
+    user.select_text(timestamped_prose)
     user.homophones_show_selection()

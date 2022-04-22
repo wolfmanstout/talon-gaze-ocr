@@ -134,12 +134,6 @@ def timestamped_prose(m) -> TimestampedText:
     return TimestampedText(text=" ".join(words), start=start, end=end)
 
 
-@mod.capture(rule="{self.homophones_canonicals}")
-def timestamped_homophone(m) -> TimestampedText:
-    """Timestamped homophone."""
-    return TimestampedText(text=" ".join(m), start=m[0].start, end=m[-1].end)
-
-
 @mod.capture(rule="[before | after] <self.timestamped_prose>")
 def prose_position(m) -> TextPosition:
     """Position relative to prose."""
