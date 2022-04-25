@@ -208,17 +208,6 @@ class GazeOcrActions:
             actions.user.show_ocr_overlay("text", False, f"{text.text}")
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
-    def move_text_cursor_to_word_ignore_errors(text: TimestampedText, position: str):
-        """Moves text cursor near onscreen word, ignoring errors (log only)."""
-        if not gaze_ocr_controller.move_text_cursor_to_words(
-            text.text,
-            position,
-            timestamp=text.start,
-            click_offset_right=setting_ocr_click_offset_right.get(),
-        ):
-            actions.user.show_ocr_overlay("text", False, f"{text.text}")
-            print('Unable to find: "{}"'.format(text))
-
     def select_text(
         start: TimestampedText,
         end: Union[TimestampedText, str] = "",
