@@ -191,7 +191,7 @@ class GazeOcrActions:
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
         ):
-            actions.user.show_ocr_overlay("text", f"{text.text}")
+            actions.user.show_ocr_overlay("text", False, f"{text.text}")
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
     def move_text_cursor_to_word(
@@ -205,7 +205,7 @@ class GazeOcrActions:
             click_offset_right=setting_ocr_click_offset_right.get(),
             include_whitespace=include_whitespace,
         ):
-            actions.user.show_ocr_overlay("text", f"{text.text}")
+            actions.user.show_ocr_overlay("text", False, f"{text.text}")
             raise RuntimeError('Unable to find: "{}"'.format(text))
 
     def move_text_cursor_to_word_ignore_errors(text: TimestampedText, position: str):
@@ -216,7 +216,7 @@ class GazeOcrActions:
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
         ):
-            actions.user.show_ocr_overlay("text", f"{text.text}")
+            actions.user.show_ocr_overlay("text", False, f"{text.text}")
             print('Unable to find: "{}"'.format(text))
 
     def select_text(
@@ -240,7 +240,7 @@ class GazeOcrActions:
             before_end=before_end,
         ):
             actions.user.show_ocr_overlay(
-                "text", f"{start.text}...{end.text if end else None}"
+                "text", False, f"{start.text}...{end.text if end else None}"
             )
             raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
 
@@ -315,15 +315,27 @@ class GazeOcrActions:
         else:
             actions.insert(replacement)
 
-    def show_ocr_overlay(type: str, query: str = ""):
+    def show_ocr_overlay(type: str, refresh: bool, query: str = ""):
         """Display overlay over primary screen."""
-        gaze_ocr_controller.read_nearby()
+        if refresh:
+            gaze_ocr_controller.read_nearby()
         contents = gaze_ocr_controller.latest_screen_contents()
 
         def on_draw(c):
             stat = PIL.ImageStat.Stat(contents.screenshot)
             light_background = mean(stat.mean) > 128
             debug_color = "000000" if light_background else "ffffff"
+            c.paint.style = c.paint.Style.STROKE
+            c.paint.color = debug_color
+            radius = gaze_ocr_controller.ocr_reader.radius
+            c.draw_rect(
+                rect.Rect(
+                    contents.screen_coordinates[0] - radius,
+                    contents.screen_coordinates[1] - radius,
+                    radius * 2,
+                    radius * 2,
+                )
+            )
             if query:
                 c.paint.typeface = "arial"
                 c.paint.textsize = 30
