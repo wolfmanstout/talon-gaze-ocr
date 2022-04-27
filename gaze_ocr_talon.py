@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from math import floor
 from statistics import mean
-from typing import Dict, Iterable, Optional, Sequence, Union
+from typing import Callable, Dict, Iterable, Optional, Sequence, Union
 import PIL.Image
 import PIL.ImageStat
 
@@ -17,6 +17,7 @@ import screen_ocr  # dependency of gaze-ocr
 
 mod = Module()
 ctx = Context()
+main_screen = screen.main_screen()
 
 setting_ocr_logging_dir = mod.setting(
     "ocr_logging_dir",
@@ -30,6 +31,8 @@ setting_ocr_click_offset_right = mod.setting(
     default=1,  # Windows biases towards the left of whatever is clicked.
     desc="Adjust the X-coordinate when clicking around OCR text.",
 )
+
+mod.mode("gaze_ocr_disambiguation")
 
 
 def add_homophones(
@@ -182,31 +185,82 @@ ctx.lists["self.ocr_modifiers"] = {
 }
 
 
+def show_disambiguation():
+    global ambiguous_matches, disambiguation_canvas
+
+    def on_draw(c):
+        contents = gaze_ocr_controller.latest_screen_contents()
+        stat = PIL.ImageStat.Stat(contents.screenshot)
+        light_background = mean(stat.mean) > 128
+        debug_color = "000000" if light_background else "ffffff"
+        for i, match in enumerate(ambiguous_matches):
+            c.paint.typeface = "arial"
+            c.paint.textsize = round(match[0].height * 2)
+            c.paint.style = c.paint.Style.FILL
+            c.paint.color = debug_color
+            c.draw_text(str(i + 1), match[0].left, match[0].top)
+
+    actions.mode.enable("user.gaze_ocr_disambiguation")
+    disambiguation_canvas = Canvas.from_rect(main_screen.rect)
+    disambiguation_canvas.register("draw", on_draw)
+    disambiguation_canvas.freeze()
+
+
+def begin_disambiguation(matches, resume):
+    global ambiguous_matches, resume_callback
+    ambiguous_matches = matches
+    resume_callback = resume
+    show_disambiguation()
+
+
 @mod.action_class
 class GazeOcrActions:
-    def move_cursor_to_word(text: TimestampedText):
+    def move_cursor_to_word(
+        text: TimestampedText, done_callback: Optional[Callable[[], None]] = None
+    ):
         """Moves cursor to onscreen word."""
-        if not gaze_ocr_controller.move_cursor_to_words(
+
+        def resume(result):
+            if not result:
+                actions.user.show_ocr_overlay("text", False, f"{text.text}")
+                raise RuntimeError('Unable to find: "{}"'.format(text))
+            if done_callback:
+                done_callback()
+
+        gaze_ocr_controller.move_cursor_to_words_with_callback(
             text.text,
+            done_callback=resume,
+            disambiguate_callback=begin_disambiguation,
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
-        ):
-            actions.user.show_ocr_overlay("text", False, f"{text.text}")
-            raise RuntimeError('Unable to find: "{}"'.format(text))
+        )
 
     def move_text_cursor_to_word(
-        text: TimestampedText, position: str, include_whitespace: bool = False
+        text: TimestampedText,
+        position: str,
+        include_whitespace: bool = False,
+        hold_shift: bool = False,
+        done_callback: Optional[Callable[[], None]] = None,
     ):
         """Moves text cursor near onscreen word."""
-        if not gaze_ocr_controller.move_text_cursor_to_words(
+
+        def resume(result):
+            if not result:
+                actions.user.show_ocr_overlay("text", False, f"{text.text}")
+                raise RuntimeError('Unable to find: "{}"'.format(text))
+            if done_callback:
+                done_callback()
+
+        gaze_ocr_controller.move_text_cursor_to_words_with_callback(
             text.text,
-            position,
+            done_callback=resume,
+            disambiguate_callback=begin_disambiguation,
+            cursor_position=position,
             timestamp=text.start,
             click_offset_right=setting_ocr_click_offset_right.get(),
             include_whitespace=include_whitespace,
-        ):
-            actions.user.show_ocr_overlay("text", False, f"{text.text}")
-            raise RuntimeError('Unable to find: "{}"'.format(text))
+            hold_shift=hold_shift,
+        )
 
     def select_text(
         start: TimestampedText,
@@ -214,24 +268,33 @@ class GazeOcrActions:
         for_deletion: bool = False,
         after_start: bool = False,
         before_end: bool = False,
+        done_callback: Optional[Callable[[], None]] = None,
     ):
         """Selects text near onscreen word at phrase timestamps."""
         start_text = start.text
         end_text = end.text if end else None
-        if not gaze_ocr_controller.select_text(
+
+        def resume(result):
+            if not result:
+                actions.user.show_ocr_overlay(
+                    "text", False, f"{start.text}...{end.text if end else None}"
+                )
+                raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
+            if done_callback:
+                done_callback()
+
+        gaze_ocr_controller.select_text_with_callback(
             start_text,
-            end_text,
-            for_deletion,
-            start.start,
-            end.start if end else start.end,
+            end_words=end_text,
+            done_callback=resume,
+            disambiguate_callback=begin_disambiguation,
+            for_deletion=for_deletion,
+            start_timestamp=start.start,
+            end_timestamp=end.start if end else start.end,
             click_offset_right=setting_ocr_click_offset_right.get(),
             after_start=after_start,
             before_end=before_end,
-        ):
-            actions.user.show_ocr_overlay(
-                "text", False, f"{start.text}...{end.text if end else None}"
-            )
-            raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
+        )
 
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
         """Moves mouse cursor to gaze location."""
@@ -242,18 +305,47 @@ class GazeOcrActions:
         ocr_modifier: str,
         text_range: TextRange,
         for_deletion: Optional[bool] = None,
+        done_callback: Optional[Callable[[], None]] = None,
     ):
         """Selects text and performs an action."""
+
+        def resume():
+            if ocr_modifier == "":
+                pass
+            elif ocr_modifier == "selectAll":
+                actions.edit.select_all()
+            else:
+                raise RuntimeError(f"Modifier not supported: {ocr_modifier}")
+
+            if ocr_action == "select":
+                pass
+            elif ocr_action == "copy":
+                actions.edit.copy()
+            elif ocr_action == "cut":
+                actions.edit.cut()
+            elif ocr_action == "paste":
+                actions.edit.paste()
+            elif ocr_action == "delete":
+                actions.key("backspace")
+            elif ocr_action == "capitalize":
+                text = actions.edit.selected_text()
+                actions.insert(text[0].capitalize() + text[1:] if text else "")
+            elif ocr_action == "lowercase":
+                text = actions.edit.selected_text()
+                actions.insert(text.lower())
+            else:
+                raise RuntimeError(f"Action not supported: {ocr_action}")
+            if done_callback:
+                done_callback()
+
         if text_range.end and not text_range.start:
-            actions.key("shift:down")
-            try:
-                actions.user.move_text_cursor_to_word(
-                    text_range.end,
-                    "before" if text_range.before_end else "after",
-                    text_range.before_end,
-                )
-            finally:
-                actions.key("shift:up")
+            actions.user.move_text_cursor_to_word(
+                text_range.end,
+                position="before" if text_range.before_end else "after",
+                include_whitespace=text_range.before_end,
+                hold_shift=True,
+                done_callback=resume,
+            )
         else:
             for_deletion = (
                 for_deletion
@@ -266,43 +358,25 @@ class GazeOcrActions:
                 for_deletion,
                 after_start=text_range.after_start,
                 before_end=text_range.before_end,
+                done_callback=resume,
             )
-        if ocr_modifier == "":
-            pass
-        elif ocr_modifier == "selectAll":
-            actions.edit.select_all()
-        else:
-            raise RuntimeError(f"Modifier not supported: {ocr_modifier}")
-
-        if ocr_action == "select":
-            pass
-        elif ocr_action == "copy":
-            actions.edit.copy()
-        elif ocr_action == "cut":
-            actions.edit.cut()
-        elif ocr_action == "paste":
-            actions.edit.paste()
-        elif ocr_action == "delete":
-            actions.key("backspace")
-        elif ocr_action == "capitalize":
-            text = actions.edit.selected_text()
-            actions.insert(text[0].capitalize() + text[1:] if text else "")
-        elif ocr_action == "lowercase":
-            text = actions.edit.selected_text()
-            actions.insert(text.lower())
-        else:
-            raise RuntimeError(f"Action not supported: {ocr_action}")
 
     def replace_text(ocr_modifier: str, text_range: TextRange, replacement: str):
         """Replaces onscreen text."""
-        for_deletion = settings.get("user.context_sensitive_dictation")
+
+        def resume():
+            if settings.get("user.context_sensitive_dictation"):
+                actions.user.dictation_insert(replacement)
+            else:
+                actions.insert(replacement)
+
         actions.user.perform_ocr_action(
-            "select", ocr_modifier, text_range, for_deletion
+            "select",
+            ocr_modifier,
+            text_range,
+            for_deletion=settings.get("user.context_sensitive_dictation"),
+            done_callback=resume,
         )
-        if settings.get("user.context_sensitive_dictation"):
-            actions.user.dictation_insert(replacement)
-        else:
-            actions.insert(replacement)
 
     def show_ocr_overlay(type: str, refresh: bool, query: str = ""):
         """Display overlay over primary screen."""
@@ -330,7 +404,6 @@ class GazeOcrActions:
                 c.paint.textsize = 30
                 c.paint.style = c.paint.Style.FILL
                 c.paint.color = "FFFFFF"
-                main_screen = screen.main_screen()
                 c.draw_text(query, x=main_screen.x + main_screen.width / 2, y=20)
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.color = "000000"
@@ -356,9 +429,80 @@ class GazeOcrActions:
                         )
                     else:
                         raise RuntimeError(f"Type not recognized: {type}")
-
             cron.after("3s", canvas.close)
 
-        canvas = Canvas.from_rect(screen.main_screen().rect)
+        canvas = Canvas.from_rect(main_screen.rect)
         canvas.register("draw", on_draw)
         canvas.freeze()
+
+    def choose_gaze_ocr_option(index: int):
+        """Disambiguate with the provided index."""
+        global ambiguous_matches, resume_callback
+        if not ambiguous_matches or not resume_callback:
+            raise RuntimeError("Disambiguation not active")
+        actions.mode.disable("user.gaze_ocr_disambiguation")
+        disambiguation_canvas.close()
+        match = ambiguous_matches[index - 1]
+        callback = resume_callback
+        ambiguous_matches = None
+        resume_callback = None
+        callback(match)
+
+    def hide_gaze_ocr_options():
+        """Hide the disambiguation UI."""
+        global ambiguous_matches, resume_callback
+        actions.mode.disable("user.gaze_ocr_disambiguation")
+        disambiguation_canvas.close()
+        ambiguous_matches = None
+        resume_callback = None
+
+    def click_text(text: TimestampedText):
+        """Click on the provided on-screen text."""
+
+        def resume():
+            actions.mouse_click(0)
+
+        actions.user.move_cursor_to_word(text, done_callback=resume)
+
+    def double_click_text(text: TimestampedText):
+        """Double-lick on the provided on-screen text."""
+
+        def resume():
+            actions.mouse_click(0)
+            actions.mouse_click(0)
+
+        actions.user.move_cursor_to_word(text, done_callback=resume)
+
+    def right_click_text(text: TimestampedText):
+        """Righ-click on the provided on-screen text."""
+
+        def resume():
+            actions.mouse_click(1)
+
+        actions.user.move_cursor_to_word(text, done_callback=resume)
+
+    def middle_click_text(text: TimestampedText):
+        """Middle-click on the provided on-screen text."""
+
+        def resume():
+            actions.mouse_click(2)
+
+        actions.user.move_cursor_to_word(text, done_callback=resume)
+
+    def control_click_text(text: TimestampedText):
+        """Control-click on the provided on-screen text."""
+
+        def resume():
+            actions.key("ctrl:down")
+            actions.mouse_click(0)
+            actions.key("ctrl:up")
+
+        actions.user.move_cursor_to_word(text, done_callback=resume)
+
+    def change_text_homophone(text: TimestampedText):
+        """Switch the text to a different homophone."""
+
+        def resume():
+            actions.user.homophones_show_selection()
+
+        actions.user.select_text(text, done_callback=resume)

@@ -79,23 +79,15 @@ ocr show [text]: user.show_ocr_overlay("text", 1)
 ocr show boxes: user.show_ocr_overlay("boxes", 1)
 (hover (seen | scene) | cursor move) <user.timestamped_prose>$: user.move_cursor_to_word(timestamped_prose)
 [left] (touch | click) <user.timestamped_prose>$:
-    user.move_cursor_to_word(timestamped_prose)
-    mouse_click(0)
+    user.click_text(timestamped_prose)
 [left] double (touch | click) <user.timestamped_prose>$:
-    user.move_cursor_to_word(timestamped_prose)
-    mouse_click(0)
-    mouse_click(0)
+    user.double_click_text(timestamped_prose)
 right (touch | click) <user.timestamped_prose>$:
-    user.move_cursor_to_word(timestamped_prose)
-    mouse_click(1)
+    user.right_click_text(timestamped_prose)
 middle (touch | click) <user.timestamped_prose>$:
-    user.move_cursor_to_word(timestamped_prose)
-    mouse_click(2)
+    user.middle_click_text(timestamped_prose)
 control (touch | click) <user.timestamped_prose>$:
-    user.move_cursor_to_word(timestamped_prose)
-    key(ctrl:down)
-    mouse_click(0)
-    key(ctrl:up)
+    user.control_click_text(timestamped_prose)
 (go before | pre (seen | scene)) <user.timestamped_prose>$: user.move_text_cursor_to_word(timestamped_prose, "before")
 (go after | post (seen | scene)) <user.timestamped_prose>$: user.move_text_cursor_to_word(timestamped_prose, "after")
 select <user.prose_range>$:
@@ -105,5 +97,4 @@ select <user.prose_range>$:
 replace [{user.ocr_modifiers}] [seen | scene] <user.prose_range> with <user.prose>$:
     user.replace_text(ocr_modifiers or "", prose_range, prose)
 phones (seen | scene) <user.timestamped_prose>$:
-    user.select_text(timestamped_prose)
-    user.homophones_show_selection()
+    user.change_text_homophone(timestamped_prose)
