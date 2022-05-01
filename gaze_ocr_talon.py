@@ -184,6 +184,19 @@ ctx.lists["self.ocr_modifiers"] = {
     "all": "selectAll",
 }
 
+disambiguation_canvas = None
+ambiguous_matches = None
+disambiguation_generator = None
+
+
+def reset_disambiguation():
+    global ambiguous_matches, disambiguation_generator, disambiguation_canvas
+    ambiguous_matches = None
+    disambiguation_generator = None
+    if disambiguation_canvas:
+        disambiguation_canvas.close()
+    disambiguation_canvas = None
+
 
 def show_disambiguation():
     global ambiguous_matches, disambiguation_canvas
@@ -193,29 +206,39 @@ def show_disambiguation():
         stat = PIL.ImageStat.Stat(contents.screenshot)
         light_background = mean(stat.mean) > 128
         debug_color = "000000" if light_background else "ffffff"
+        nearest = contents.find_nearest_words_within_matches(ambiguous_matches)
+        used_locations = set()
         for i, match in enumerate(ambiguous_matches):
             c.paint.typeface = "arial"
             c.paint.textsize = round(match[0].height * 2)
+            c.paint.font.embolden = nearest == match
             c.paint.style = c.paint.Style.FILL
             c.paint.color = debug_color
-            c.draw_text(str(i + 1), match[0].left, match[0].top)
+            location = (match[0].left, match[0].top)
+            while location in used_locations:
+                # Shift right.
+                location = (location[0] + match[0].height, location[1])
+            used_locations.add(location)
+            c.draw_text(str(i + 1), *location)
 
     actions.mode.enable("user.gaze_ocr_disambiguation")
+    if disambiguation_canvas:
+        disambiguation_canvas.close()
     disambiguation_canvas = Canvas.from_rect(main_screen.rect)
     disambiguation_canvas.register("draw", on_draw)
     disambiguation_canvas.freeze()
 
 
 def begin_generator(generator):
-    global ambiguous_matches, disambiguation_generator
+    global ambiguous_matches, disambiguation_generator, disambiguation_canvas
+    reset_disambiguation()
     try:
         ambiguous_matches = next(generator)
         disambiguation_generator = generator
         show_disambiguation()
     except StopIteration:
-        # Execution completed successfully.
-        ambiguous_matches = None
-        disambiguation_generator = None
+        # Execution completed without need for disambiguation.
+        pass
 
 
 def move_cursor_to_word_generator(text: TimestampedText):
@@ -454,28 +477,32 @@ class GazeOcrActions:
 
     def choose_gaze_ocr_option(index: int):
         """Disambiguate with the provided index."""
-        global ambiguous_matches, disambiguation_generator
-        if not ambiguous_matches or not disambiguation_generator:
-            assert not ambiguous_matches and not disambiguation_generator
+        global ambiguous_matches, disambiguation_generator, disambiguation_canvas
+        if (
+            not ambiguous_matches
+            or not disambiguation_generator
+            or not disambiguation_canvas
+        ):
+            assert not ambiguous_matches
+            assert not disambiguation_generator
+            assert not disambiguation_canvas
             raise RuntimeError("Disambiguation not active")
         actions.mode.disable("user.gaze_ocr_disambiguation")
         disambiguation_canvas.close()
+        disambiguation_canvas = None
         match = ambiguous_matches[index - 1]
         try:
             ambiguous_matches = disambiguation_generator.send(match)
             show_disambiguation()
         except StopIteration:
             # Execution completed successfully.
-            ambiguous_matches = None
-            disambiguation_generator = None
+            reset_disambiguation()
 
     def hide_gaze_ocr_options():
         """Hide the disambiguation UI."""
-        global ambiguous_matches, disambiguation_generator
+        global ambiguous_matches, disambiguation_generator, disambiguation_canvas
         actions.mode.disable("user.gaze_ocr_disambiguation")
-        disambiguation_canvas.close()
-        ambiguous_matches = None
-        disambiguation_generator = None
+        reset_disambiguation()
 
     def click_text(text: TimestampedText):
         """Click on the provided on-screen text."""
