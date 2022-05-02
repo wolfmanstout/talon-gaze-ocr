@@ -430,14 +430,11 @@ class GazeOcrActions:
             debug_color = "000000" if light_background else "ffffff"
             c.paint.style = c.paint.Style.STROKE
             c.paint.color = debug_color
-            radius = gaze_ocr_controller.ocr_reader.radius
-            c.draw_rect(
-                rect.Rect(
-                    contents.screen_coordinates[0] - radius,
-                    contents.screen_coordinates[1] - radius,
-                    radius * 2,
-                    radius * 2,
-                )
+            search_radius = gaze_ocr_controller.ocr_reader.search_radius
+            c.draw_circle(
+                contents.screen_coordinates[0],
+                contents.screen_coordinates[1],
+                search_radius,
             )
             if query:
                 c.paint.typeface = "arial"
@@ -490,6 +487,8 @@ class GazeOcrActions:
         actions.mode.disable("user.gaze_ocr_disambiguation")
         disambiguation_canvas.close()
         disambiguation_canvas = None
+        # Give the canvas a moment to disappear so it doesn't interfere with subsequent screenshots.
+        actions.sleep("10ms")
         match = ambiguous_matches[index - 1]
         try:
             ambiguous_matches = disambiguation_generator.send(match)
