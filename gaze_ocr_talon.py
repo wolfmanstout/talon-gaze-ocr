@@ -466,7 +466,7 @@ class GazeOcrActions:
                         )
                     else:
                         raise RuntimeError(f"Type not recognized: {type}")
-            cron.after("3s", canvas.close)
+            cron.after("2s", canvas.close)
 
         canvas = Canvas.from_rect(main_screen.rect)
         canvas.register("draw", on_draw)
