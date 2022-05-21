@@ -185,17 +185,21 @@ ctx.lists["self.ocr_modifiers"] = {
 }
 
 disambiguation_canvas = None
+debug_canvas = None
 ambiguous_matches = None
 disambiguation_generator = None
 
 
 def reset_disambiguation():
-    global ambiguous_matches, disambiguation_generator, disambiguation_canvas
+    global ambiguous_matches, disambiguation_generator, disambiguation_canvas, debug_canvas
     ambiguous_matches = None
     disambiguation_generator = None
     if disambiguation_canvas:
         disambiguation_canvas.close()
     disambiguation_canvas = None
+    if debug_canvas:
+        debug_canvas.close()
+    debug_canvas = None
 
 
 def show_disambiguation():
@@ -436,6 +440,7 @@ class GazeOcrActions:
 
     def show_ocr_overlay(type: str, refresh: bool, query: str = ""):
         """Display overlay over primary screen."""
+        global debug_canvas
         if refresh:
             gaze_ocr_controller.read_nearby()
         contents = gaze_ocr_controller.latest_screen_contents()
@@ -482,11 +487,11 @@ class GazeOcrActions:
                         )
                     else:
                         raise RuntimeError(f"Type not recognized: {type}")
-            cron.after("2s", canvas.close)
+            cron.after("2s", debug_canvas.close)
 
-        canvas = Canvas.from_rect(main_screen.rect)
-        canvas.register("draw", on_draw)
-        canvas.freeze()
+        debug_canvas = Canvas.from_rect(main_screen.rect)
+        debug_canvas.register("draw", on_draw)
+        debug_canvas.freeze()
 
     def choose_gaze_ocr_option(index: int):
         """Disambiguate with the provided index."""
