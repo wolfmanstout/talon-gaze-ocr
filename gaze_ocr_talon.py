@@ -418,6 +418,22 @@ class GazeOcrActions:
 
         begin_generator(run())
 
+    def insert_after_text(find_text: TimestampedText, insertion_text: str):
+        """Insert text after onscreen text."""
+
+        def run():
+            yield from move_text_cursor_to_word_generator(
+                find_text,
+                "after",
+                include_whitespace=settings.get("user.context_sensitive_dictation"),
+            )
+            if settings.get("user.context_sensitive_dictation"):
+                actions.user.dictation_insert(insertion_text)
+            else:
+                actions.insert(insertion_text)
+
+        begin_generator(run())
+
     def show_ocr_overlay(type: str, refresh: bool, query: str = ""):
         """Display overlay over primary screen."""
         if refresh:
