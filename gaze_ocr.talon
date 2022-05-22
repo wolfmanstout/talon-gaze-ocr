@@ -96,7 +96,9 @@ select <user.prose_range>$:
     user.perform_ocr_action(ocr_actions, ocr_modifiers or "", prose_range)
 replace [{user.ocr_modifiers}] [seen | scene] <user.prose_range> with <user.prose>$:
     user.replace_text(ocr_modifiers or "", prose_range, prose)
+before <user.timestamped_prose> say <user.prose>$:
+    user.insert_adjacent_to_text(timestamped_prose, "before", prose)
 after <user.timestamped_prose> say <user.prose>$:
-    user.insert_after_text(timestamped_prose, prose)
+    user.insert_adjacent_to_text(timestamped_prose, "after", prose)
 phones (seen | scene) <user.timestamped_prose>$:
     user.change_text_homophone(timestamped_prose)

@@ -422,13 +422,15 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def insert_after_text(find_text: TimestampedText, insertion_text: str):
-        """Insert text after onscreen text."""
+    def insert_adjacent_to_text(
+        find_text: TimestampedText, position: str, insertion_text: str
+    ):
+        """Insert text adjacent to onscreen text."""
 
         def run():
             yield from move_text_cursor_to_word_generator(
                 find_text,
-                "after",
+                position,
                 include_whitespace=settings.get("user.context_sensitive_dictation"),
             )
             if settings.get("user.context_sensitive_dictation"):
