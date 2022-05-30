@@ -453,11 +453,10 @@ class GazeOcrActions:
             debug_color = "000000" if light_background else "ffffff"
             c.paint.style = c.paint.Style.STROKE
             c.paint.color = debug_color
-            search_radius = gaze_ocr_controller.ocr_reader.search_radius
             c.draw_circle(
                 contents.screen_coordinates[0],
                 contents.screen_coordinates[1],
-                search_radius,
+                contents.search_radius,
             )
             if query:
                 c.paint.typeface = "arial"
