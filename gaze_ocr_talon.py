@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 from math import floor
 from statistics import mean
-from typing import Callable, Dict, Iterable, Optional, Sequence, Union
-import PIL.Image
-import PIL.ImageStat
+from typing import Dict, Iterable, Optional, Sequence, Union
+
+try:
+    from PIL import ImageStat
+except ImportError:
+    ImageStat = None
 
 from talon import Context, Module, actions, app, cron, screen, settings
 from talon.canvas import Canvas
@@ -30,6 +33,18 @@ setting_ocr_click_offset_right = mod.setting(
     type=int,
     default=1,  # Windows biases towards the left of whatever is clicked.
     desc="Adjust the X-coordinate when clicking around OCR text.",
+)
+setting_ocr_select_pause_seconds = mod.setting(
+    "ocr_select_pause_seconds",
+    type=float,
+    default=0.01,
+    desc="Adjust the pause between clicks when performing a selection.",
+)
+setting_ocr_use_talon_backend = mod.setting(
+    "ocr_use_talon_backend",
+    type=bool,
+    default=False,
+    desc="If true, use Talon backend, otherwise use fast backend.",
 )
 
 mod.mode("gaze_ocr_disambiguation")
@@ -76,7 +91,14 @@ def on_ready():
             ("ok", "okay", "0k"),
         ],
     )
-    ocr_reader = screen_ocr.Reader.create_fast_reader(radius=200, homophones=homophones)
+    if setting_ocr_use_talon_backend.get():
+        ocr_reader = screen_ocr.Reader.create_reader(
+            backend="talon", radius=200, homophones=homophones
+        )
+    else:
+        ocr_reader = screen_ocr.Reader.create_fast_reader(
+            radius=200, homophones=homophones
+        )
     gaze_ocr_controller = gaze_ocr.Controller(
         ocr_reader,
         tracker,
@@ -207,8 +229,11 @@ def show_disambiguation():
 
     def on_draw(c):
         contents = gaze_ocr_controller.latest_screen_contents()
-        stat = PIL.ImageStat.Stat(contents.screenshot)
-        light_background = mean(stat.mean) > 128
+        if not setting_ocr_use_talon_backend.get() and ImageStat:
+            stat = ImageStat.Stat(contents.screenshot)
+            light_background = mean(stat.mean) > 128
+        else:
+            light_background = True
         debug_color = "000000" if light_background else "ffffff"
         nearest = contents.find_nearest_words_within_matches(ambiguous_matches)
         used_locations = set()
@@ -296,6 +321,7 @@ def select_text_generator(
         click_offset_right=setting_ocr_click_offset_right.get(),
         after_start=after_start,
         before_end=before_end,
+        select_pause_seconds=setting_ocr_select_pause_seconds.get(),
     )
     if not result:
         actions.user.show_ocr_overlay(
@@ -448,8 +474,11 @@ class GazeOcrActions:
         contents = gaze_ocr_controller.latest_screen_contents()
 
         def on_draw(c):
-            stat = PIL.ImageStat.Stat(contents.screenshot)
-            light_background = mean(stat.mean) > 128
+            if not setting_ocr_use_talon_backend.get() and ImageStat:
+                stat = ImageStat.Stat(contents.screenshot)
+                light_background = mean(stat.mean) > 128
+            else:
+                light_background = True
             debug_color = "000000" if light_background else "ffffff"
             c.paint.style = c.paint.Style.STROKE
             c.paint.color = debug_color
