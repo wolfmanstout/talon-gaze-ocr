@@ -3,20 +3,14 @@ from math import floor
 from statistics import mean
 from typing import Dict, Iterable, Optional, Sequence, Union
 
-try:
-    from PIL import ImageStat
-except ImportError:
-    ImageStat = None
-
-from talon import Context, Module, actions, app, cron, screen, settings
-from talon.canvas import Canvas
-from talon.types import rect
-from talon.grammar import Phrase
-
 import gaze_ocr
 import gaze_ocr.talon
+import numpy as np
 import screen_ocr  # dependency of gaze-ocr
-
+from talon import Context, Module, actions, app, cron, screen, settings
+from talon.canvas import Canvas
+from talon.grammar import Phrase
+from talon.types import rect
 
 mod = Module()
 ctx = Context()
@@ -229,11 +223,8 @@ def show_disambiguation():
 
     def on_draw(c):
         contents = gaze_ocr_controller.latest_screen_contents()
-        if not setting_ocr_use_talon_backend.get() and ImageStat:
-            stat = ImageStat.Stat(contents.screenshot)
-            light_background = mean(stat.mean) > 128
-        else:
-            light_background = True
+        array = np.array(contents.screenshot)
+        light_background = np.mean(array) > 128
         debug_color = "000000" if light_background else "ffffff"
         nearest = contents.find_nearest_words_within_matches(ambiguous_matches)
         used_locations = set()
@@ -474,11 +465,8 @@ class GazeOcrActions:
         contents = gaze_ocr_controller.latest_screen_contents()
 
         def on_draw(c):
-            if not setting_ocr_use_talon_backend.get() and ImageStat:
-                stat = ImageStat.Stat(contents.screenshot)
-                light_background = mean(stat.mean) > 128
-            else:
-                light_background = True
+            array = np.array(contents.screenshot)
+            light_background = np.mean(array) > 128
             debug_color = "000000" if light_background else "ffffff"
             c.paint.style = c.paint.Style.STROKE
             c.paint.color = debug_color
