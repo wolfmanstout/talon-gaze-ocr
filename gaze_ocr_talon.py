@@ -14,7 +14,6 @@ from talon.types import rect
 
 mod = Module()
 ctx = Context()
-main_screen = screen.main_screen()
 
 setting_ocr_logging_dir = mod.setting(
     "ocr_logging_dir",
@@ -244,7 +243,7 @@ def show_disambiguation():
     actions.mode.enable("user.gaze_ocr_disambiguation")
     if disambiguation_canvas:
         disambiguation_canvas.close()
-    disambiguation_canvas = Canvas.from_rect(main_screen.rect)
+    disambiguation_canvas = Canvas.from_rect(screen.main().rect)
     disambiguation_canvas.register("draw", on_draw)
     disambiguation_canvas.freeze()
 
@@ -480,10 +479,10 @@ class GazeOcrActions:
                 c.paint.textsize = 30
                 c.paint.style = c.paint.Style.FILL
                 c.paint.color = "FFFFFF"
-                c.draw_text(query, x=main_screen.x + main_screen.width / 2, y=20)
+                c.draw_text(query, x=screen.main().x + screen.main().width / 2, y=20)
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.color = "000000"
-                c.draw_text(query, x=main_screen.x + main_screen.width / 2, y=20)
+                c.draw_text(query, x=screen.main().x + screen.main().width / 2, y=20)
             for line in contents.result.lines:
                 for word in line.words:
                     if type == "text":
@@ -507,7 +506,7 @@ class GazeOcrActions:
                         raise RuntimeError(f"Type not recognized: {type}")
             cron.after("2s", debug_canvas.close)
 
-        debug_canvas = Canvas.from_rect(main_screen.rect)
+        debug_canvas = Canvas.from_rect(screen.main().rect)
         debug_canvas.register("draw", on_draw)
         debug_canvas.freeze()
 
