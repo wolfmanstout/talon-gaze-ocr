@@ -459,6 +459,8 @@ class GazeOcrActions:
     def show_ocr_overlay(type: str, refresh: bool, query: str = ""):
         """Display overlay over primary screen."""
         global debug_canvas
+        if debug_canvas:
+            debug_canvas.close()
         if refresh:
             gaze_ocr_controller.read_nearby()
         contents = gaze_ocr_controller.latest_screen_contents()
