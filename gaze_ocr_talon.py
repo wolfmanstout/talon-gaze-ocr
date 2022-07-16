@@ -199,6 +199,14 @@ ctx.lists["self.ocr_modifiers"] = {
     "all": "selectAll",
 }
 
+
+def has_light_background(screenshot):
+    array = np.array(screenshot)
+    # From https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Image.convert
+    grayscale = 0.299 * array[:, :, 0] + 0.587 * array[:, :, 1] + 0.114 * array[:, :, 2]
+    return np.mean(grayscale) > 128
+
+
 disambiguation_canvas = None
 debug_canvas = None
 ambiguous_matches = None
@@ -222,9 +230,9 @@ def show_disambiguation():
 
     def on_draw(c):
         contents = gaze_ocr_controller.latest_screen_contents()
-        array = np.array(contents.screenshot)
-        light_background = np.mean(array) > 128
-        debug_color = "000000" if light_background else "ffffff"
+        debug_color = (
+            "000000" if has_light_background(contents.screenshot) else "ffffff"
+        )
         nearest = contents.find_nearest_words_within_matches(ambiguous_matches)
         used_locations = set()
         for i, match in enumerate(ambiguous_matches):
@@ -466,9 +474,9 @@ class GazeOcrActions:
         contents = gaze_ocr_controller.latest_screen_contents()
 
         def on_draw(c):
-            array = np.array(contents.screenshot)
-            light_background = np.mean(array) > 128
-            debug_color = "000000" if light_background else "ffffff"
+            debug_color = (
+                "000000" if has_light_background(contents.screenshot) else "ffffff"
+            )
             c.paint.style = c.paint.Style.STROKE
             c.paint.color = debug_color
             c.draw_circle(
