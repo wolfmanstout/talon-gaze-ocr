@@ -191,6 +191,7 @@ ctx.lists["self.ocr_actions"] = {
     "carve": "cut",
     "paste to": "paste",
     "clear": "delete",
+    "delete": "delete",
     "chuck": "delete",
     "cap": "capitalize",
     "lower": "lowercase",
@@ -596,6 +597,17 @@ class GazeOcrActions:
             actions.key("ctrl:down")
             actions.mouse_click(0)
             actions.key("ctrl:up")
+
+        begin_generator(run())
+
+    def command_click_text(text: TimestampedText):
+        """Command-click on the provided on-screen text."""
+
+        def run():
+            yield from move_cursor_to_word_generator(text)
+            actions.key("cmd:down")
+            actions.mouse_click(0)
+            actions.key("cmd:up")
 
         begin_generator(run())
 

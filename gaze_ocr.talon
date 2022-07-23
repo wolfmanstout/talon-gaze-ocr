@@ -88,6 +88,8 @@ middle (touch | click) <user.timestamped_prose>$:
     user.middle_click_text(timestamped_prose)
 control (touch | click) <user.timestamped_prose>$:
     user.control_click_text(timestamped_prose)
+command (touch | click) <user.timestamped_prose>$:
+    user.command_click_text(timestamped_prose)
 (go before | pre (seen | scene)) <user.timestamped_prose>$: user.move_text_cursor_to_word(timestamped_prose, "before")
 (go after | post (seen | scene)) <user.timestamped_prose>$: user.move_text_cursor_to_word(timestamped_prose, "after")
 select <user.prose_range>$:
