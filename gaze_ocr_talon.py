@@ -24,7 +24,7 @@ setting_ocr_logging_dir = mod.setting(
 setting_ocr_click_offset_right = mod.setting(
     "ocr_click_offset_right",
     type=int,
-    default=1,  # Windows biases towards the left of whatever is clicked.
+    default=0,
     desc="Adjust the X-coordinate when clicking around OCR text.",
 )
 setting_ocr_select_pause_seconds = mod.setting(
