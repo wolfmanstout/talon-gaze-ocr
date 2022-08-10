@@ -1,0 +1,141 @@
+name: Test Build
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+
+jobs:
+  no_cython_install:
+    name: "Test install with generated cython files"
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - uses: "actions/checkout@v2"
+        with:
+          submodules: 'true'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy rapidfuzz_capi Cython==3.0.0a11
+
+      - name: Generate cython
+        run: |
+          chmod +x ./src/rapidfuzz/generate.sh
+          ./src/rapidfuzz/generate.sh
+
+      - name: build
+        run: |
+          git apply ./tools/sdist.patch
+          pip install build; python -m build --sdist
+          # test whether tarball contains all files required for compiling
+          pip install dist/rapidfuzz-*.tar.gz -v
+
+  system_install:
+    name: "Test installation using system supplied libs"
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - uses: "actions/checkout@v2"
+        with:
+          submodules: 'true'
+
+      - name: Install rapidfuzz-cpp
+        run: |
+          git clone https://github.com/maxbachmann/rapidfuzz-cpp.git
+          cd rapidfuzz-cpp
+          git checkout v1.0.1
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build .
+          sudo cmake --build . --target install
+
+      - name: Install jarowinkler-cpp
+        run: |
+          git clone https://github.com/maxbachmann/jarowinkler-cpp.git
+          cd jarowinkler-cpp
+          git checkout v1.0.0
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build .
+          sudo cmake --build . --target install
+
+      - name: Install taskflow
+        run: |
+          git clone https://github.com/taskflow/taskflow.git
+          cd taskflow
+          git checkout v2.7.0
+          mkdir build && cd build
+          cmake .. -DTF_BUILD_TESTS=0 -DTF_BUILD_EXAMPLES=0
+          cmake --build .
+          sudo cmake --build . --target install
+
+      - name: build
+        run: |
+          pip install . -v
+
+  system_install2:
+    name: "Test installation using newest version of Taskflow"
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - uses: "actions/checkout@v2"
+        with:
+          submodules: 'true'
+
+      - name: Install taskflow
+        run: |
+          git clone https://github.com/taskflow/taskflow.git
+          cd taskflow
+          git checkout v3.3.0
+          mkdir build && cd build
+          cmake .. -DTF_BUILD_TESTS=0 -DTF_BUILD_EXAMPLES=0
+          cmake --build .
+          sudo cmake --build . --target install
+
+      - name: build
+        run: |
+          pip install . -v
+
+  tests:
+    name: "Python ${{ matrix.python-version }}"
+    runs-on: ${{matrix.os}}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.6", "3.9", "3.10"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: "actions/checkout@v2"
+        with:
+          submodules: 'true'
+      - uses: "actions/setup-python@v2"
+        with:
+          python-version: "${{ matrix.python-version }}"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest hypothesis pandas mypy
+
+      - name: build
+        run: |
+          pip install . -v
+
+      - name: Test type stubs
+        if: matrix.python-version != '3.6'
+        # prevent import from rapidfuzz
+        working-directory: .github
+        run: |
+          python -m mypy.stubtest rapidfuzz --ignore-missing-stub
+
+      - name: Test with pytest and backtrace in case of SegFault
+        if: runner.os == 'Linux'
+        run: |
+          tools/seg_wrapper.sh pytest tests
+      - name: Test with pytest
+        if: runner.os != 'Linux'
+        run: |
+          pytest tests
