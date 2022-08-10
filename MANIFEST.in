@@ -1,0 +1,16 @@
+include MANIFEST.in
+include setup.py
+include CMakeLists.txt
+include README.md
+include LICENSE
+include pyproject.toml
+include _custom_build/backend.py
+include src/jarowinkler/py.typed
+
+recursive-include src/jarowinkler CMakeLists.txt
+recursive-include src/jarowinkler *.hpp *.pyx *.pxd *.cxx *.pyi
+recursive-include tests *
+
+include extern/jarowinkler-cpp/LICENSE
+include extern/jarowinkler-cpp/CMakeLists.txt
+recursive-include extern/jarowinkler-cpp/jaro_winkler *.hpp
