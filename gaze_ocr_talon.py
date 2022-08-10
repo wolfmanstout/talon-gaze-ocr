@@ -1,7 +1,21 @@
+import sys
 from dataclasses import dataclass
 from math import floor
+from pathlib import Path
 from statistics import mean
 from typing import Dict, Iterable, Optional, Sequence, Union
+
+# Adjust path to search adjacent package directories. Prefixed with dot to avoid
+# Talon running them itself. Append to search path so that faster binary
+# packages can be used instead if available.
+subtree_dir = Path(__file__).parent / ".subtrees"
+package_paths = [
+    str(subtree_dir / "gaze-ocr"),
+    str(subtree_dir / "screen-ocr"),
+    str(subtree_dir / "rapidfuzz/src"),
+    str(subtree_dir / "jarowinkler/src"),
+]
+sys.path.extend([path for path in package_paths if path not in sys.path])
 
 import gaze_ocr
 import gaze_ocr.talon
