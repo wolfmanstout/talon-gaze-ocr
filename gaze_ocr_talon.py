@@ -50,8 +50,8 @@ setting_ocr_select_pause_seconds = mod.setting(
 setting_ocr_use_talon_backend = mod.setting(
     "ocr_use_talon_backend",
     type=bool,
-    default=False,
-    desc="If true, use Talon backend, otherwise use fast backend.",
+    default=True,
+    desc="If true, use Talon backend, otherwise use default fast backend.",
 )
 
 mod.mode("gaze_ocr_disambiguation")
