@@ -123,14 +123,17 @@ class EyeTracker(object):
             and self._gaze_point
         )
 
-    def get_gaze_point_or_default(self):
+    def get_gaze_point(self):
         if self.has_gaze_point():
             return (
                 self._gaze_point[0] * self._screen_scale[0],
                 self._gaze_point[1] * self._screen_scale[1],
             )
         else:
-            return self._windows.get_foreground_window_center()
+            return None
+
+    def get_gaze_point_or_default(self):
+        return self.get_gaze_point() or self._windows.get_foreground_window_center()
 
     def get_monitor_size(self):
         return self._monitor_size

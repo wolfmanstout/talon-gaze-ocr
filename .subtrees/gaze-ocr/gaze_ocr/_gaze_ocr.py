@@ -48,12 +48,14 @@ class Controller(object):
 
     def start_reading_nearby(self):
         """Start OCR nearby the gaze point in a background thread."""
-        gaze_point = self.eye_tracker.get_gaze_point_or_default()
+        gaze_point = self.eye_tracker.get_gaze_point() if self.eye_tracker else None
         # Don't enqueue multiple requests.
         if self._future and not self._future.done():
             self._future.cancel()
         self._future = self._executor.submit(
             lambda: self.ocr_reader.read_nearby(gaze_point)
+            if gaze_point
+            else lambda: self.ocr_reader.read_screen()
         )
 
     def read_nearby(self, timestamp=None):
@@ -64,31 +66,34 @@ class Controller(object):
         """
         gaze_point = (
             self.eye_tracker.get_gaze_point_at_timestamp(timestamp)
-            if timestamp
-            else self.eye_tracker.get_gaze_point_or_default()
+            if self.eye_tracker and timestamp
+            else self.eye_tracker.get_gaze_point()
+            if self.eye_tracker
+            else None
         )
         self._future = futures.Future()
-        if timestamp:
-            # TODO Extract constants into optional constructor params.
-            bounds = self.eye_tracker.get_gaze_bounds_during_time_range(
-                timestamp - 0.2, timestamp + 0.2
-            )
-            if not bounds:
-                self._future.set_result(self.ocr_reader.read_nearby(gaze_point))
-                return
-            max_radius = (
-                max(bounds.right - bounds.left, bounds.bottom - bounds.top) / 2.0
-            )
-
-            self._future.set_result(
-                self.ocr_reader.read_nearby(
-                    gaze_point,
-                    search_radius=max_radius + 100,
-                    crop_radius=max_radius + 200,
-                )
-            )
-        else:
+        if not gaze_point:
+            self._future.set_result(self.ocr_reader.read_screen())
+            return
+        if not timestamp:
             self._future.set_result(self.ocr_reader.read_nearby(gaze_point))
+            return
+        # TODO Extract constants into optional constructor params.
+        bounds = self.eye_tracker.get_gaze_bounds_during_time_range(
+            timestamp - 0.2, timestamp + 0.2
+        )
+        if not bounds:
+            self._future.set_result(self.ocr_reader.read_nearby(gaze_point))
+            return
+        max_radius = max(bounds.right - bounds.left, bounds.bottom - bounds.top) / 2.0
+
+        self._future.set_result(
+            self.ocr_reader.read_nearby(
+                gaze_point,
+                search_radius=max_radius + 100,
+                crop_radius=max_radius + 200,
+            )
+        )
 
     def latest_screen_contents(self):
         """Return the ScreenContents of the latest call to start_reading_nearby().
@@ -464,11 +469,19 @@ class Controller(object):
                 self.read_nearby(end_timestamp)
             else:
                 # If gaze has significantly moved, look for the end word at the final gaze coordinates.
-                current_gaze_point = self.eye_tracker.get_gaze_point_or_default()
-                previous_gaze_point = self.latest_screen_contents().screen_coordinates
-                if _distance_squared(
-                    current_gaze_point, previous_gaze_point
-                ) > _squared(self.ocr_reader.radius / 2.0):
+                current_gaze = (
+                    self.eye_tracker.get_gaze_point() if self.eye_tracker else None
+                )
+                previous_gaze = self.latest_screen_contents().screen_coordinates
+                threshold_squared = _squared(
+                    self.latest_screen_contents().search_radius / 2.0
+                )
+                if (
+                    current_gaze
+                    and previous_gaze
+                    and _distance_squared(current_gaze, previous_gaze)
+                    > threshold_squared
+                ):
                     self.read_nearby()
             validate_function = lambda location: self._is_valid_selection(
                 start_locations[0].start_coordinates, location[-1].end_coordinates

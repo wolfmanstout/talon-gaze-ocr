@@ -193,6 +193,16 @@ class Reader(object):
             search_radius=search_radius,
         )
 
+    def read_screen(self):
+        """Return ScreenContents for the entire screen."""
+        screenshot, bounding_box = self._screenshot_nearby(None, None)
+        return self.read_image(
+            screenshot,
+            offset=bounding_box[0:2],
+            screen_coordinates=None,
+            search_radius=None,
+        )
+
     def read_image(
         self, image, offset=(0, 0), screen_coordinates=(0, 0), search_radius=None
     ):
@@ -219,10 +229,14 @@ class Reader(object):
         if self._is_talon_backend():
             screen_box = screen.main().rect
             bounding_box = (
-                max(0, screen_coordinates[0] - crop_radius),
-                max(0, screen_coordinates[1] - crop_radius),
-                min(screen_box.width, screen_coordinates[0] + crop_radius),
-                min(screen_box.height, screen_coordinates[1] + crop_radius),
+                (
+                    max(0, screen_coordinates[0] - crop_radius),
+                    max(0, screen_coordinates[1] - crop_radius),
+                    min(screen_box.width, screen_coordinates[0] + crop_radius),
+                    min(screen_box.height, screen_coordinates[1] + crop_radius),
+                )
+                if screen_coordinates
+                else (0, 0, screen_box.width, screen_box.height)
             )
             screenshot = screen.capture_rect(
                 rect.Rect(
@@ -237,10 +251,14 @@ class Reader(object):
             # of screen bounds.
             screenshot = ImageGrab.grab()
             bounding_box = (
-                max(0, screen_coordinates[0] - crop_radius),
-                max(0, screen_coordinates[1] - crop_radius),
-                min(screenshot.width, screen_coordinates[0] + crop_radius),
-                min(screenshot.height, screen_coordinates[1] + crop_radius),
+                (
+                    max(0, screen_coordinates[0] - crop_radius),
+                    max(0, screen_coordinates[1] - crop_radius),
+                    min(screenshot.width, screen_coordinates[0] + crop_radius),
+                    min(screenshot.height, screen_coordinates[1] + crop_radius),
+                )
+                if screen_coordinates
+                else (0, 0, screenshot.width, screenshot.height)
             )
             screenshot = screenshot.crop(bounding_box)
         return screenshot, bounding_box
@@ -360,7 +378,9 @@ class ScreenContents(object):
         self.confidence_threshold = confidence_threshold
         self.homophones = homophones
         self.search_radius = search_radius
-        self._search_radius_squared = search_radius * search_radius
+        self._search_radius_squared = (
+            search_radius * search_radius if search_radius else None
+        )
 
     def as_string(self):
         """Return the contents formatted as a string."""
@@ -413,7 +433,10 @@ class ScreenContents(object):
 
     def find_nearest_words_within_matches(
         self, sequences: Sequence[Sequence[WordLocation]]
-    ) -> Sequence[WordLocation]:
+    ) -> Optional[Sequence[WordLocation]]:
+        if not self.screen_coordinates:
+            # "Nearest" is undefined.
+            return None
         distance_to_words = [
             (
                 self._distance_squared(
@@ -458,6 +481,8 @@ class ScreenContents(object):
             return []
         max_score = max(score for score, _ in scored_words)
         best_matches = [words for score, words in scored_words if score == max_score]
+        if not self.screen_coordinates:
+            return best_matches
         return [
             words
             for words in best_matches
