@@ -1,7 +1,8 @@
 # talon-gaze-ocr
 
 Talon scripts to enable advanced cursor control using eye tracking and OCR. This is alpha
-functionality which uses experimental/unsupported APIs, so it could break at any time.
+functionality which uses experimental/unsupported APIs, so it could break at any time. Requires
+[knausj_talon](https://github.com/knausj85/knausj_talon) to be installed in the same directory.
 
 All Python package dependencies are present in the `.subtrees` directory so that no pip
 installations are needed on Mac. If packages are available through standard pip installation, these
