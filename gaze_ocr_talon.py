@@ -492,13 +492,14 @@ class GazeOcrActions:
             debug_color = (
                 "000000" if has_light_background(contents.screenshot) else "ffffff"
             )
-            c.paint.style = c.paint.Style.STROKE
-            c.paint.color = debug_color
-            c.draw_circle(
-                contents.screen_coordinates[0],
-                contents.screen_coordinates[1],
-                contents.search_radius,
-            )
+            if contents.screen_coordinates:
+                c.paint.style = c.paint.Style.STROKE
+                c.paint.color = debug_color
+                c.draw_circle(
+                    contents.screen_coordinates[0],
+                    contents.screen_coordinates[1],
+                    contents.search_radius,
+                )
             if query:
                 c.paint.typeface = "arial"
                 c.paint.textsize = 30
