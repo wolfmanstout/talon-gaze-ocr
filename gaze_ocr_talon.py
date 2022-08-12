@@ -70,8 +70,50 @@ def add_homophones(
             homophones[word.lower()] = merged_words
 
 
+# Inline digits and punctuation words in case people are using vanilla knausj, where these are not
+# exposed.
 digits = "zero one two three four five six seven eight nine".split()
-digits_map = {n: i for i, n in enumerate(digits)}
+default_digits_map = {n: i for i, n in enumerate(digits)}
+
+default_punctuation_words = {
+    "back tick": "`",
+    "grave": "`",
+    "comma": ",",
+    "period": ".",
+    "full stop": ".",
+    "semicolon": ";",
+    "colon": ":",
+    "forward slash": "/",
+    "question mark": "?",
+    "exclamation mark": "!",
+    "exclamation point": "!",
+    "asterisk": "*",
+    "hash sign": "#",
+    "number sign": "#",
+    "percent sign": "%",
+    "at sign": "@",
+    "and sign": "&",
+    "ampersand": "&",
+    # Currencies
+    "dollar sign": "$",
+    "pound sign": "£",
+}
+
+
+def get_knausj_homophones():
+    homophones_file = Path(__file__).parents[1] / "knausj_talon/code/homophones.csv"
+    phones = {}
+    with open(homophones_file) as f:
+        for line in f:
+            words = line.rstrip().split(",")
+            merged_words = set(words)
+            for word in words:
+                old_words = phones.get(word.lower(), [])
+                merged_words.update(old_words)
+            merged_words = sorted(merged_words)
+            for word in merged_words:
+                phones[word.lower()] = merged_words
+    return phones
 
 
 def on_ready():
@@ -79,15 +121,25 @@ def on_ready():
     # https://github.com/wolfmanstout/gaze-ocr
     global tracker, ocr_reader, gaze_ocr_controller
     tracker = gaze_ocr.talon.TalonEyeTracker()
-    homophones = actions.user.homophones_get_all()
+    # Attempt to use overridable actions to get homophone dicts. These are available in
+    # wolfmanstout_talon, but not yet in knausj_talon, so fallback if needed.
+    try:
+        homophones = actions.user.homophones_get_all()
+    except KeyError:
+        homophones = get_knausj_homophones()
+    # TODO: Get this through an action to support customization.
     add_homophones(
-        homophones, [(str(num), spoken) for spoken, num in digits_map.items()]
+        homophones, [(str(num), spoken) for spoken, num in default_digits_map.items()]
     )
+    try:
+        punctuation_words = actions.user.get_punctuation_words()
+    except KeyError:
+        punctuation_words = default_punctuation_words
     add_homophones(
         homophones,
         [
             (punctuation, spoken)
-            for spoken, punctuation in actions.user.get_punctuation_words().items()
+            for spoken, punctuation in punctuation_words.items()
             if " " not in spoken
         ],
     )
