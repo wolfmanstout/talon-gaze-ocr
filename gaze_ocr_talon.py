@@ -15,6 +15,7 @@ package_paths = [
     str(subtree_dir / "rapidfuzz/src"),
     str(subtree_dir / "jarowinkler/src"),
 ]
+saved_path = sys.path.copy()
 sys.path.extend([path for path in package_paths if path not in sys.path])
 
 import gaze_ocr
@@ -25,6 +26,9 @@ from talon import Context, Module, actions, app, cron, screen, settings
 from talon.canvas import Canvas
 from talon.grammar import Phrase
 from talon.types import rect
+
+# Restore the unmodified path.
+sys.path = saved_path.copy()
 
 mod = Module()
 ctx = Context()
