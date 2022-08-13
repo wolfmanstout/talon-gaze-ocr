@@ -244,7 +244,8 @@ class Reader(object):
                     bounding_box[1],
                     bounding_box[2] - bounding_box[0],
                     bounding_box[3] - bounding_box[1],
-                )
+                ),
+                retina=False,
             )
         else:
             # TODO Consider cropping within grab() for performance. Requires knowledge

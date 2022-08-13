@@ -554,7 +554,10 @@ class Controller(object):
             result = "failure"
         file_name_prefix = f"{result}_{time.time():.2f}"
         file_path_prefix = os.path.join(self.save_data_directory, file_name_prefix)
-        screen_contents.screenshot.save(file_path_prefix + ".png")
+        if hasattr(screen_contents.screenshot, "save"):
+            screen_contents.screenshot.save(file_path_prefix + ".png")
+        else:
+            screen_contents.screenshot.write_file(file_path_prefix + ".png")
         with open(file_path_prefix + ".txt", "w") as file:
             file.write(word)
 
