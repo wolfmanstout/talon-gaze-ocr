@@ -24,33 +24,28 @@ mode: dictation
 scroll up:
     user.move_cursor_to_gaze_point(0, 40)
     user.mouse_scroll_up()
-    user.mouse_scroll_up()
-    user.mouse_scroll_up()
-    user.mouse_scroll_up()
-    user.mouse_scroll_up()
-    user.mouse_scroll_up()
-    user.mouse_scroll_up()
 scroll up half:
     user.move_cursor_to_gaze_point(0, 40)
-    user.mouse_scroll_up()
-    user.mouse_scroll_up()
-    user.mouse_scroll_up()
-    user.mouse_scroll_up()
+    user.mouse_scroll_up(0.5)
 scroll down:
     user.move_cursor_to_gaze_point(0, -40)
     user.mouse_scroll_down()
-    user.mouse_scroll_down()
-    user.mouse_scroll_down()
-    user.mouse_scroll_down()
-    user.mouse_scroll_down()
-    user.mouse_scroll_down()
-    user.mouse_scroll_down()
 scroll down half:
     user.move_cursor_to_gaze_point(0, -40)
-    user.mouse_scroll_down()
-    user.mouse_scroll_down()
-    user.mouse_scroll_down()
-    user.mouse_scroll_down()
+    user.mouse_scroll_down(0.5)
+scroll left:
+    user.move_cursor_to_gaze_point(-40, 0)
+    user.mouse_scroll_left()
+scroll left half:
+    user.move_cursor_to_gaze_point(-40, 0)
+    user.mouse_scroll_left(0.5)
+scroll right:
+    user.move_cursor_to_gaze_point(40, 0)
+    user.mouse_scroll_right()
+scroll right half:
+    user.move_cursor_to_gaze_point(40, 0)
+    user.mouse_scroll_right(0.5)
+
 # parrot(shush):
 #     user.move_cursor_to_gaze_point(0, -40)
 #     user.power_momentum_scroll_down()
@@ -69,8 +64,6 @@ scroll down half:
 # parrot(fff:stop):
 #     user.power_momentum_decaying()
 
-# scroll left: '"scroll left": Function(lambda: tracker.move_to_gaze_point((40, 0))) + Mouse("wheelleft:7"),'()+<wheelleft:7>
-# scroll right: '"scroll right": Function(lambda: tracker.move_to_gaze_point((-40, 0))) + Mouse("wheelright:7"),'()+<wheelright:7>
 # scroll start: '"scroll start": Function(lambda: scroller.start()),'()
 # [scroll] stop: '"[scroll] stop": Function(lambda: scroller.stop()),'()
 # scroll reset: '"scroll reset": Function(lambda: reset_scroller()),'()

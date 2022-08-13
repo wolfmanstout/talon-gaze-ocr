@@ -99,7 +99,7 @@ class TalonEyeTracker(object):
         return self._gaze_to_pixels(self._gaze)
 
     def get_gaze_point_or_default(self):
-        return self.get_gaze_point() or (0, 0)
+        return self.get_gaze_point() or tuple(ui.active_window().rect.center)
 
     def get_gaze_point_at_timestamp(self, timestamp):
         if not self._queue:
