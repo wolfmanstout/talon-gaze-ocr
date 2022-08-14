@@ -58,6 +58,7 @@ class Controller(object):
             else lambda: self.ocr_reader.read_screen()
         )
 
+    # TODO Use timestamp range instead of a single timestamp.
     def read_nearby(self, timestamp=None):
         """Perform OCR nearby the gaze point in the current thread.
 
