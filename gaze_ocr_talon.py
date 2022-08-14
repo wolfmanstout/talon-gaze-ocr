@@ -1,9 +1,14 @@
 import sys
-from dataclasses import dataclass
 from math import floor
 from pathlib import Path
-from statistics import mean
-from typing import Dict, Iterable, Optional, Sequence, Union
+from typing import Dict, Iterable, Optional, Sequence
+
+import numpy as np
+from talon import Context, Module, actions, app, cron, screen, settings
+from talon.canvas import Canvas
+from talon.types import rect
+
+from .timestamped_captures import TextRange, TimestampedText
 
 # Adjust path to search adjacent package directories. Prefixed with dot to avoid
 # Talon running them itself. Append to search path so that faster binary
@@ -20,12 +25,7 @@ sys.path.extend([path for path in package_paths if path not in sys.path])
 
 import gaze_ocr
 import gaze_ocr.talon
-import numpy as np
 import screen_ocr  # dependency of gaze-ocr
-from talon import Context, Module, actions, app, cron, screen, settings
-from talon.canvas import Canvas
-from talon.grammar import Phrase
-from talon.types import rect
 
 # Restore the unmodified path.
 sys.path = saved_path.copy()
@@ -33,6 +33,12 @@ sys.path = saved_path.copy()
 mod = Module()
 ctx = Context()
 
+setting_ocr_use_talon_backend = mod.setting(
+    "ocr_use_talon_backend",
+    type=bool,
+    default=True,
+    desc="If true, use Talon backend, otherwise use default fast backend from screen_ocr.",
+)
 setting_ocr_logging_dir = mod.setting(
     "ocr_logging_dir",
     type=str,
@@ -51,14 +57,30 @@ setting_ocr_select_pause_seconds = mod.setting(
     default=0.01,
     desc="Adjust the pause between clicks when performing a selection.",
 )
-setting_ocr_use_talon_backend = mod.setting(
-    "ocr_use_talon_backend",
-    type=bool,
-    default=True,
-    desc="If true, use Talon backend, otherwise use default fast backend.",
+setting_ocr_debug_display_seconds = mod.setting(
+    "ocr_debug_display_seconds",
+    type=float,
+    default=2,
+    desc="Adjust how long debugging display is shown.",
 )
 
 mod.mode("gaze_ocr_disambiguation")
+mod.list("ocr_actions", desc="Actions to perform on selected text.")
+mod.list("ocr_modifiers", desc="Modifiers to perform on selected text.")
+ctx.lists["self.ocr_actions"] = {
+    "take": "select",
+    "copy": "copy",
+    "carve": "cut",
+    "paste to": "paste",
+    "clear": "delete",
+    "delete": "delete",
+    "chuck": "delete",
+    "cap": "capitalize",
+    "lower": "lowercase",
+}
+ctx.lists["self.ocr_modifiers"] = {
+    "all": "selectAll",
+}
 
 
 def add_homophones(
@@ -121,8 +143,7 @@ def get_knausj_homophones():
 
 
 def on_ready():
-    # Initialize eye tracking and OCR. See installation instructions:
-    # https://github.com/wolfmanstout/gaze-ocr
+    # Initialize eye tracking and OCR.
     global tracker, ocr_reader, gaze_ocr_controller
     tracker = gaze_ocr.talon.TalonEyeTracker()
     # Attempt to use overridable actions to get homophone dicts. These are available in
@@ -174,103 +195,6 @@ def on_ready():
 app.register("ready", on_ready)
 
 
-@dataclass
-class TimestampedText:
-    text: str
-    start: float
-    end: float
-
-
-@dataclass
-class TextRange:
-    start: Optional[TimestampedText]
-    after_start: bool
-    end: Optional[TimestampedText]
-    before_end: bool
-
-
-@dataclass
-class TextPosition:
-    text: TimestampedText
-    position: str
-
-
-# "edit" is frequently misrecognized as "at it", and is common in UIs.
-@mod.capture(
-    rule="(<phrase> | {user.vocabulary} | {user.punctuation} | {user.prose_snippets})+ | edit"
-)
-def timestamped_prose(m) -> TimestampedText:
-    """Dictated text appearing onscreen."""
-    words = []
-    start = None
-    end = None
-    for item in m:
-        if isinstance(item, Phrase):
-            words.extend(
-                actions.dictate.replace_words(actions.dictate.parse_words(item))
-            )
-            if not start:
-                start = item.words[0].start
-            end = item.words[-1].end
-        else:
-            words.append(str(item))
-            if not start:
-                start = item.start
-            end = item.end
-    assert start
-    assert end
-    return TimestampedText(text=" ".join(words), start=start, end=end)
-
-
-@mod.capture(rule="[before | after] <self.timestamped_prose>")
-def prose_position(m) -> TextPosition:
-    """Position relative to prose."""
-    return TextPosition(
-        text=m.timestamped_prose,
-        position=m[0] if m[0] in ("before", "after") else "",
-    )
-
-
-@mod.capture(rule="<self.prose_position> [through <self.prose_position>]")
-def prose_range(m) -> TextRange:
-    """A range of onscreen text."""
-    has_through = len(m.prose_position_list) == 2
-    if m.prose_position_1.position and not has_through:
-        return TextRange(
-            start=None,
-            after_start=False,
-            end=m.prose_position_1.text,
-            before_end=m.prose_position_1.position == "before",
-        )
-    else:
-        return TextRange(
-            start=m.prose_position_1.text,
-            after_start=m.prose_position_1.position == "after",
-            end=m.prose_position_2.text if has_through else None,
-            before_end=(
-                (m.prose_position_2.position == "before") if has_through else None
-            ),
-        )
-
-
-mod.list("ocr_actions", desc="Actions to perform on selected text.")
-mod.list("ocr_modifiers", desc="Modifiers to perform on selected text.")
-ctx.lists["self.ocr_actions"] = {
-    "take": "select",
-    "copy": "copy",
-    "carve": "cut",
-    "paste to": "paste",
-    "clear": "delete",
-    "delete": "delete",
-    "chuck": "delete",
-    "cap": "capitalize",
-    "lower": "lowercase",
-}
-ctx.lists["self.ocr_modifiers"] = {
-    "all": "selectAll",
-}
-
-
 def has_light_background(screenshot):
     array = np.array(screenshot)
     # From https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Image.convert
@@ -300,6 +224,7 @@ def show_disambiguation():
     global ambiguous_matches, disambiguation_canvas
 
     def on_draw(c):
+        assert ambiguous_matches
         contents = gaze_ocr_controller.latest_screen_contents()
         debug_color = (
             "000000" if has_light_background(contents.screenshot) else "ffffff"
@@ -373,7 +298,7 @@ def move_text_cursor_to_word_generator(
 
 def select_text_generator(
     start: TimestampedText,
-    end: Union[TimestampedText, str] = "",
+    end: Optional[TimestampedText] = None,
     for_deletion: bool = False,
     after_start: bool = False,
     before_end: bool = False,
@@ -405,7 +330,8 @@ def perform_ocr_action_generator(
     text_range: TextRange,
     for_deletion: Optional[bool] = None,
 ):
-    if text_range.end and not text_range.start:
+    if not text_range.start:
+        assert text_range.end
         yield from move_text_cursor_to_word_generator(
             text_range.end,
             position="before" if text_range.before_end else "after",
@@ -470,18 +396,6 @@ class GazeOcrActions:
             move_text_cursor_to_word_generator(
                 text, position, include_whitespace, hold_shift
             )
-        )
-
-    def select_text(
-        start: TimestampedText,
-        end: Union[TimestampedText, str] = "",
-        for_deletion: bool = False,
-        after_start: bool = False,
-        before_end: bool = False,
-    ):
-        """Selects text near onscreen word at phrase timestamps."""
-        begin_generator(
-            select_text_generator(start, end, for_deletion, after_start, before_end)
         )
 
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
@@ -586,7 +500,9 @@ class GazeOcrActions:
                         )
                     else:
                         raise RuntimeError(f"Type not recognized: {type}")
-            cron.after("2s", debug_canvas.close)
+            cron.after(
+                f"{setting_ocr_debug_display_seconds.get()}s", debug_canvas.close
+            )
 
         debug_canvas = Canvas.from_rect(screen.main().rect)
         debug_canvas.register("draw", on_draw)
@@ -643,7 +559,7 @@ class GazeOcrActions:
         begin_generator(run())
 
     def right_click_text(text: TimestampedText):
-        """Righ-click on the provided on-screen text."""
+        """Right-click on the provided on-screen text."""
 
         def run():
             yield from move_cursor_to_word_generator(text)
@@ -683,7 +599,7 @@ class GazeOcrActions:
         begin_generator(run())
 
     def change_text_homophone(text: TimestampedText):
-        """Switch the text to a different homophone."""
+        """Switch the on-screen text to a different homophone."""
 
         def run():
             yield from select_text_generator(text)
