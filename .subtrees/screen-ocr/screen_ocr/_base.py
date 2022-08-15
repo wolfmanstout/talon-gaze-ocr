@@ -4,14 +4,6 @@ from dataclasses import dataclass
 from typing import List
 
 
-class OcrBackend:
-    """Base class for backend used to perform OCR."""
-
-    def run_ocr(self, image):
-        """Return the OcrResult corresponding to the image."""
-        raise NotImplementedError()
-
-
 @dataclass
 class OcrWord:
     text: str
@@ -29,3 +21,11 @@ class OcrLine:
 @dataclass
 class OcrResult:
     lines: List[OcrLine]
+
+
+class OcrBackend:
+    """Base class for backend used to perform OCR."""
+
+    def run_ocr(self, image) -> OcrResult:
+        """Return the OcrResult corresponding to the image."""
+        raise NotImplementedError()

@@ -7,7 +7,17 @@ from collections import deque
 from dataclasses import dataclass
 from itertools import islice
 from statistics import mean
-from typing import Iterator, Optional, Sequence
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    Iterator,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 try:
     from rapidfuzz import fuzz
@@ -53,7 +63,7 @@ class Reader(object):
     """Reads on-screen text using OCR."""
 
     @classmethod
-    def create_quality_reader(cls, **kwargs):
+    def create_quality_reader(cls, **kwargs) -> "Reader":
         """Create reader optimized for quality.
 
         See constructor for full argument list.
@@ -64,7 +74,7 @@ class Reader(object):
             return cls.create_reader(backend="tesseract", **kwargs)
 
     @classmethod
-    def create_fast_reader(cls, **kwargs):
+    def create_fast_reader(cls, **kwargs) -> "Reader":
         """Create reader optimized for speed.
 
         See constructor for full argument list.
@@ -82,7 +92,7 @@ class Reader(object):
     @classmethod
     def create_reader(
         cls,
-        backend,
+        backend: Union[str, _base.OcrBackend],
         tesseract_data_path=None,
         tesseract_command=None,
         threshold_function="local_otsu",
@@ -91,9 +101,11 @@ class Reader(object):
         convert_grayscale=True,
         shift_channels=True,
         debug_image_callback=None,
-        **kwargs
-    ):
+        **kwargs,
+    ) -> "Reader":
         """Create reader with specified backend."""
+        if isinstance(backend, _base.OcrBackend):
+            return cls(backend, **kwargs)
         if backend == "tesseract":
             if not _tesseract:
                 raise ValueError(
@@ -116,16 +128,16 @@ class Reader(object):
             return cls(
                 backend,
                 debug_image_callback=debug_image_callback,
-                **dict(defaults, **kwargs)
+                **dict(defaults, **kwargs),
             )
-        elif backend == "easyocr":
+        if backend == "easyocr":
             if not _easyocr:
                 raise ValueError(
                     "EasyOCR backend unavailable. To install, run pip install screen-ocr[easyocr]."
                 )
             backend = _easyocr.EasyOcrBackend()
             return cls(backend, debug_image_callback=debug_image_callback, **kwargs)
-        elif backend == "winrt":
+        if backend == "winrt":
             if not _winrt:
                 raise ValueError(
                     "WinRT backend unavailable. To install, run pip install screen-ocr[winrt]."
@@ -139,36 +151,37 @@ class Reader(object):
             return cls(
                 backend,
                 debug_image_callback=debug_image_callback,
-                **dict({"resize_factor": 2}, **kwargs)
+                **dict({"resize_factor": 2}, **kwargs),
             )
-        elif backend == "talon":
+        if backend == "talon":
             if not _talon:
                 raise ValueError(
                     "Talon backend unavailable. Requires installing and running in Talon (see talonvoice.com)."
                 )
             backend = _talon.TalonBackend()
             return cls(backend, debug_image_callback=debug_image_callback, **kwargs)
-        else:
-            return cls(backend, **kwargs)
+        raise RuntimeError(f"Unsupported backend: {backend}")
 
     def __init__(
         self,
-        backend,
-        margin=0,
-        resize_factor=1,
-        resize_method=None,
-        debug_image_callback=None,
-        confidence_threshold=0.75,
-        radius=200,  # screenshot "radius"
-        search_radius=125,
-        homophones=None,
+        backend: _base.OcrBackend,
+        margin: int = 0,
+        resize_factor: int = 1,
+        resize_method=None,  # Pillow resize method
+        debug_image_callback: Optional[Callable[[str, Any], None]] = None,
+        confidence_threshold: float = 0.75,
+        radius: int = 200,  # screenshot "radius"
+        search_radius: int = 125,
+        homophones: Optional[Mapping[str, Iterable[str]]] = None,
     ):
         self._backend = backend
         self.margin = margin
         self.resize_factor = resize_factor
-        self.resize_method = resize_method or (
-            Image.LANCZOS if resize_factor != 1 else None
-        )
+        if resize_method or resize_factor == 1:
+            self.resize_method = resize_method
+        else:
+            assert Image
+            self.resize_method = Image.LANCZOS
         self.debug_image_callback = debug_image_callback
         self.confidence_threshold = confidence_threshold
         self.radius = radius
@@ -179,7 +192,12 @@ class Reader(object):
             else default_homophones()
         )
 
-    def read_nearby(self, screen_coordinates, search_radius=None, crop_radius=None):
+    def read_nearby(
+        self,
+        screen_coordinates: Tuple[int, int],
+        search_radius: Optional[int] = None,
+        crop_radius: Optional[int] = None,
+    ):
         """Return ScreenContents nearby the provided coordinates."""
         crop_radius = crop_radius or self.radius
         search_radius = search_radius or self.search_radius
@@ -204,7 +222,11 @@ class Reader(object):
         )
 
     def read_image(
-        self, image, offset=(0, 0), screen_coordinates=(0, 0), search_radius=None
+        self,
+        image,
+        offset: Tuple[int, int] = (0, 0),
+        screen_coordinates: Optional[Tuple[int, int]] = (0, 0),
+        search_radius: Optional[int] = None,
     ):
         """Return ScreenContents of the provided image."""
         search_radius = search_radius or self.search_radius
@@ -225,19 +247,23 @@ class Reader(object):
     def _is_talon_backend(self):
         return _talon and isinstance(self._backend, _talon.TalonBackend)
 
-    def _screenshot_nearby(self, screen_coordinates, crop_radius):
+    def _screenshot_nearby(
+        self, screen_coordinates: Optional[Tuple[int, int]], crop_radius: Optional[int]
+    ):
         if self._is_talon_backend():
+            assert screen
+            assert rect
             screen_box = screen.main().rect
-            bounding_box = (
-                (
+            if screen_coordinates:
+                assert crop_radius
+                bounding_box = (
                     max(0, screen_coordinates[0] - crop_radius),
                     max(0, screen_coordinates[1] - crop_radius),
                     min(screen_box.width, screen_coordinates[0] + crop_radius),
                     min(screen_box.height, screen_coordinates[1] + crop_radius),
                 )
-                if screen_coordinates
-                else (0, 0, screen_box.width, screen_box.height)
-            )
+            else:
+                bounding_box = (0, 0, screen_box.width, screen_box.height)
             screenshot = screen.capture_rect(
                 rect.Rect(
                     bounding_box[0],
@@ -250,21 +276,24 @@ class Reader(object):
         else:
             # TODO Consider cropping within grab() for performance. Requires knowledge
             # of screen bounds.
+            assert ImageGrab
             screenshot = ImageGrab.grab()
-            bounding_box = (
-                (
+            if screen_coordinates:
+                assert crop_radius
+                bounding_box = (
                     max(0, screen_coordinates[0] - crop_radius),
                     max(0, screen_coordinates[1] - crop_radius),
                     min(screenshot.width, screen_coordinates[0] + crop_radius),
                     min(screenshot.height, screen_coordinates[1] + crop_radius),
                 )
-                if screen_coordinates
-                else (0, 0, screenshot.width, screenshot.height)
-            )
+            else:
+                bounding_box = (0, 0, screenshot.width, screenshot.height)
             screenshot = screenshot.crop(bounding_box)
         return screenshot, bounding_box
 
-    def _adjust_result(self, result, offset):
+    def _adjust_result(
+        self, result: _base.OcrResult, offset: Tuple[int, int]
+    ) -> _base.OcrResult:
         lines = []
         for line in result.lines:
             words = []
@@ -287,6 +316,7 @@ class Reader(object):
         if self.debug_image_callback:
             self.debug_image_callback("debug_resized", image)
         if self.margin:
+            assert ImageOps
             image = ImageOps.expand(image, self.margin, "white")
         if not self._is_talon_backend():
             # Ensure consistent performance measurements.
@@ -294,7 +324,7 @@ class Reader(object):
         return image
 
 
-def default_homophones():
+def default_homophones() -> Mapping[str, Iterable[str]]:
     homophone_list = [
         # 0k is not actually a homophone but is frequently produced by OCR.
         ("ok", "okay", "0k"),
@@ -331,31 +361,31 @@ class WordLocation:
     text: str
 
     @property
-    def right(self):
+    def right(self) -> int:
         return self.left + self.width
 
     @property
-    def bottom(self):
+    def bottom(self) -> int:
         return self.top + self.height
 
     @property
-    def middle_x(self):
+    def middle_x(self) -> int:
         return int(self.left + self.width / 2)
 
     @property
-    def middle_y(self):
+    def middle_y(self) -> int:
         return int(self.top + self.height / 2)
 
     @property
-    def start_coordinates(self):
+    def start_coordinates(self) -> Tuple[int, int]:
         return (self.left, self.middle_y)
 
     @property
-    def middle_coordinates(self):
+    def middle_coordinates(self) -> Tuple[int, int]:
         return (self.middle_x, self.middle_y)
 
     @property
-    def end_coordinates(self):
+    def end_coordinates(self) -> Tuple[int, int]:
         return (self.right, self.middle_y)
 
 
@@ -364,13 +394,13 @@ class ScreenContents(object):
 
     def __init__(
         self,
-        screen_coordinates,
-        screen_offset,
+        screen_coordinates: Optional[Tuple[int, int]],
+        screen_offset: Tuple[int, int],
         screenshot,
-        result,
-        confidence_threshold,
-        homophones,
-        search_radius,
+        result: _base.OcrResult,
+        confidence_threshold: float,
+        homophones: Mapping[str, Iterable[str]],
+        search_radius: Optional[int],
     ):
         self.screen_coordinates = screen_coordinates
         self.screen_offset = screen_offset
@@ -378,12 +408,13 @@ class ScreenContents(object):
         self.result = result
         self.confidence_threshold = confidence_threshold
         self.homophones = homophones
-        self.search_radius = search_radius
-        self._search_radius_squared = (
-            search_radius * search_radius if search_radius else None
-        )
+        if search_radius:
+            self.search_radius = search_radius
+            self._search_radius_squared = search_radius * search_radius
+        else:
+            self.search_radius = None
 
-    def as_string(self):
+    def as_string(self) -> str:
         """Return the contents formatted as a string."""
         lines = []
         for line in self.result.lines:
@@ -393,7 +424,9 @@ class ScreenContents(object):
             lines.append(" ".join(words) + "\n")
         return "".join(lines)
 
-    def find_nearest_word_coordinates(self, target_word, cursor_position):
+    def find_nearest_word_coordinates(
+        self, target_word: str, cursor_position: str
+    ) -> Optional[Tuple[int, int]]:
         """Return the coordinates of the nearest instance of the provided word.
 
         Uses fuzzy matching.
@@ -414,7 +447,7 @@ class ScreenContents(object):
         elif cursor_position == "after":
             return word_location.end_coordinates
 
-    def find_nearest_word(self, target_word):
+    def find_nearest_word(self, target_word: str) -> Optional[WordLocation]:
         """Return the location of the nearest instance of the provided word.
 
         Uses fuzzy matching.
@@ -443,7 +476,7 @@ class ScreenContents(object):
                 self._distance_squared(
                     (words[0].left + words[-1].right) / 2.0,
                     (words[0].top + words[-1].bottom) / 2.0,
-                    *self.screen_coordinates
+                    *self.screen_coordinates,
                 ),
                 words,
             )
@@ -482,15 +515,16 @@ class ScreenContents(object):
             return []
         max_score = max(score for score, _ in scored_words)
         best_matches = [words for score, words in scored_words if score == max_score]
-        if not self.screen_coordinates:
+        if not self.search_radius:
             return best_matches
+        assert self.screen_coordinates
         return [
             words
             for words in best_matches
             if self._distance_squared(
                 (words[0].left + words[-1].right) / 2.0,
                 (words[0].top + words[-1].bottom) / 2.0,
-                *self.screen_coordinates
+                *self.screen_coordinates,
             )
             <= self._search_radius_squared
         ]
@@ -526,12 +560,14 @@ class ScreenContents(object):
                 left_offset += len(subword)
 
     @staticmethod
-    def _normalize(word):
+    def _normalize(word: str) -> str:
         # Avoid any changes that affect word length.
         return word.lower().replace("\u2019", "'")
 
     @staticmethod
-    def _normalize_homophones(old_homophones):
+    def _normalize_homophones(
+        old_homophones: Mapping[str, Iterable[str]]
+    ) -> Mapping[str, Iterable[str]]:
         new_homophones = {}
         for k, v in old_homophones.items():
             new_homophones[ScreenContents._normalize(k)] = list(
@@ -567,7 +603,7 @@ class ScreenContents(object):
         return best_ratio / 100.0
 
     @staticmethod
-    def _distance_squared(x1, y1, x2, y2):
+    def _distance_squared(x1: float, y1: float, x2: float, y2: float) -> float:
         x_dist = x1 - x2
         y_dist = y1 - y2
         return x_dist * x_dist + y_dist * y_dist

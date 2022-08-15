@@ -9,6 +9,8 @@ completes, next() or send() will raise StopIteration with the .value set to the 
 import os.path
 import time
 from concurrent import futures
+from typing import Callable, Generator, Optional, Sequence, Tuple
+from screen_ocr import Reader, ScreenContents, WordLocation
 
 
 class Controller(object):
@@ -16,9 +18,9 @@ class Controller(object):
 
     def __init__(
         self,
-        ocr_reader,
+        ocr_reader: Reader,
         eye_tracker,
-        save_data_directory=None,
+        save_data_directory: Optional[str] = None,
         mouse=None,
         keyboard=None,
     ):
@@ -46,20 +48,20 @@ class Controller(object):
         self.shutdown(wait=True)
         return False
 
-    def start_reading_nearby(self):
+    def start_reading_nearby(self) -> None:
         """Start OCR nearby the gaze point in a background thread."""
         gaze_point = self.eye_tracker.get_gaze_point() if self.eye_tracker else None
         # Don't enqueue multiple requests.
         if self._future and not self._future.done():
             self._future.cancel()
         self._future = self._executor.submit(
-            lambda: self.ocr_reader.read_nearby(gaze_point)
+            (lambda: self.ocr_reader.read_nearby(gaze_point))
             if gaze_point
-            else lambda: self.ocr_reader.read_screen()
+            else (lambda: self.ocr_reader.read_screen())
         )
 
     # TODO Use timestamp range instead of a single timestamp.
-    def read_nearby(self, timestamp=None):
+    def read_nearby(self, timestamp: Optional[float] = None) -> None:
         """Perform OCR nearby the gaze point in the current thread.
 
         Arguments:
@@ -96,7 +98,7 @@ class Controller(object):
             )
         )
 
-    def latest_screen_contents(self):
+    def latest_screen_contents(self) -> ScreenContents:
         """Return the ScreenContents of the latest call to start_reading_nearby().
 
         Blocks until available.
@@ -108,8 +110,12 @@ class Controller(object):
         return self._future.result()
 
     def move_cursor_to_words(
-        self, words, cursor_position="middle", timestamp=None, click_offset_right=0
-    ):
+        self,
+        words: str,
+        cursor_position: str = "middle",
+        timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+    ) -> Optional[Tuple[int, int]]:
         """Move the mouse cursor nearby the specified word or words.
 
         If successful, returns the new cursor coordinates.
@@ -132,12 +138,16 @@ class Controller(object):
 
     def move_cursor_to_words_generator(
         self,
-        words,
-        disambiguate,
-        cursor_position="middle",
-        timestamp=None,
-        click_offset_right=0,
-    ):
+        words: str,
+        disambiguate: bool,
+        cursor_position: str = "middle",
+        timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+    ) -> Generator[
+        Sequence[Sequence[WordLocation]],
+        Sequence[WordLocation],
+        Optional[Tuple[int, int]],
+    ]:
         """Same as move_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
         """
@@ -151,7 +161,7 @@ class Controller(object):
             matches = [match] if match else []
         self._write_data(screen_contents, words, matches)
         if not matches:
-            return False
+            return None
         if len(matches) > 1:
             # Yield all results to the caller and let them send the chosen match.
             locations = yield matches
@@ -173,7 +183,7 @@ class Controller(object):
             screen_contents.screen_offset,
             coordinates,
         ):
-            return False
+            return None
         self.mouse.move(self._apply_click_offset(coordinates, click_offset_right))
         return coordinates
 
@@ -181,7 +191,7 @@ class Controller(object):
 
     def _screenshot_changed_near_coordinates(
         self, old_screenshot, old_screen_offset, coordinates
-    ):
+    ) -> bool:
         return False
         # Disable this functionality for now due to interaction with the cursor
         # during selection. Also, most screen changes happen after moving the
@@ -209,15 +219,17 @@ class Controller(object):
         # new_patch = new_screenshot.crop(new_bounding_box)
         # return ImageChops.difference(new_patch, old_patch).getbbox() is not None
 
+    ValidateLocationCallable = Callable[[Sequence[WordLocation]], bool]
+
     def move_text_cursor_to_words(
         self,
-        words,
-        cursor_position="middle",
-        validate_location_function=None,
-        include_whitespace=False,
-        timestamp=None,
-        click_offset_right=0,
-    ):
+        words: str,
+        cursor_position: str = "middle",
+        validate_location_function: Optional[ValidateLocationCallable] = None,
+        include_whitespace: bool = False,
+        timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+    ) -> Optional[Sequence[WordLocation]]:
         """Move the text cursor nearby the specified word or phrase.
 
         If successful, returns list of screen_ocr.WordLocation of the matching words.
@@ -245,15 +257,19 @@ class Controller(object):
 
     def move_text_cursor_to_words_generator(
         self,
-        words,
-        disambiguate,
-        cursor_position="middle",
-        validate_location_function=None,
-        include_whitespace=False,
-        timestamp=None,
-        click_offset_right=0,
-        hold_shift=False,
-    ):
+        words: str,
+        disambiguate: bool,
+        cursor_position: str = "middle",
+        validate_location_function: Optional[ValidateLocationCallable] = None,
+        include_whitespace: bool = False,
+        timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        hold_shift: bool = False,
+    ) -> Generator[
+        Sequence[Sequence[WordLocation]],
+        Sequence[WordLocation],
+        Optional[Sequence[WordLocation]],
+    ]:
         """Same as move_text_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
         """
@@ -267,13 +283,13 @@ class Controller(object):
             matches = [match] if match else []
         self._write_data(screen_contents, words, matches)
         if not matches:
-            return False
+            return None
         if len(matches) > 1:
             locations = yield matches
         else:
             locations = matches[0]
         if validate_location_function and not validate_location_function(locations):
-            return False
+            return None
         if hold_shift:
             self.keyboard.shift_down()
         try:
@@ -283,7 +299,7 @@ class Controller(object):
                 include_whitespace=include_whitespace,
                 click_offset_right=click_offset_right,
             ):
-                return False
+                return None
         finally:
             if hold_shift:
                 self.keyboard.shift_up()
@@ -293,11 +309,11 @@ class Controller(object):
 
     def _move_text_cursor_to_word_locations(
         self,
-        locations,
-        cursor_position="middle",
-        include_whitespace=False,
-        click_offset_right=0,
-    ):
+        locations: Sequence[WordLocation],
+        cursor_position: str = "middle",
+        include_whitespace: bool = False,
+        click_offset_right: int = 0,
+    ) -> bool:
         if cursor_position == "before":
             distance_from_left = locations[0].left_char_offset
             distance_from_right = locations[0].right_char_offset + len(
@@ -396,15 +412,15 @@ class Controller(object):
 
     def select_text(
         self,
-        start_words,
-        end_words=None,
-        for_deletion=False,
-        start_timestamp=None,
-        end_timestamp=None,
-        click_offset_right=0,
-        after_start=False,
-        before_end=False,
-    ):
+        start_words: str,
+        end_words: Optional[str] = None,
+        for_deletion: bool = False,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        after_start: bool = False,
+        before_end: bool = False,
+    ) -> Optional[Sequence[WordLocation]]:
         """Select a range of onscreen text.
 
         If only start_words is provided, the full word or phrase is selected. If
@@ -436,17 +452,21 @@ class Controller(object):
 
     def select_text_generator(
         self,
-        start_words,
-        disambiguate,
-        end_words=None,
-        for_deletion=False,
-        start_timestamp=None,
-        end_timestamp=None,
-        click_offset_right=0,
-        after_start=False,
-        before_end=False,
-        select_pause_seconds=0.01,
-    ):
+        start_words: str,
+        disambiguate: bool,
+        end_words: Optional[str] = None,
+        for_deletion: bool = False,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        after_start: bool = False,
+        before_end: bool = False,
+        select_pause_seconds: float = 0.01,
+    ) -> Generator[
+        Sequence[Sequence[WordLocation]],
+        Sequence[WordLocation],
+        Optional[Sequence[WordLocation]],
+    ]:
         """Same as select_text, except it supports disambiguation through a generator.
         See header comment for details.
         """
@@ -462,7 +482,7 @@ class Controller(object):
             click_offset_right=click_offset_right,
         )
         if not start_locations:
-            return False
+            return None
         # Emacs requires a small sleep in between mouse clicks.
         time.sleep(select_pause_seconds)
         if end_words:
@@ -473,9 +493,12 @@ class Controller(object):
                 current_gaze = (
                     self.eye_tracker.get_gaze_point() if self.eye_tracker else None
                 )
-                previous_gaze = self.latest_screen_contents().screen_coordinates
-                threshold_squared = _squared(
-                    self.latest_screen_contents().search_radius / 2.0
+                latest_screen_contents = self.latest_screen_contents()
+                previous_gaze = latest_screen_contents.screen_coordinates
+                threshold_squared = (
+                    _squared(latest_screen_contents.search_radius / 2.0)
+                    if latest_screen_contents.search_radius
+                    else 0.0
                 )
                 if (
                     current_gaze
@@ -508,7 +531,7 @@ class Controller(object):
                     include_whitespace=False,
                     click_offset_right=click_offset_right,
                 ):
-                    return False
+                    return None
             finally:
                 self.keyboard.shift_up()
             return start_locations

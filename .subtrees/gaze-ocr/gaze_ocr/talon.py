@@ -137,7 +137,11 @@ class TalonEyeTracker(object):
             top = min(frame.gaze.y, top) if top else frame.gaze.y
             right = max(frame.gaze.x, right) if right else frame.gaze.x
             bottom = max(frame.gaze.y, bottom) if bottom else frame.gaze.y
-        if not left:
+        if not left or not right or not top or not bottom:
+            assert not left
+            assert not right
+            assert not top
+            assert not bottom
             return None
         top_left = self._gaze_to_pixels(Point2d(x=left, y=top))
         bottom_right = self._gaze_to_pixels(Point2d(x=right, y=bottom))
