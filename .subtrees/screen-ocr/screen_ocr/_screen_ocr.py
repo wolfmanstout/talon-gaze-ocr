@@ -515,9 +515,8 @@ class ScreenContents(object):
             return []
         max_score = max(score for score, _ in scored_words)
         best_matches = [words for score, words in scored_words if score == max_score]
-        if not self.search_radius:
+        if not self.search_radius or not self.screen_coordinates:
             return best_matches
-        assert self.screen_coordinates
         return [
             words
             for words in best_matches
