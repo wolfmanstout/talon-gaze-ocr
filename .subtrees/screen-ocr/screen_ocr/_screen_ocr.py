@@ -2,11 +2,9 @@
 
 import os
 import re
-
 from collections import deque
 from dataclasses import dataclass
 from itertools import islice
-from statistics import mean
 from typing import (
     Any,
     Callable,

@@ -6,12 +6,12 @@ import timeit
 
 import imagehash
 import pandas as pd
+import test_utils
 from IPython.display import display
 from PIL import Image
 from sklearn import model_selection
 
 import screen_ocr
-import test_utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument("mode", choices=["debug", "grid_search"])

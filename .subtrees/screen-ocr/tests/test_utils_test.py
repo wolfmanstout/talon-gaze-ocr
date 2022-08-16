@@ -1,5 +1,6 @@
-import test_utils
 import unittest
+
+import test_utils
 
 
 class TestUtilsTestCase(unittest.TestCase):

@@ -1,6 +1,7 @@
 import bisect
 from collections import deque
 from dataclasses import dataclass
+
 from talon import actions, app, tracking_system, ui
 from talon.types import Point2d
 

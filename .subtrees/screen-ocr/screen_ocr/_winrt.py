@@ -1,16 +1,13 @@
-# import gc
 import asyncio
-import threading
+import importlib.util
 from concurrent import futures
+
+from . import _base
 
 # Attempt to find winrt module and let error propagate if it is not available. We don't want to
 # import winrt here because it needs to be done in a background thread.
-import importlib.util
-
 if not importlib.util.find_spec("winrt"):
     raise ImportError("Could not find winrt module")
-
-from . import _base
 
 
 class WinRtBackend(_base.OcrBackend):
@@ -34,8 +31,6 @@ class WinRtBackend(_base.OcrBackend):
             data_writer = streams.DataWriter()
             bytes_list = list(bytes)
             del bytes
-            # Needed when testing on large files on 32-bit.
-            # gc.collect()
             data_writer.write_bytes(bytes_list)
             del bytes_list
             bitmap = imaging.SoftwareBitmap(
