@@ -21,14 +21,14 @@ package_paths = [
     str(subtree_dir / "jarowinkler/src"),
 ]
 saved_path = sys.path.copy()
-sys.path.extend([path for path in package_paths if path not in sys.path])
-
-import gaze_ocr
-import gaze_ocr.talon
-import screen_ocr  # dependency of gaze-ocr
-
-# Restore the unmodified path.
-sys.path = saved_path.copy()
+try:
+    sys.path.extend([path for path in package_paths if path not in sys.path])
+    import gaze_ocr
+    import gaze_ocr.talon
+    import screen_ocr  # dependency of gaze-ocr
+finally:
+    # Restore the unmodified path.
+    sys.path = saved_path.copy()
 
 mod = Module()
 ctx = Context()
