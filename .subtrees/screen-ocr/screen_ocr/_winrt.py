@@ -25,6 +25,11 @@ class WinRtBackend(_base.OcrBackend):
         import winrt.windows.storage.streams as streams
 
         engine = ocr.OcrEngine.try_create_from_user_profile_languages()
+        if not engine:
+            raise RuntimeError(
+                "Could not create OcrEngine. Try installing language packs: "
+                "https://github.com/wolfmanstout/screen-ocr/issues/8#issuecomment-1219610003"
+            )
         # Define this in the constructor to avoid SyntaxError in Python 2.7.
         async def run_ocr_async(image):
             bytes = image.convert("RGBA").tobytes()
