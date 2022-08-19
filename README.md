@@ -42,6 +42,8 @@ these will be preferred (e.g. so that faster binary installations can be used.)
   or squiggly.
 - Text caret can interfere with text recognition.
 - Command subtitles may cause disambiguation when selecting a range of text.
+- Dragon recognition timestamps are slightly off, leading to lower accuracy
+  especially during text selection. Works best with Conformer.
 
 ## Dependencies
 
