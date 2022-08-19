@@ -63,6 +63,12 @@ setting_ocr_debug_display_seconds = mod.setting(
     default=2,
     desc="Adjust how long debugging display is shown.",
 )
+setting_ocr_disambiguation_display_seconds = mod.setting(
+    "ocr_disambiguation_display_seconds",
+    type=float,
+    default=5,
+    desc="Adjust how long disambiguation display is shown. Use 0 to remove timeout.",
+)
 
 mod.mode("gaze_ocr_disambiguation")
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
@@ -243,6 +249,11 @@ def show_disambiguation():
                 location = (location[0] + match[0].height, location[1])
             used_locations.add(location)
             c.draw_text(str(i + 1), *location)
+        if setting_ocr_disambiguation_display_seconds.get():
+            cron.after(
+                f"{setting_ocr_disambiguation_display_seconds.get()}s",
+                disambiguation_canvas.close,
+            )
 
     actions.mode.enable("user.gaze_ocr_disambiguation")
     if disambiguation_canvas:
@@ -535,7 +546,6 @@ class GazeOcrActions:
 
     def hide_gaze_ocr_options():
         """Hide the disambiguation UI."""
-        global ambiguous_matches, disambiguation_generator, disambiguation_canvas
         actions.mode.disable("user.gaze_ocr_disambiguation")
         reset_disambiguation()
 
