@@ -15,26 +15,26 @@ from screen_ocr import Reader, ScreenContents, WordLocation
 
 
 class Controller:
-    """Mediates interaction with gaze tracking and OCR."""
+    """Mediates interaction with gaze tracking and OCR.
+
+    Provide Mouse and Keyboard from gaze_ocr.dragonfly or gaze_ocr.talon. AppActions is optional.
+    """
 
     def __init__(
         self,
         ocr_reader: Reader,
         eye_tracker,
+        mouse,
+        keyboard,
+        app_actions=None,
         save_data_directory: Optional[str] = None,
-        mouse=None,
-        keyboard=None,
     ):
-        if not mouse or not keyboard:
-            raise RuntimeError(
-                "Must provide keyboard and mouse implementation. "
-                "Import gaze_ocr.dragonfly or gaze_ocr.talon and use Mouse() and Keyboard()"
-            )
         self.ocr_reader = ocr_reader
         self.eye_tracker = eye_tracker
-        self.save_data_directory = save_data_directory
         self.mouse = mouse
         self.keyboard = keyboard
+        self.app_actions = app_actions
+        self.save_data_directory = save_data_directory
         self._change_radius = 10
         self._executor = futures.ThreadPoolExecutor(max_workers=1)
         self._future = None
@@ -240,7 +240,7 @@ class Controller:
         cursor_position: "before", "middle", or "after" (relative to the matching word).
         validate_location_function: Given a sequence of word locations, return whether to proceed with
                                     cursor movement.
-        include_whitespace: Include whitespace to the left of the words.
+        include_whitespace: Include whitespace adjacent to the words.
         timestamp: Use gaze position at the provided timestamp.
         click_offset_right: Adjust the X-coordinate when clicking.
         """
@@ -348,11 +348,22 @@ class Controller:
                 self.mouse.click()
                 if distance_from_right:
                     self.keyboard.left(distance_from_right)
-            if not distance_from_left and include_whitespace:
-                # Assume that there is whitespace adjacent to the word. This
-                # will gracefully fail if the word is the first in the
-                # editable text area.
-                self.keyboard.left(1)
+            if (
+                include_whitespace
+                and not distance_from_left
+                and self.app_actions
+                and not self.keyboard.is_shift_down()
+            ):
+                left_chars = self.app_actions.peek_left()
+                # Check that there is actually a space adjacent (not a newline). Google docs
+                # represents a newline as newline followed by space, so we handle that case as
+                # well.
+                if (
+                    len(left_chars) >= 2
+                    and left_chars[-1] == " "
+                    and left_chars[-2] != "\n"
+                ):
+                    self.keyboard.left(1)
         elif cursor_position == "middle":
             # Note: if it's helpful, we could change this to position the cursor
             # in the middle of the word.
@@ -404,11 +415,15 @@ class Controller:
                 self.mouse.click()
                 if distance_from_left:
                     self.keyboard.right(distance_from_left)
-            if not distance_from_right and include_whitespace:
-                # Assume that there is whitespace adjacent to the word. This
-                # will gracefully fail if the word is the last in the
-                # editable text area.
-                self.keyboard.right(1)
+            if (
+                include_whitespace
+                and not distance_from_right
+                and self.app_actions
+                and not self.keyboard.is_shift_down()
+            ):
+                right_chars = self.app_actions.peek_right()
+                if right_chars and right_chars[0] == " ":
+                    self.keyboard.right(1)
         return True
 
     def select_text(
@@ -479,7 +494,7 @@ class Controller:
             start_words,
             disambiguate=disambiguate,
             cursor_position="after" if after_start else "before",
-            include_whitespace=for_deletion,
+            include_whitespace=for_deletion and not after_start,
             click_offset_right=click_offset_right,
         )
         if not start_locations:

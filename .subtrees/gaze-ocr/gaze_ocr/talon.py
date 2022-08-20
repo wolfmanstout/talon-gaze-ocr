@@ -1,6 +1,7 @@
 import bisect
 from collections import deque
 from dataclasses import dataclass
+from typing import Optional
 
 from talon import actions, app, tracking_system, ui
 from talon.types import Point2d
@@ -44,6 +45,9 @@ class Keyboard:
         actions.key("shift:up")
         self._shift = False
 
+    def is_shift_down(self):
+        return self._shift
+
     def left(self, n=1):
         # HACK: When adjusting selected text, Mac does not perform the
         # adjustments wherever the cursor was last placed. Instead, it bases
@@ -66,6 +70,14 @@ class Keyboard:
                 actions.key("shift-right")
             else:
                 actions.key("right")
+
+
+class AppActions:
+    def peek_left(self) -> Optional[str]:
+        return actions.user.dictation_peek_left()
+
+    def peek_right(self) -> Optional[str]:
+        return actions.user.dictation_peek_right()
 
 
 @dataclass

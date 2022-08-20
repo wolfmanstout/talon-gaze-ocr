@@ -193,9 +193,10 @@ def on_ready():
     gaze_ocr_controller = gaze_ocr.Controller(
         ocr_reader,
         tracker,
-        save_data_directory=setting_ocr_logging_dir.get(),
         mouse=gaze_ocr.talon.Mouse(),
         keyboard=gaze_ocr.talon.Keyboard(),
+        app_actions=gaze_ocr.talon.AppActions(),
+        save_data_directory=setting_ocr_logging_dir.get(),
     )
 
 
@@ -301,7 +302,6 @@ def move_cursor_to_word_generator(text: TimestampedText):
 def move_text_cursor_to_word_generator(
     text: TimestampedText,
     position: str,
-    include_whitespace: bool = False,
     hold_shift: bool = False,
 ):
     result = yield from gaze_ocr_controller.move_text_cursor_to_words_generator(
@@ -310,7 +310,6 @@ def move_text_cursor_to_word_generator(
         cursor_position=position,
         timestamp=text.start,
         click_offset_right=setting_ocr_click_offset_right.get(),
-        include_whitespace=include_whitespace,
         hold_shift=hold_shift,
     )
     if not result:
@@ -357,7 +356,6 @@ def perform_ocr_action_generator(
         yield from move_text_cursor_to_word_generator(
             text_range.end,
             position="before" if text_range.before_end else "after",
-            include_whitespace=False,
             hold_shift=True,
         )
     else:
@@ -409,15 +407,9 @@ class GazeOcrActions:
     def move_text_cursor_to_word(
         text: TimestampedText,
         position: str,
-        include_whitespace: bool = False,
-        hold_shift: bool = False,
     ):
         """Moves text cursor near onscreen word."""
-        begin_generator(
-            move_text_cursor_to_word_generator(
-                text, position, include_whitespace, hold_shift
-            )
-        )
+        begin_generator(move_text_cursor_to_word_generator(text, position))
 
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
         """Moves mouse cursor to gaze location."""
@@ -427,13 +419,10 @@ class GazeOcrActions:
         ocr_action: str,
         ocr_modifier: str,
         text_range: TextRange,
-        for_deletion: Optional[bool] = None,
     ):
         """Selects text and performs an action."""
         begin_generator(
-            perform_ocr_action_generator(
-                ocr_action, ocr_modifier, text_range, for_deletion
-            )
+            perform_ocr_action_generator(ocr_action, ocr_modifier, text_range)
         )
 
     def replace_text(ocr_modifier: str, text_range: TextRange, replacement: str):

@@ -22,14 +22,22 @@ class Mouse:
 
 
 class Keyboard:
+    def __init__(self):
+        self._shift = False
+
     def type(self, text):
         dragonfly.Text(text.replace("%", "%%")).execute()
 
     def shift_down(self):
         dragonfly.Key("shift:down").execute()
+        self._shift = True
 
     def shift_up(self):
         dragonfly.Key("shift:up").execute()
+        self._shift = False
+
+    def is_shift_down(self):
+        return self._shift
 
     def left(self, n=1):
         dragonfly.Key("left:{}".format(n)).execute()
