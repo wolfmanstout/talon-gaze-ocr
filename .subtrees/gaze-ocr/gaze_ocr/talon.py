@@ -1,4 +1,5 @@
 import bisect
+import logging
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional
@@ -74,10 +75,20 @@ class Keyboard:
 
 class AppActions:
     def peek_left(self) -> Optional[str]:
-        return actions.user.dictation_peek_left()
+        try:
+            return actions.user.dictation_peek_left()
+        # If action is unavailable (e.g. no knausj).
+        except KeyError:
+            logging.warning("Action user.dictation_peek_left is unavailable.")
+            return None
 
     def peek_right(self) -> Optional[str]:
-        return actions.user.dictation_peek_right()
+        try:
+            return actions.user.dictation_peek_right()
+        # If action is unavailable (e.g. no knausj).
+        except KeyError:
+            logging.warning("Action user.dictation_peek_right is unavailable.")
+            return None
 
 
 @dataclass

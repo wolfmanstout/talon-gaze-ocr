@@ -136,6 +136,9 @@ default_punctuation_words = {
 def get_knausj_homophones():
     homophones_file = Path(__file__).parents[1] / "knausj_talon/code/homophones.csv"
     phones = {}
+    if not homophones_file.exists():
+        logging.warning(f"Could not find knausj homophones file: {homophones_file}")
+        return phones
     with open(homophones_file) as f:
         for line in f:
             words = line.rstrip().split(",")
