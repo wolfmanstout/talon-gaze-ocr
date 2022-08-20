@@ -357,8 +357,7 @@ def perform_ocr_action_generator(
         yield from move_text_cursor_to_word_generator(
             text_range.end,
             position="before" if text_range.before_end else "after",
-            # Handle common case of cleanly removing the previous words.
-            include_whitespace=text_range.before_end,
+            include_whitespace=False,
             hold_shift=True,
         )
     else:
