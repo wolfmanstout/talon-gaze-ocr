@@ -6,7 +6,7 @@ from talon import actions, app, tracking_system, ui
 from talon.types import Point2d
 
 
-class Mouse(object):
+class Mouse:
     def move(self, coordinates):
         actions.mouse_move(*coordinates)
 
@@ -28,7 +28,7 @@ class Mouse(object):
             actions.user.mouse_scroll_up()
 
 
-class Keyboard(object):
+class Keyboard:
     def __init__(self):
         # shift:down won't affect future keystrokes on Mac, so we track it ourselves.
         self._shift = False
@@ -69,14 +69,14 @@ class Keyboard(object):
 
 
 @dataclass
-class BoundingBox(object):
+class BoundingBox:
     left: int
     right: int
     top: int
     bottom: int
 
 
-class TalonEyeTracker(object):
+class TalonEyeTracker:
     def __init__(self):
         # !!! Using unstable private API that may break at any time !!!
         tracking_system.register("gaze", self._on_gaze)

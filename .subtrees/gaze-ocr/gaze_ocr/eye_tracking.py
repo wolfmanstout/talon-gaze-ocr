@@ -4,7 +4,7 @@ import math
 import sys
 
 
-class EyeTracker(object):
+class EyeTracker:
     _instance = None
 
     @classmethod

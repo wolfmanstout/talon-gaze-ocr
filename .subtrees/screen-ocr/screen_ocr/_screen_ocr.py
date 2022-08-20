@@ -57,7 +57,7 @@ except ImportError:
     screen = rect = None
 
 
-class Reader(object):
+class Reader:
     """Reads on-screen text using OCR."""
 
     @classmethod
@@ -387,7 +387,7 @@ class WordLocation:
         return (self.right, self.middle_y)
 
 
-class ScreenContents(object):
+class ScreenContents:
     """OCR'd contents of a portion of the screen."""
 
     def __init__(

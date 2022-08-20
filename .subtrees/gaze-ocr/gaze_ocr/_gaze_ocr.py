@@ -14,7 +14,7 @@ from typing import Callable, Generator, Optional, Sequence, Tuple
 from screen_ocr import Reader, ScreenContents, WordLocation
 
 
-class Controller(object):
+class Controller:
     """Mediates interaction with gaze tracking and OCR."""
 
     def __init__(

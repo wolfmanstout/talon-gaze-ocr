@@ -1,7 +1,7 @@
 import dragonfly
 
 
-class Mouse(object):
+class Mouse:
     def move(self, coordinates):
         dragonfly.Mouse("[{}, {}]".format(*coordinates)).execute()
 
@@ -21,7 +21,7 @@ class Mouse(object):
         dragonfly.Mouse("wheelup:{}".format(n)).execute()
 
 
-class Keyboard(object):
+class Keyboard:
     def type(self, text):
         dragonfly.Text(text.replace("%", "%%")).execute()
 
@@ -38,7 +38,7 @@ class Keyboard(object):
         dragonfly.Key("right:{}".format(n)).execute()
 
 
-class Windows(object):
+class Windows:
     def get_monitor_size(self):
         primary = dragonfly.Monitor.get_all_monitors()[0]
         return (primary.rectangle.dx, primary.rectangle.dy)
