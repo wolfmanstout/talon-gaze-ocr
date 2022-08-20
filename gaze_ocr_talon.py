@@ -586,25 +586,14 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def control_click_text(text: TimestampedText):
+    def modifier_click_text(modifier: str, text: TimestampedText):
         """Control-click on the provided on-screen text."""
 
         def run():
             yield from move_cursor_to_word_generator(text)
-            actions.key("ctrl:down")
+            actions.key(f"{modifier}:down")
             actions.mouse_click(0)
-            actions.key("ctrl:up")
-
-        begin_generator(run())
-
-    def command_click_text(text: TimestampedText):
-        """Command-click on the provided on-screen text."""
-
-        def run():
-            yield from move_cursor_to_word_generator(text)
-            actions.key("cmd:down")
-            actions.mouse_click(0)
-            actions.key("cmd:up")
+            actions.key(f"{modifier}:up")
 
         begin_generator(run())
 
