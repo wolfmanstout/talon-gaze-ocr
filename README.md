@@ -60,3 +60,21 @@ To contribute, changes can be pushed and pulled to all repositories using
 `push_all.sh` and `pull_all.sh`, provided that `origin`, `screen-ocr`,
 `gaze-ocr`, `rapidfuzz`, and `jarowinkler` are all configured as git remotes,
 and `git subtree` is available.
+
+## Running without knausj_talon
+
+As noted in the installation instructions,
+[knausj_talon](https://github.com/knausj85/knausj_talon) is highly recommended,
+but most functionality will still be available in degraded form without it (and
+you will see some warning logs). Missing functionality:
+
+- The main `user.timestamped_prose` capture is missing custom vocabulary and
+  punctuation support.
+- No homophones means no automatic smart handling of homophones (e.g. if "hear"
+  is recognized it won't match "here" onscreen).
+- "scroll" commands use `user.mouse_scroll_*()`, so they won't work.
+- "replace" and "say" commands use `user.prose` to insert text, so they won't
+  work.
+- `actions.user.dictation_peek_left` not available means text
+  deletion/replacement isn't as smart (i.e. extra space is left over when a word
+  is deleted).
