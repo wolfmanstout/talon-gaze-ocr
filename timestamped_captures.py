@@ -28,31 +28,39 @@ class TextPosition:
     position: str
 
 
-# "edit" is frequently misrecognized as "at it", and is common in UIs.
-@mod.capture(
-    rule="(<phrase> | {user.vocabulary} | {user.punctuation} | {user.prose_snippets})+ | edit"
-)
+@mod.capture(rule="<user.timestamped_phrase>+")
 def timestamped_prose(m) -> TimestampedText:
     """Dictated text appearing onscreen."""
-    words = []
-    start = None
-    end = None
-    for item in m:
-        if isinstance(item, Phrase):
-            words.extend(
-                actions.dictate.replace_words(actions.dictate.parse_words(item))
-            )
-            if not start:
-                start = item.words[0].start
-            end = item.words[-1].end
-        else:
-            words.append(str(item))
-            if not start:
-                start = item.start
-            end = item.end
-    assert start
-    assert end
-    return TimestampedText(text=" ".join(words), start=start, end=end)
+    return TimestampedText(
+        text=" ".join([item.text for item in m]), start=m[0].start, end=m[-1].end
+    )
+
+
+# Forward to enable easy extension via a Context.
+@mod.capture(rule="<user.timestamped_phrase_default>")
+def timestamped_phrase(m) -> TimestampedText:
+    """Dictated phrase appearing onscreen."""
+    return m[0]
+
+
+# "edit" is frequently misrecognized as "at it", and is common in UIs.
+@mod.capture(
+    rule="<phrase> | {user.vocabulary} | {user.punctuation} | {user.prose_snippets} | edit"
+)
+def timestamped_phrase_default(m) -> TimestampedText:
+    """Dictated phrase appearing onscreen (default capture)."""
+    item = m[0]
+    if isinstance(item, Phrase):
+        text = " ".join(
+            actions.dictate.replace_words(actions.dictate.parse_words(item))
+        )
+        start = item.words[0].start
+        end = item.words[-1].end
+    else:
+        text = str(item)
+        start = item.start
+        end = item.end
+    return TimestampedText(text=text, start=start, end=end)
 
 
 @mod.capture(rule="[before | after] <self.timestamped_prose>")
