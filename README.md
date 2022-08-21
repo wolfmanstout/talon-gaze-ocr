@@ -24,6 +24,7 @@ these will be preferred (e.g. so that faster binary installations can be used.)
 - Click, select, or position caret adjacent to any text visible onscreen.
 - Tracks eye position as you speak to filter matches.
 - Offers disambiguation if multiple matches are present.
+- Applies fuzzy matching to one or more spoken words.
 - Works with or without an eye tracker (just expect slower processing and more
   disambiguation).
 - Matches homophones of recognized words (based on CSV in knausj). Also matches
@@ -34,7 +35,7 @@ these will be preferred (e.g. so that faster binary installations can be used.)
 ## Known issues:
 
 - Only operates on the main screen, as defined by Talon.
-- Some settings changes require Talon restart.
+- Updates (via git pull) and some settings changes require Talon restart.
 - Numbers must be referred to by their individual digits.
 - Modifications to punctuation and digit names in knausj not leveraged.
 - Depends on OS-provided text recognition (OCR), which is not perfectly accurate.
