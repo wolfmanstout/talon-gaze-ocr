@@ -1,4 +1,3 @@
-import logging
 import sys
 from math import floor
 from pathlib import Path
@@ -268,14 +267,6 @@ def show_disambiguation():
     disambiguation_canvas.freeze()
 
 
-class StopAndLogError(Exception):
-    """Raised to stop execution and log error without generating excessive logspam.
-    Only works when raised inside a generator."""
-
-    def __init__(self, error):
-        self.error = error
-
-
 def begin_generator(generator):
     global ambiguous_matches, disambiguation_generator, disambiguation_canvas
     reset_disambiguation()
@@ -286,8 +277,6 @@ def begin_generator(generator):
     except StopIteration:
         # Execution completed without need for disambiguation.
         pass
-    except StopAndLogError as e:
-        logging.error(f"talon-gaze-ocr: {e.error}")
 
 
 def move_cursor_to_word_generator(text: TimestampedText):
@@ -299,7 +288,7 @@ def move_cursor_to_word_generator(text: TimestampedText):
     )
     if not result:
         actions.user.show_ocr_overlay("text", False, f"{text.text}")
-        raise StopAndLogError(f"Unable to find: {text}")
+        raise RuntimeError('Unable to find: "{}"'.format(text))
 
 
 def move_text_cursor_to_word_generator(
@@ -317,7 +306,7 @@ def move_text_cursor_to_word_generator(
     )
     if not result:
         actions.user.show_ocr_overlay("text", False, f"{text.text}")
-        raise StopAndLogError(f"Unable to find: {text}")
+        raise RuntimeError('Unable to find: "{}"'.format(text))
 
 
 def select_text_generator(
@@ -345,7 +334,7 @@ def select_text_generator(
         actions.user.show_ocr_overlay(
             "text", False, f"{start.text}...{end.text if end else None}"
         )
-        raise StopAndLogError(f"Unable to select {start} to {end}")
+        raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
 
 
 def perform_ocr_action_generator(
