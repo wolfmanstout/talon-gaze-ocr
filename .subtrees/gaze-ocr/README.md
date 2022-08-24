@@ -62,12 +62,12 @@ class CommandRule(MappingRule):
         "<text> click": gaze_ocr.dragonfly.MoveCursorToWordAction(gaze_ocr_controller, "%(text)s") + Mouse("left"),
 
         # Move the cursor for text editing.
-        "go before <text>": gaze_ocr.dragonfly.MoveCursorToWordAction(gaze_ocr_controller, "%(text)s", "before") + Mouse("left"),
-        "go after <text>": gaze_ocr.dragonfly.MoveCursorToWordAction(gaze_ocr_controller, "%(text)s", "after") + Mouse("left"),
+        "go before <text>": gaze_ocr.dragonfly.MoveTextCursorAction(gaze_ocr_controller, "%(text)s", "before"),
+        "go after <text>": gaze_ocr.dragonfly.MoveTextCursorAction(gaze_ocr_controller, "%(text)s", "after"),
 
         # Select text starting from the current position.
-        "words before <text>": gaze_ocr.dragonfly.MoveCursorToWordAction(gaze_ocr_controller, "%(text)s", "before") + Key("shift:down") + Mouse("left") + Key("shift:up"),
-        "words after <text>": gaze_ocr.dragonfly.MoveCursorToWordAction(gaze_ocr_controller, "%(text)s", "after") + Key("shift:down") + Mouse("left") + Key("shift:up"),
+        "words before <text>": Key("shift:down") + gaze_ocr.dragonfly.MoveTextCursorAction(gaze_ocr_controller, "%(text)s", "before") + Key("shift:up"),
+        "words after <text>": Key("shift:down") + gaze_ocr.dragonfly.MoveTextCursorAction(gaze_ocr_controller, "%(text)s", "after") + Key("shift:up"),
 
         # Select a phrase or range of text.
         "words <text> [through <text2>]": gaze_ocr.dragonfly.SelectTextAction(gaze_ocr_controller, "%(text)s", "%(text2)s"),

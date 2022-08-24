@@ -67,7 +67,13 @@ class MoveCursorToWordAction(dragonfly.ActionBase):
         dynamic_word = self.word
         if data:
             dynamic_word = self.word % data
-        return self.controller.move_cursor_to_word(dynamic_word, self.cursor_position)
+        # On Windows, works best if cursor is slightly offset to the right.
+        return (
+            self.controller.move_cursor_to_word(
+                dynamic_word, self.cursor_position, click_offset_right=1
+            )
+            or False
+        )
 
 
 class MoveTextCursorAction(dragonfly.ActionBase):
@@ -81,8 +87,12 @@ class MoveTextCursorAction(dragonfly.ActionBase):
         dynamic_word = self.word
         if data:
             dynamic_word = self.word % data
-        return self.controller.move_text_cursor_to_word(
-            dynamic_word, self.cursor_position
+        # On Windows, works best if cursor is slightly offset to the right.
+        return (
+            self.controller.move_text_cursor_to_word(
+                dynamic_word, self.cursor_position, click_offset_right=1
+            )
+            or False
         )
 
 
@@ -106,6 +116,13 @@ class SelectTextAction(dragonfly.ActionBase):
                     dynamic_end_word = self.end_word % data
                 except KeyError:
                     dynamic_end_word = None
-        return self.controller.select_text(
-            dynamic_start_word, dynamic_end_word, for_deletion=self.for_deletion
+        # On Windows, works best if cursor is slightly offset to the right.
+        return (
+            self.controller.select_text(
+                dynamic_start_word,
+                dynamic_end_word,
+                for_deletion=self.for_deletion,
+                click_offset_right=1,
+            )
+            or False
         )
