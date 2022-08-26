@@ -1,8 +1,10 @@
 # gaze-ocr
 
-The `gaze-ocr` package makes easy to apply OCR to wherever the user is
-looking. This library is designed for voice control and is currently tied to
-Dragonfly. See handsfreecoding.org for more information.
+The `gaze-ocr` package makes easy to apply OCR to wherever the user is looking.
+This library is designed for voice control. The following instructions are for
+use with Dragonfly. For Talon, see
+https://github.com/wolfmanstout/talon-gaze-ocr. See handsfreecoding.org for more
+information about this package.
 
 ## Installation
 
@@ -45,13 +47,13 @@ from dragonfly import (
 DLL_DIRECTORY = "c:/Users/james/Downloads/tobii.interaction.0.7.3/"
 
 # Initialize eye tracking and OCR.
-tracker = gaze_ocr.eye_tracking.EyeTracker.get_connected_instance(DLL_DIRECTORY, 
+tracker = gaze_ocr.eye_tracking.EyeTracker.get_connected_instance(DLL_DIRECTORY,
                                                                   mouse=gaze_ocr.dragonfly.Mouse(),
                                                                   keyboard=gaze_ocr.dragonfly.Keyboard(),
                                                                   windows=gaze_ocr.dragonfly.Windows())
 ocr_reader = screen_ocr.Reader.create_fast_reader()
 gaze_ocr_controller = gaze_ocr.Controller(ocr_reader,
-                                          tracker, 
+                                          tracker,
                                           mouse=gaze_ocr.dragonfly.Mouse(),
                                           keyboard=gaze_ocr.dragonfly.Keyboard())
 

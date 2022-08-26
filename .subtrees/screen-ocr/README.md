@@ -15,7 +15,7 @@ WinRT is a Windows-only backend that is very fast and reasonably accurate. It re
 Tesseract is a cross-platform backend that is much slower and slightly less accurate than WinRT. To install screen-ocr with Tesseract support:
 
 1. Install Tesseract binaries. For Windows, see
-https://github.com/UB-Mannheim/tesseract/wiki.
+   https://github.com/UB-Mannheim/tesseract/wiki.
 2. pip install screen-ocr[tesseract]
 
 ### EasyOCR
@@ -30,4 +30,4 @@ If using Tesseract with a custom installation directory on Windows, set
 `tesseract_data_path` and `tesseract_command` paths appropriately when
 constructing a `Reader` instance.
 
-See also [gaze-ocr](https://github.com/wolfmanstout/gaze-ocr/blob/master/gaze_ocr/_gaze_ocr.py) for more a more involved usage example (note: there is no `import screen_ocr` because ocr_reader is an injected instance of `screen_ocr.Reader`).
+See also [gaze-ocr](https://github.com/wolfmanstout/gaze-ocr/blob/master/gaze_ocr/_gaze_ocr.py) for more a more involved usage example..
