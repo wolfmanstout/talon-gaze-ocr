@@ -244,7 +244,7 @@ def show_disambiguation():
         used_locations = set()
         for i, match in enumerate(ambiguous_matches):
             c.paint.typeface = "arial"
-            c.paint.textsize = round(match[0].height * 2)
+            c.paint.textsize = max(round(match[0].height * 2), 15)
             c.paint.font.embolden = nearest == match
             c.paint.style = c.paint.Style.FILL
             c.paint.color = debug_color
