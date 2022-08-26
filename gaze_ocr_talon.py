@@ -54,7 +54,7 @@ setting_ocr_click_offset_right = mod.setting(
 setting_ocr_select_pause_seconds = mod.setting(
     "ocr_select_pause_seconds",
     type=float,
-    default=0.01,
+    default=0.5,
     desc="Adjust the pause between clicks when performing a selection.",
 )
 setting_ocr_debug_display_seconds = mod.setting(
