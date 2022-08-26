@@ -79,6 +79,7 @@ ctx.lists["self.ocr_actions"] = {
     "carve": "cut",
     "paste to": "paste",
     "clear": "delete",
+    "change": "delete",
     "delete": "delete",
     "chuck": "delete",
     "cap": "capitalize",
