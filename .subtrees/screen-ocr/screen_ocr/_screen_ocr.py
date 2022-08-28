@@ -51,10 +51,10 @@ try:
 except ImportError:
     Image = ImageGrab = ImageOps = None
 try:
-    from talon import screen
+    from talon import actions, screen
     from talon.types import rect
 except ImportError:
-    screen = rect = None
+    screen = rect = actions = None
 
 
 class Reader:
@@ -199,7 +199,7 @@ class Reader:
         """Return ScreenContents nearby the provided coordinates."""
         crop_radius = crop_radius or self.radius
         search_radius = search_radius or self.search_radius
-        screenshot, bounding_box = self._screenshot_nearby(
+        screenshot, bounding_box = self._clean_screenshot_nearby(
             screen_coordinates, crop_radius
         )
         return self.read_image(
@@ -211,7 +211,7 @@ class Reader:
 
     def read_screen(self):
         """Return ScreenContents for the entire screen."""
-        screenshot, bounding_box = self._screenshot_nearby(None, None)
+        screenshot, bounding_box = self._clean_screenshot_nearby(None, None)
         return self.read_image(
             screenshot,
             offset=bounding_box[0:2],
@@ -244,6 +244,25 @@ class Reader:
     # TODO: Refactor methods into backend instead of using this.
     def _is_talon_backend(self):
         return _talon and isinstance(self._backend, _talon.TalonBackend)
+
+    def _clean_screenshot_nearby(
+        self, screen_coordinates: Optional[Tuple[int, int]], crop_radius: Optional[int]
+    ):
+        if not actions:
+            return self._screenshot_nearby(screen_coordinates, crop_radius)
+        # Attempt to turn off HUD if talon_hud is installed.
+        try:
+            actions.user.hud_set_visibility(False)
+        except:
+            pass
+        try:
+            return self._screenshot_nearby(screen_coordinates, crop_radius)
+        finally:
+            # Attempt to turn on HUD if talon_hud is installed.
+            try:
+                actions.user.hud_set_visibility(True)
+            except:
+                pass
 
     def _screenshot_nearby(
         self, screen_coordinates: Optional[Tuple[int, int]], crop_radius: Optional[int]
