@@ -110,6 +110,8 @@ class TalonEyeTracker:
         self._ts_queue = deque(maxlen=1000)
 
     def _on_gaze(self, frame):
+        if not frame or not frame.gaze:
+            return
         self._queue.append(frame)
         self._ts_queue.append(frame.ts)
 
@@ -156,15 +158,15 @@ class TalonEyeTracker:
             frame = self._queue[i]
             if frame.ts < start_timestamp - 0.1 or frame.ts > end_timestamp + 0.1:
                 continue
-            left = min(frame.gaze.x, left) if left else frame.gaze.x
-            top = min(frame.gaze.y, top) if top else frame.gaze.y
-            right = max(frame.gaze.x, right) if right else frame.gaze.x
-            bottom = max(frame.gaze.y, bottom) if bottom else frame.gaze.y
-        if not left or not right or not top or not bottom:
-            assert not left
-            assert not right
-            assert not top
-            assert not bottom
+            left = min(frame.gaze.x, left) if left is not None else frame.gaze.x
+            top = min(frame.gaze.y, top) if top is not None else frame.gaze.y
+            right = max(frame.gaze.x, right) if right is not None else frame.gaze.x
+            bottom = max(frame.gaze.y, bottom) if bottom is not None else frame.gaze.y
+        if left is None or right is None or top is None or bottom is None:
+            assert left is None
+            assert right is None
+            assert top is None
+            assert bottom is None
             return None
         top_left = self._gaze_to_pixels(Point2d(x=left, y=top))
         bottom_right = self._gaze_to_pixels(Point2d(x=right, y=bottom))
