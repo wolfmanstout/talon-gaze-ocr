@@ -252,7 +252,7 @@ class Reader:
             return self._screenshot_nearby(screen_coordinates, crop_radius)
         # Attempt to turn off HUD if talon_hud is installed.
         try:
-            actions.user.hud_set_visibility(False)
+            actions.user.hud_set_visibility(False, pause_seconds=0.01)
         except:
             pass
         try:
@@ -260,7 +260,7 @@ class Reader:
         finally:
             # Attempt to turn on HUD if talon_hud is installed.
             try:
-                actions.user.hud_set_visibility(True)
+                actions.user.hud_set_visibility(True, pause_seconds=0.001)
             except:
                 pass
 
