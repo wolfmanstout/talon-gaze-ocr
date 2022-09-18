@@ -472,12 +472,18 @@ class ScreenContents:
         result = self.find_nearest_words(target_word)
         return result[0] if (result and len(result) == 1) else None
 
-    def find_nearest_words(self, target: str) -> Optional[Sequence[WordLocation]]:
+    def find_nearest_words(
+        self,
+        target: str,
+        filter_function: Optional[Callable[[Sequence[WordLocation]], bool]] = None,
+    ) -> Optional[Sequence[WordLocation]]:
         """Return the location of the nearest sequence of the provided words.
 
         Uses fuzzy matching.
         """
         sequences = self.find_matching_words(target)
+        if filter_function:
+            sequences = list(filter(filter_function, sequences))
         if not sequences:
             return None
         return self.find_nearest_words_within_matches(sequences)

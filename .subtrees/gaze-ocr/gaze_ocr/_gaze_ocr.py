@@ -220,13 +220,14 @@ class Controller:
         # new_patch = new_screenshot.crop(new_bounding_box)
         # return ImageChops.difference(new_patch, old_patch).getbbox() is not None
 
-    ValidateLocationCallable = Callable[[Sequence[WordLocation]], bool]
+    # Returns true if the location should be included as a candidate.
+    FilterLocationCallable = Callable[[Sequence[WordLocation]], bool]
 
     def move_text_cursor_to_words(
         self,
         words: str,
         cursor_position: str = "middle",
-        validate_location_function: Optional[ValidateLocationCallable] = None,
+        filter_location_function: Optional[FilterLocationCallable] = None,
         include_whitespace: bool = False,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
@@ -238,7 +239,7 @@ class Controller:
         Arguments:
         words: The word or phrase to search for.
         cursor_position: "before", "middle", or "after" (relative to the matching word).
-        validate_location_function: Given a sequence of word locations, return whether to proceed with
+        filter_location_function: Given a sequence of word locations, return whether to proceed with
                                     cursor movement.
         include_whitespace: Include whitespace adjacent to the words.
         timestamp: Use gaze position at the provided timestamp.
@@ -249,7 +250,7 @@ class Controller:
                 words,
                 disambiguate=False,
                 cursor_position=cursor_position,
-                validate_location_function=validate_location_function,
+                filter_location_function=filter_location_function,
                 include_whitespace=include_whitespace,
                 timestamp=timestamp,
                 click_offset_right=click_offset_right,
@@ -261,7 +262,7 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        validate_location_function: Optional[ValidateLocationCallable] = None,
+        filter_location_function: Optional[FilterLocationCallable] = None,
         include_whitespace: bool = False,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
@@ -279,8 +280,12 @@ class Controller:
         screen_contents = self.latest_screen_contents()
         if disambiguate:
             matches = screen_contents.find_matching_words(words)
+            if filter_location_function:
+                matches = list(filter(filter_location_function, matches))
         else:
-            match = screen_contents.find_nearest_words(words)
+            match = screen_contents.find_nearest_words(
+                words, filter_function=filter_location_function
+            )
             matches = [match] if match else []
         self._write_data(screen_contents, words, matches)
         if not matches:
@@ -289,8 +294,6 @@ class Controller:
             locations = yield matches
         else:
             locations = matches[0]
-        if validate_location_function and not validate_location_function(locations):
-            return None
         if hold_shift:
             self.keyboard.shift_down()
         try:
@@ -523,7 +526,7 @@ class Controller:
                     > threshold_squared
                 ):
                     self.read_nearby()
-            validate_function = lambda location: self._is_valid_selection(
+            filter_function = lambda location: self._is_valid_selection(
                 start_locations[0].start_coordinates, location[-1].end_coordinates
             )
             # Always click after the word to avoid subword selection issues on Windows.
@@ -532,7 +535,7 @@ class Controller:
                     end_words,
                     disambiguate=disambiguate,
                     cursor_position="before" if before_end else "after",
-                    validate_location_function=validate_function,
+                    filter_location_function=filter_function,
                     include_whitespace=False,
                     click_offset_right=click_offset_right,
                     hold_shift=True,
