@@ -1,10 +1,12 @@
 import bisect
 import logging
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
 from talon import actions, app, tracking_system, ui
+from talon.track import tobii
 from talon.types import Point2d
 
 
@@ -100,6 +102,8 @@ class BoundingBox:
 
 
 class TalonEyeTracker:
+    STALE_GAZE_THRESHOLD_SECONDS = 0.1
+
     def __init__(self):
         # !!! Using unstable private API that may break at any time !!!
         tracking_system.register("gaze", self._on_gaze)
@@ -109,17 +113,21 @@ class TalonEyeTracker:
         # TODO: Remove once Talon is upgraded to Python 3.10 and bisect supports key arg.
         self._ts_queue = deque(maxlen=1000)
 
-    def _on_gaze(self, frame):
+    def _on_gaze(self, frame: tobii.GazeFrame):
         if not frame or not frame.gaze:
             return
         self._queue.append(frame)
         self._ts_queue.append(frame.ts)
 
     def has_gaze_point(self):
-        return self._queue
+        if not self._queue:
+            return False
+        return (
+            self._queue[-1].ts > time.perf_counter() - self.STALE_GAZE_THRESHOLD_SECONDS
+        )
 
     def get_gaze_point(self):
-        if not self._queue:
+        if not self.has_gaze_point():
             return None
         return self._gaze_to_pixels(self._queue[-1].gaze)
 
@@ -134,7 +142,7 @@ class TalonEyeTracker:
         if frame_index == len(self._queue):
             frame_index -= 1
         frame = self._queue[frame_index]
-        if abs(frame.ts - timestamp) > 0.1:
+        if abs(frame.ts - timestamp) > self.STALE_GAZE_THRESHOLD_SECONDS:
             print(
                 "No gaze history available at that time: {}. Range: [{}, {}]".format(
                     timestamp, self._ts_queue[0], self._ts_queue[-1]
