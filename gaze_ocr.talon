@@ -15,11 +15,11 @@ mode: dictation
 (eye | i) middle (touch | click):
     user.move_cursor_to_gaze_point()
     mouse_click(2)
-(eye | i) control (touch | click):
+(eye | i) <user.modifiers> (touch | click):
     user.move_cursor_to_gaze_point()
-    key(ctrl:down)
+    key("{modifiers}:down")
     mouse_click(0)
-    key(ctrl:up)
+    key("{modifiers}:up")
 
 scroll up:
     user.move_cursor_to_gaze_point(0, 40)
