@@ -84,6 +84,13 @@ ctx.lists["self.ocr_actions"] = {
     "chuck": "delete",
     "cap": "capitalize",
     "lower": "lowercase",
+    # Note: the following are not defined by default in knausj.
+    "bold": "bold",
+    "italic": "italic",
+    "strikethrough": "strikethrough",
+    "number": "number_list",
+    "bullet": "bullet_list",
+    "link": "link",
 }
 ctx.lists["self.ocr_modifiers"] = {
     "all": "selectAll",
@@ -387,6 +394,18 @@ def perform_ocr_action_generator(
     elif ocr_action == "lowercase":
         text = actions.edit.selected_text()
         actions.insert(text.lower())
+    elif ocr_action == "bold":
+        actions.user.bold()
+    elif ocr_action == "italic":
+        actions.user.italic()
+    elif ocr_action == "strikethrough":
+        actions.user.strikethrough()
+    elif ocr_action == "number_list":
+        actions.user.number_list()
+    elif ocr_action == "bullet_list":
+        actions.user.bullet_list()
+    elif ocr_action == "link":
+        actions.user.hyperlink()
     else:
         raise RuntimeError(f"Action not supported: {ocr_action}")
 
