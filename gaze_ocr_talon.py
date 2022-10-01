@@ -6,6 +6,7 @@ from typing import Dict, Iterable, Optional, Sequence
 import numpy as np
 from talon import Context, Module, actions, app, cron, screen, settings
 from talon.canvas import Canvas
+from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
 
 from .timestamped_captures import TextRange, TimestampedText
@@ -250,9 +251,13 @@ def show_disambiguation():
         nearest = contents.find_nearest_words_within_matches(ambiguous_matches)
         used_locations = set()
         for i, match in enumerate(ambiguous_matches):
-            c.paint.typeface = "arial"
+            if nearest == match:
+                c.paint.typeface = Typeface.from_name(
+                    "", Fontstyle.new(weight=700, width=5)
+                )
+            else:
+                c.paint.typeface = ""
             c.paint.textsize = max(round(match[0].height * 2), 15)
-            c.paint.font.embolden = nearest == match
             c.paint.style = c.paint.Style.FILL
             c.paint.color = debug_color
             location = (match[0].left, match[0].top)
@@ -270,7 +275,7 @@ def show_disambiguation():
     actions.mode.enable("user.gaze_ocr_disambiguation")
     if disambiguation_canvas:
         disambiguation_canvas.close()
-    disambiguation_canvas = Canvas.from_rect(screen.main().rect)
+    disambiguation_canvas = Canvas.from_screen(screen.main())
     disambiguation_canvas.register("draw", on_draw)
     disambiguation_canvas.freeze()
 
@@ -493,7 +498,7 @@ class GazeOcrActions:
                     contents.search_radius,
                 )
             if query:
-                c.paint.typeface = "arial"
+                c.paint.typeface = ""
                 c.paint.textsize = 30
                 c.paint.style = c.paint.Style.FILL
                 c.paint.color = "FFFFFF"
@@ -504,7 +509,7 @@ class GazeOcrActions:
             for line in contents.result.lines:
                 for word in line.words:
                     if type == "text":
-                        c.paint.typeface = "arial"
+                        c.paint.typeface = ""
                         c.paint.textsize = floor(word.height)
                         c.paint.style = c.paint.Style.FILL
                         c.paint.color = debug_color
@@ -526,7 +531,7 @@ class GazeOcrActions:
                 f"{setting_ocr_debug_display_seconds.get()}s", debug_canvas.close
             )
 
-        debug_canvas = Canvas.from_rect(screen.main().rect)
+        debug_canvas = Canvas.from_screen(screen.main())
         debug_canvas.register("draw", on_draw)
         debug_canvas.freeze()
 
