@@ -1,3 +1,4 @@
+import logging
 import sys
 from math import floor
 from pathlib import Path
@@ -142,10 +143,13 @@ default_punctuation_words = {
 
 
 def get_knausj_homophones():
-    homophones_file = Path(__file__).parents[1] / "knausj_talon/code/homophones.csv"
     phones = {}
+    homophones_file = new_homophones_file = Path(__file__).parents[1] / "knausj_talon/core/homophones/homophones.csv"
     if not homophones_file.exists():
-        logging.warning(f"Could not find knausj homophones file: {homophones_file}")
+        # Moved in https://github.com/knausj85/knausj_talon/commit/b25bac46c6543d0ec5fe2b2d09596444cd903371
+        homophones_file = Path(__file__).parents[1] / "knausj_talon/code/homophones.csv"
+    if not homophones_file.exists():
+        logging.warning(f"Could not find knausj homophones file: {new_homophones_file} or {homophones_file}")
         return phones
     with open(homophones_file) as f:
         for line in f:
