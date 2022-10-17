@@ -223,7 +223,7 @@ class Reader:
         self,
         image,
         offset: Tuple[int, int] = (0, 0),
-        screen_coordinates: Optional[Tuple[int, int]] = (0, 0),
+        screen_coordinates: Optional[Tuple[int, int]] = None,
         search_radius: Optional[int] = None,
     ):
         """Return ScreenContents of the provided image."""
