@@ -76,6 +76,6 @@ you will see some warning logs). Missing functionality:
 - "scroll" commands use `user.mouse_scroll_*()`, so they won't work.
 - "replace" and "say" commands use `user.prose` to insert text, so they won't
   work.
-- `actions.user.dictation_peek_left` not available means text
+- `actions.user.dictation_peek` not available means text
   deletion/replacement isn't as smart (i.e. extra space is left over when a word
   is deleted).

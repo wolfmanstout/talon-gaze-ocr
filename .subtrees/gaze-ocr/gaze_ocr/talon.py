@@ -78,19 +78,25 @@ class Keyboard:
 class AppActions:
     def peek_left(self) -> Optional[str]:
         try:
-            return actions.user.dictation_peek_left()
-        # If action is unavailable (e.g. no knausj).
+            return actions.user.dictation_peek(True, False)
         except KeyError:
-            logging.warning("Action user.dictation_peek_left is unavailable.")
-            return None
+            try:
+                return actions.user.dictation_peek_left()
+            # If action is unavailable (e.g. no knausj).
+            except KeyError:
+                logging.warning("Action user.dictation_peek is unavailable.")
+                return None
 
     def peek_right(self) -> Optional[str]:
         try:
-            return actions.user.dictation_peek_right()
-        # If action is unavailable (e.g. no knausj).
+            return actions.user.dictation_peek(False, True)
         except KeyError:
-            logging.warning("Action user.dictation_peek_right is unavailable.")
-            return None
+            try:
+                return actions.user.dictation_peek_right()
+            # If action is unavailable (e.g. no knausj).
+            except KeyError:
+                logging.warning("Action user.dictation_peek is unavailable.")
+                return None
 
 
 @dataclass
