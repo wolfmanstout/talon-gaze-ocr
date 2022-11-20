@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence
 
 import numpy as np
-from talon import Context, Module, actions, app, cron, screen, settings
+from talon import Context, Module, actions, app, cron, screen, fs, settings
 from talon.canvas import Canvas
 from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
@@ -112,11 +112,10 @@ def add_homophones(
             homophones[word.lower()] = merged_words
 
 
-# Inline digits and punctuation words in case people are using vanilla knausj, where these are not
-# exposed.
 digits = "zero one two three four five six seven eight nine".split()
 default_digits_map = {n: i for i, n in enumerate(digits)}
 
+# Inline punctuation words in case people are using vanilla knausj, where these are not exposed.
 default_punctuation_words = {
     "back tick": "`",
     "grave": "`",
@@ -142,14 +141,28 @@ default_punctuation_words = {
 }
 
 
+homophones_file_relative_paths = [
+    "wolfmanstout_talon/core/homophones/homophones.csv",
+    "knausj_talon/core/homophones/homophones.csv",
+    "wolfmanstout_talon/code/homophones.csv",
+    "knausj_talon/code/homophones.csv",
+]
+user_dir = Path(__file__).parents[1]
+homophones_file = None
+for relative_path in homophones_file_relative_paths:
+    absolute_path = user_dir / relative_path
+    if absolute_path.exists():
+        homophones_file = absolute_path
+        break
+if not homophones_file:
+    logging.warning(
+        f"Could not find homophones file. Attempted: {homophones_file_relative_paths}"
+    )
+
+
 def get_knausj_homophones():
     phones = {}
-    homophones_file = new_homophones_file = Path(__file__).parents[1] / "knausj_talon/core/homophones/homophones.csv"
-    if not homophones_file.exists():
-        # Moved in https://github.com/knausj85/knausj_talon/commit/b25bac46c6543d0ec5fe2b2d09596444cd903371
-        homophones_file = Path(__file__).parents[1] / "knausj_talon/code/homophones.csv"
-    if not homophones_file.exists():
-        logging.warning(f"Could not find knausj homophones file: {new_homophones_file} or {homophones_file}")
+    if not homophones_file:
         return phones
     with open(homophones_file) as f:
         for line in f:
@@ -164,20 +177,17 @@ def get_knausj_homophones():
     return phones
 
 
-def on_ready():
+def reload_backend(name, flags):
     # Initialize eye tracking and OCR.
     global tracker, ocr_reader, gaze_ocr_controller
     tracker = gaze_ocr.talon.TalonEyeTracker()
-    # Attempt to use overridable actions to get homophone dicts. These are available in
-    # wolfmanstout_talon, but not yet in knausj_talon, so fallback if needed.
-    try:
-        homophones = actions.user.homophones_get_all()
-    except KeyError:
-        homophones = get_knausj_homophones()
+    homophones = get_knausj_homophones()
     # TODO: Get this through an action to support customization.
     add_homophones(
         homophones, [(str(num), spoken) for spoken, num in default_digits_map.items()]
     )
+    # Attempt to use overridable action to get punctuation. This is available in
+    # wolfmanstout_talon, but not yet in knausj_talon, so fallback if needed.
     try:
         punctuation_words = actions.user.get_punctuation_words()
     except KeyError:
@@ -213,6 +223,11 @@ def on_ready():
         app_actions=gaze_ocr.talon.AppActions(),
         save_data_directory=setting_ocr_logging_dir.get(),
     )
+
+
+def on_ready():
+    reload_backend(None, None)
+    fs.watch(str(homophones_file), reload_backend)
 
 
 app.register("ready", on_ready)
