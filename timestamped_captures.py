@@ -72,23 +72,41 @@ def prose_position(m) -> TextPosition:
     )
 
 
-@mod.capture(rule="<self.prose_position> [through <self.prose_position>]")
+@mod.capture(
+    rule="<self.one_ended_prose_range> | <self.prose_position> through <self.prose_position>"
+)
 def prose_range(m) -> TextRange:
     """A range of onscreen text."""
-    has_through = len(m.prose_position_list) == 2
-    if m.prose_position_1.position and not has_through:
+    if hasattr(m, "one_ended_prose_range"):
+        return m.one_ended_prose_range
+    return TextRange(
+        start=m.prose_position_1.text,
+        after_start=m.prose_position_1.position == "after",
+        end=m.prose_position_2.text,
+        before_end=m.prose_position_2.position == "before",
+    )
+
+
+@mod.capture(rule="[through] <self.prose_position>")
+def one_ended_prose_range(m) -> TextRange:
+    """A range of onscreen text with only start or end specified."""
+    has_through = m[0] == "through"
+    # As a convenience, allow dropping "through" if position is provided.
+    if has_through or m.prose_position.position:
+        if not m.prose_position.position:
+            raise ValueError(
+                'Text range "through <phrase>" not supported because cursor position is unknown.'
+            )
         return TextRange(
             start=None,
             after_start=False,
-            end=m.prose_position_1.text,
-            before_end=m.prose_position_1.position == "before",
+            end=m.prose_position.text,
+            before_end=m.prose_position.position == "before",
         )
     else:
         return TextRange(
-            start=m.prose_position_1.text,
-            after_start=m.prose_position_1.position == "after",
-            end=m.prose_position_2.text if has_through else None,
-            before_end=(
-                (m.prose_position_2.position == "before") if has_through else False
-            ),
+            start=m.prose_position.text,
+            after_start=m.prose_position.position == "after",
+            end=None,
+            before_end=False,
         )
