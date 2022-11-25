@@ -179,7 +179,7 @@ class Reader:
             self.resize_method = resize_method
         else:
             assert Image
-            self.resize_method = Image.LANCZOS
+            self.resize_method = Image.Resampling.LANCZOS
         self.debug_image_callback = debug_image_callback
         self.confidence_threshold = confidence_threshold
         self.radius = radius
