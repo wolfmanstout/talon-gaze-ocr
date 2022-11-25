@@ -190,6 +190,9 @@ class Reader:
             else default_homophones()
         )
 
+    # Represented as [left, top, right, bottom] pixel coordinates
+    BoundingBox = Tuple[int, int, int, int]
+
     def read_nearby(
         self,
         screen_coordinates: Tuple[int, int],
@@ -197,11 +200,15 @@ class Reader:
         crop_radius: Optional[int] = None,
     ):
         """Return ScreenContents nearby the provided coordinates."""
-        crop_radius = crop_radius or self.radius
         search_radius = search_radius or self.search_radius
-        screenshot, bounding_box = self._clean_screenshot_nearby(
-            screen_coordinates, crop_radius
+        crop_radius = crop_radius or self.radius
+        bounding_box = (
+            screen_coordinates[0] - crop_radius,
+            screen_coordinates[1] - crop_radius,
+            screen_coordinates[0] + crop_radius,
+            screen_coordinates[1] + crop_radius,
         )
+        screenshot, bounding_box = self._clean_screenshot(bounding_box)
         return self.read_image(
             screenshot,
             offset=bounding_box[0:2],
@@ -209,9 +216,9 @@ class Reader:
             search_radius=search_radius,
         )
 
-    def read_screen(self):
+    def read_screen(self, bounding_box: Optional[BoundingBox] = None):
         """Return ScreenContents for the entire screen."""
-        screenshot, bounding_box = self._clean_screenshot_nearby(None, None)
+        screenshot, bounding_box = self._clean_screenshot(bounding_box)
         return self.read_image(
             screenshot,
             offset=bounding_box[0:2],
@@ -245,18 +252,18 @@ class Reader:
     def _is_talon_backend(self):
         return _talon and isinstance(self._backend, _talon.TalonBackend)
 
-    def _clean_screenshot_nearby(
-        self, screen_coordinates: Optional[Tuple[int, int]], crop_radius: Optional[int]
-    ):
+    def _clean_screenshot(
+        self, bounding_box: Optional[BoundingBox]
+    ) -> Tuple[Any, BoundingBox]:
         if not actions:
-            return self._screenshot_nearby(screen_coordinates, crop_radius)
+            return self._screenshot(bounding_box)
         # Attempt to turn off HUD if talon_hud is installed.
         try:
             actions.user.hud_set_visibility(False, pause_seconds=0.01)
         except:
             pass
         try:
-            return self._screenshot_nearby(screen_coordinates, crop_radius)
+            return self._screenshot(bounding_box)
         finally:
             # Attempt to turn on HUD if talon_hud is installed.
             try:
@@ -264,20 +271,19 @@ class Reader:
             except:
                 pass
 
-    def _screenshot_nearby(
-        self, screen_coordinates: Optional[Tuple[int, int]], crop_radius: Optional[int]
-    ):
+    def _screenshot(
+        self, bounding_box: Optional[BoundingBox]
+    ) -> Tuple[Any, BoundingBox]:
         if self._is_talon_backend():
             assert screen
             assert rect
             screen_box = screen.main().rect
-            if screen_coordinates:
-                assert crop_radius
+            if bounding_box:
                 bounding_box = (
-                    max(0, screen_coordinates[0] - crop_radius),
-                    max(0, screen_coordinates[1] - crop_radius),
-                    min(screen_box.width, screen_coordinates[0] + crop_radius),
-                    min(screen_box.height, screen_coordinates[1] + crop_radius),
+                    max(0, bounding_box[0]),
+                    max(0, bounding_box[1]),
+                    min(screen_box.width, bounding_box[2]),
+                    min(screen_box.height, bounding_box[3]),
                 )
             else:
                 bounding_box = (0, 0, screen_box.width, screen_box.height)
@@ -295,13 +301,12 @@ class Reader:
             # of screen bounds.
             assert ImageGrab
             screenshot = ImageGrab.grab()
-            if screen_coordinates:
-                assert crop_radius
+            if bounding_box:
                 bounding_box = (
-                    max(0, screen_coordinates[0] - crop_radius),
-                    max(0, screen_coordinates[1] - crop_radius),
-                    min(screenshot.width, screen_coordinates[0] + crop_radius),
-                    min(screenshot.height, screen_coordinates[1] + crop_radius),
+                    max(0, bounding_box[0]),
+                    max(0, bounding_box[1]),
+                    min(screenshot.width, bounding_box[2]),
+                    min(screenshot.height, bounding_box[3]),
                 )
             else:
                 bounding_box = (0, 0, screenshot.width, screenshot.height)
