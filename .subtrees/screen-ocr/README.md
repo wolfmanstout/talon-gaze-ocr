@@ -8,7 +8,7 @@ Choose one of the following backends and follow the steps. WinRT is recommended 
 
 ### WinRT
 
-WinRT is a Windows-only backend that is very fast and reasonably accurate. It requires Python 3.7 or later. To install screen-ocr with WinRT support, run `pip install screen-ocr[winrt]`
+WinRT is a Windows-only backend that is very fast and reasonably accurate. It requires Python 3.7, 3.8, or 3.9 (the winrt package is not yet available for 3.10+). To install screen-ocr with WinRT support, run `pip install screen-ocr[winrt]`
 
 ### Tesseract
 
@@ -30,4 +30,4 @@ If using Tesseract with a custom installation directory on Windows, set
 `tesseract_data_path` and `tesseract_command` paths appropriately when
 constructing a `Reader` instance.
 
-See also [gaze-ocr](https://github.com/wolfmanstout/gaze-ocr/blob/master/gaze_ocr/_gaze_ocr.py) for more a more involved usage example..
+See also [gaze-ocr](https://github.com/wolfmanstout/gaze-ocr/blob/master/gaze_ocr/_gaze_ocr.py) for more a more involved usage example.
