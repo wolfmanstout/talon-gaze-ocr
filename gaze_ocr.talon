@@ -46,28 +46,6 @@ scroll right half:
     user.move_cursor_to_gaze_point(-40, 0)
     user.mouse_scroll_right(0.5)
 
-# parrot(shush):
-#     user.move_cursor_to_gaze_point(0, -40)
-#     user.power_momentum_scroll_down()
-#     user.power_momentum_start(ts, 2.0)
-# parrot(shush:repeat):
-#     user.power_momentum_add(ts, power)
-# parrot(shush:stop):
-#     user.power_momentum_decaying()
-
-# parrot(fff):
-#     user.move_cursor_to_gaze_point(0, 40)
-#     user.power_momentum_scroll_up()
-#     user.power_momentum_start(ts, 2.0)
-# parrot(fff:repeat):
-#     user.power_momentum_add(ts, power)
-# parrot(fff:stop):
-#     user.power_momentum_decaying()
-
-# scroll start: '"scroll start": Function(lambda: scroller.start()),'()
-# [scroll] stop: '"[scroll] stop": Function(lambda: scroller.stop()),'()
-# scroll reset: '"scroll reset": Function(lambda: reset_scroller()),'()
-
 ocr show [text]: user.show_ocr_overlay("text", 1)
 ocr show boxes: user.show_ocr_overlay("boxes", 1)
 (hover (seen | scene) | cursor move) <user.timestamped_prose>$: user.move_cursor_to_word(timestamped_prose)
