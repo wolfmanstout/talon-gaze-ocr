@@ -21,28 +21,28 @@ mode: dictation
     mouse_click(0)
     key("{modifiers}:up")
 
-scroll up:
+(eye | i) scroll up:
     user.move_cursor_to_gaze_point(0, 40)
     user.mouse_scroll_up()
-scroll up half:
+(eye | i) scroll up half:
     user.move_cursor_to_gaze_point(0, 40)
     user.mouse_scroll_up(0.5)
-scroll down:
+(eye | i) scroll down:
     user.move_cursor_to_gaze_point(0, -40)
     user.mouse_scroll_down()
-scroll down half:
+(eye | i) scroll down half:
     user.move_cursor_to_gaze_point(0, -40)
     user.mouse_scroll_down(0.5)
-scroll left:
+(eye | i) scroll left:
     user.move_cursor_to_gaze_point(40, 0)
     user.mouse_scroll_left()
-scroll left half:
+(eye | i) scroll left half:
     user.move_cursor_to_gaze_point(40, 0)
     user.mouse_scroll_left(0.5)
-scroll right:
+(eye | i) scroll right:
     user.move_cursor_to_gaze_point(-40, 0)
     user.mouse_scroll_right()
-scroll right half:
+(eye | i) scroll right half:
     user.move_cursor_to_gaze_point(-40, 0)
     user.mouse_scroll_right(0.5)
 
