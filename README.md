@@ -2,7 +2,9 @@
 
 [Talon](https://talonvoice.com/) scripts to enable advanced cursor control using
 eye tracking and text recognition (OCR). This is alpha functionality which uses
-experimental/unsupported APIs, so it could break at any time.
+experimental/unsupported APIs, so it could break at any time. See
+[my blog post](https://handsfreecoding.org/2022/11/27/gaze-ocr-talon-support-and-10-new-features/)
+for an overview.
 
 ## Installation
 
