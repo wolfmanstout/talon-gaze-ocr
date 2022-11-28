@@ -1,11 +1,16 @@
 import bisect
+import logging
+import time
 from collections import deque
 from dataclasses import dataclass
+from typing import Optional
+
 from talon import actions, app, tracking_system, ui
+from talon.track import tobii
 from talon.types import Point2d
 
 
-class Mouse(object):
+class Mouse:
     def move(self, coordinates):
         actions.mouse_move(*coordinates)
 
@@ -27,7 +32,7 @@ class Mouse(object):
             actions.user.mouse_scroll_up()
 
 
-class Keyboard(object):
+class Keyboard:
     def __init__(self):
         # shift:down won't affect future keystrokes on Mac, so we track it ourselves.
         self._shift = False
@@ -42,6 +47,9 @@ class Keyboard(object):
     def shift_up(self):
         actions.key("shift:up")
         self._shift = False
+
+    def is_shift_down(self):
+        return self._shift
 
     def left(self, n=1):
         # HACK: When adjusting selected text, Mac does not perform the
@@ -67,53 +75,86 @@ class Keyboard(object):
                 actions.key("right")
 
 
+class AppActions:
+    def peek_left(self) -> Optional[str]:
+        try:
+            return actions.user.dictation_peek(True, False)
+        except KeyError:
+            try:
+                return actions.user.dictation_peek_left()
+            # If action is unavailable (e.g. no knausj).
+            except KeyError:
+                logging.warning("Action user.dictation_peek is unavailable.")
+                return None
+
+    def peek_right(self) -> Optional[str]:
+        try:
+            return actions.user.dictation_peek(False, True)
+        except KeyError:
+            try:
+                return actions.user.dictation_peek_right()
+            # If action is unavailable (e.g. no knausj).
+            except KeyError:
+                logging.warning("Action user.dictation_peek is unavailable.")
+                return None
+
+
 @dataclass
-class BoundingBox(object):
+class BoundingBox:
     left: int
     right: int
     top: int
     bottom: int
 
 
-class TalonEyeTracker(object):
+class TalonEyeTracker:
+    STALE_GAZE_THRESHOLD_SECONDS = 0.1
+
     def __init__(self):
         # !!! Using unstable private API that may break at any time !!!
         tracking_system.register("gaze", self._on_gaze)
-        self._gaze = None
         self.is_connected = True
         # Keep approximately 10 seconds of frames on Tobii 5
         self._queue = deque(maxlen=1000)
+        # TODO: Remove once Talon is upgraded to Python 3.10 and bisect supports key arg.
         self._ts_queue = deque(maxlen=1000)
 
-    def _on_gaze(self, frame):
-        self._gaze = frame.gaze
+    def _on_gaze(self, frame: tobii.GazeFrame):
+        if not frame or not frame.gaze:
+            return
         self._queue.append(frame)
         self._ts_queue.append(frame.ts)
 
     def has_gaze_point(self):
-        return self._gaze
+        if not self._queue:
+            return False
+        return (
+            self._queue[-1].ts > time.perf_counter() - self.STALE_GAZE_THRESHOLD_SECONDS
+        )
+
+    def get_gaze_point(self):
+        if not self.has_gaze_point():
+            return None
+        return self._gaze_to_pixels(self._queue[-1].gaze)
 
     def get_gaze_point_or_default(self):
-        if not self._gaze:
-            return (0, 0)
-        return self._gaze_to_pixels(self._gaze)
+        return self.get_gaze_point() or tuple(ui.active_window().rect.center)
 
     def get_gaze_point_at_timestamp(self, timestamp):
         if not self._queue:
             print("No gaze history available")
-            return (0, 0)
+            return None
         frame_index = bisect.bisect_left(self._ts_queue, timestamp)
         if frame_index == len(self._queue):
             frame_index -= 1
         frame = self._queue[frame_index]
-        if abs(frame.ts - timestamp) > 0.1:
+        if abs(frame.ts - timestamp) > self.STALE_GAZE_THRESHOLD_SECONDS:
             print(
                 "No gaze history available at that time: {}. Range: [{}, {}]".format(
                     timestamp, self._ts_queue[0], self._ts_queue[-1]
                 )
             )
-            # Fall back to latest frame.
-            frame = self._queue[-1]
+            return None
         return self._gaze_to_pixels(frame.gaze)
 
     def get_gaze_bounds_during_time_range(self, start_timestamp, end_timestamp):
@@ -131,11 +172,15 @@ class TalonEyeTracker(object):
             frame = self._queue[i]
             if frame.ts < start_timestamp - 0.1 or frame.ts > end_timestamp + 0.1:
                 continue
-            left = min(frame.gaze.x, left) if left else frame.gaze.x
-            top = min(frame.gaze.y, top) if top else frame.gaze.y
-            right = max(frame.gaze.x, right) if right else frame.gaze.x
-            bottom = max(frame.gaze.y, bottom) if bottom else frame.gaze.y
-        if not left:
+            left = min(frame.gaze.x, left) if left is not None else frame.gaze.x
+            top = min(frame.gaze.y, top) if top is not None else frame.gaze.y
+            right = max(frame.gaze.x, right) if right is not None else frame.gaze.x
+            bottom = max(frame.gaze.y, bottom) if bottom is not None else frame.gaze.y
+        if left is None or right is None or top is None or bottom is None:
+            assert left is None
+            assert right is None
+            assert top is None
+            assert bottom is None
             return None
         top_left = self._gaze_to_pixels(Point2d(x=left, y=top))
         bottom_right = self._gaze_to_pixels(Point2d(x=right, y=bottom))

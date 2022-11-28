@@ -1,7 +1,7 @@
 import dragonfly
 
 
-class Mouse(object):
+class Mouse:
     def move(self, coordinates):
         dragonfly.Mouse("[{}, {}]".format(*coordinates)).execute()
 
@@ -21,15 +21,23 @@ class Mouse(object):
         dragonfly.Mouse("wheelup:{}".format(n)).execute()
 
 
-class Keyboard(object):
+class Keyboard:
+    def __init__(self):
+        self._shift = False
+
     def type(self, text):
         dragonfly.Text(text.replace("%", "%%")).execute()
 
     def shift_down(self):
         dragonfly.Key("shift:down").execute()
+        self._shift = True
 
     def shift_up(self):
         dragonfly.Key("shift:up").execute()
+        self._shift = False
+
+    def is_shift_down(self):
+        return self._shift
 
     def left(self, n=1):
         dragonfly.Key("left:{}".format(n)).execute()
@@ -38,7 +46,7 @@ class Keyboard(object):
         dragonfly.Key("right:{}".format(n)).execute()
 
 
-class Windows(object):
+class Windows:
     def get_monitor_size(self):
         primary = dragonfly.Monitor.get_all_monitors()[0]
         return (primary.rectangle.dx, primary.rectangle.dy)
@@ -59,7 +67,13 @@ class MoveCursorToWordAction(dragonfly.ActionBase):
         dynamic_word = self.word
         if data:
             dynamic_word = self.word % data
-        return self.controller.move_cursor_to_word(dynamic_word, self.cursor_position)
+        # On Windows, works best if cursor is slightly offset to the right.
+        return (
+            self.controller.move_cursor_to_word(
+                dynamic_word, self.cursor_position, click_offset_right=1
+            )
+            or False
+        )
 
 
 class MoveTextCursorAction(dragonfly.ActionBase):
@@ -73,8 +87,12 @@ class MoveTextCursorAction(dragonfly.ActionBase):
         dynamic_word = self.word
         if data:
             dynamic_word = self.word % data
-        return self.controller.move_text_cursor_to_word(
-            dynamic_word, self.cursor_position
+        # On Windows, works best if cursor is slightly offset to the right.
+        return (
+            self.controller.move_text_cursor_to_word(
+                dynamic_word, self.cursor_position, click_offset_right=1
+            )
+            or False
         )
 
 
@@ -98,6 +116,13 @@ class SelectTextAction(dragonfly.ActionBase):
                     dynamic_end_word = self.end_word % data
                 except KeyError:
                     dynamic_end_word = None
-        return self.controller.select_text(
-            dynamic_start_word, dynamic_end_word, for_deletion=self.for_deletion
+        # On Windows, works best if cursor is slightly offset to the right.
+        return (
+            self.controller.select_text(
+                dynamic_start_word,
+                dynamic_end_word,
+                for_deletion=self.for_deletion,
+                click_offset_right=1,
+            )
+            or False
         )
