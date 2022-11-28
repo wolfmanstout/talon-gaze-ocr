@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="screen-ocr",
-    version="0.3.0",
+    version="0.4.0",
     author="James Stout",
     author_email="james.wolf.stout@gmail.com",
     description="Library for processing screen contents using OCR",
@@ -14,7 +14,7 @@ setuptools.setup(
     url="https://github.com/wolfmanstout/screen-ocr",
     packages=["screen_ocr"],
     install_requires=[
-        "pillow",
+        "pillow>=9.0",
         "rapidfuzz",
     ],
     # See README.md for backend recommendations.

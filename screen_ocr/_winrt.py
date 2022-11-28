@@ -1,16 +1,13 @@
-# import gc
 import asyncio
-import threading
+import importlib.util
 from concurrent import futures
+
+from . import _base
 
 # Attempt to find winrt module and let error propagate if it is not available. We don't want to
 # import winrt here because it needs to be done in a background thread.
-import importlib.util
-
 if not importlib.util.find_spec("winrt"):
     raise ImportError("Could not find winrt module")
-
-from . import _base
 
 
 class WinRtBackend(_base.OcrBackend):
@@ -28,14 +25,17 @@ class WinRtBackend(_base.OcrBackend):
         import winrt.windows.storage.streams as streams
 
         engine = ocr.OcrEngine.try_create_from_user_profile_languages()
+        if not engine:
+            raise RuntimeError(
+                "Could not create OcrEngine. Try installing language packs: "
+                "https://github.com/wolfmanstout/screen-ocr/issues/8#issuecomment-1219610003"
+            )
         # Define this in the constructor to avoid SyntaxError in Python 2.7.
         async def run_ocr_async(image):
             bytes = image.convert("RGBA").tobytes()
             data_writer = streams.DataWriter()
             bytes_list = list(bytes)
             del bytes
-            # Needed when testing on large files on 32-bit.
-            # gc.collect()
             data_writer.write_bytes(bytes_list)
             del bytes_list
             bitmap = imaging.SoftwareBitmap(
