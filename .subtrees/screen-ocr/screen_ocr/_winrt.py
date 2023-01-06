@@ -11,20 +11,28 @@ if not importlib.util.find_spec("winrt"):
 
 
 class WinRtBackend(_base.OcrBackend):
-    def __init__(self):
+    def __init__(self, language_tag: str=None):
         # Run all winrt interactions on a new thread to avoid
         # "RuntimeError: Cannot change thread mode after it is set."
         # from import winrt.
         self._executor = futures.ThreadPoolExecutor(max_workers=1)
-        self._executor.submit(self._init_winrt).result()
+        self._executor.submit(self._init_winrt, language_tag).result()
 
-    def _init_winrt(self):
+    def _init_winrt(self, language_tag):
         import winrt
         import winrt.windows.graphics.imaging as imaging
         import winrt.windows.media.ocr as ocr
         import winrt.windows.storage.streams as streams
 
-        engine = ocr.OcrEngine.try_create_from_user_profile_languages()
+        engine = None
+        if language_tag is None:
+            engine = ocr.OcrEngine.try_create_from_user_profile_languages()
+        else:            
+            for language in ocr.OcrEngine.get_available_recognizer_languages():
+                if language.language_tag == language_tag:
+                    engine = ocr.OcrEngine.try_create_from_language(language)
+                    break
+
         if not engine:
             raise RuntimeError(
                 "Could not create OcrEngine. Try installing language packs: "
