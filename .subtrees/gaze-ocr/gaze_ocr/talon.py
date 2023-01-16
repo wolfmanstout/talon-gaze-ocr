@@ -78,7 +78,7 @@ class Keyboard:
 class AppActions:
     def peek_left(self) -> Optional[str]:
         try:
-            return actions.user.dictation_peek(True, False)
+            return actions.user.dictation_peek(True, False)[0]
         except KeyError:
             try:
                 return actions.user.dictation_peek_left()
@@ -89,7 +89,7 @@ class AppActions:
 
     def peek_right(self) -> Optional[str]:
         try:
-            return actions.user.dictation_peek(False, True)
+            return actions.user.dictation_peek(False, True)[1]
         except KeyError:
             try:
                 return actions.user.dictation_peek_right()
