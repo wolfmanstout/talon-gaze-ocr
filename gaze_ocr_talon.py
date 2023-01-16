@@ -436,6 +436,14 @@ def perform_ocr_action_generator(
 
 @mod.action_class
 class GazeOcrActions:
+    def connect_ocr_eye_tracker():
+        """Connects eye tracker to OCR."""
+        tracker.connect()
+
+    def disconnect_ocr_eye_tracker():
+        """Disconnects eye tracker from OCR."""
+        tracker.disconnect()
+
     def move_cursor_to_word(text: TimestampedText):
         """Moves cursor to onscreen word."""
         begin_generator(move_cursor_to_word_generator(text))

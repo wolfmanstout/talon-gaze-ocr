@@ -111,19 +111,27 @@ class TalonEyeTracker:
     STALE_GAZE_THRESHOLD_SECONDS = 0.1
 
     def __init__(self):
-        # !!! Using unstable private API that may break at any time !!!
-        tracking_system.register("gaze", self._on_gaze)
-        self.is_connected = True
         # Keep approximately 10 seconds of frames on Tobii 5
         self._queue = deque(maxlen=1000)
         # TODO: Remove once Talon is upgraded to Python 3.10 and bisect supports key arg.
         self._ts_queue = deque(maxlen=1000)
+        self.connect()
 
     def _on_gaze(self, frame: tobii.GazeFrame):
         if not frame or not frame.gaze:
             return
         self._queue.append(frame)
         self._ts_queue.append(frame.ts)
+
+    def connect(self):
+        # !!! Using unstable private API that may break at any time !!!
+        tracking_system.register("gaze", self._on_gaze)
+        self.is_connected = True
+
+    def disconnect(self):
+        # !!! Using unstable private API that may break at any time !!!
+        tracking_system.unregister("gaze", self._on_gaze)
+        self.is_connected = False
 
     def has_gaze_point(self):
         if not self._queue:
