@@ -115,6 +115,7 @@ class TalonEyeTracker:
         self._queue = deque(maxlen=1000)
         # TODO: Remove once Talon is upgraded to Python 3.10 and bisect supports key arg.
         self._ts_queue = deque(maxlen=1000)
+        self.is_connected = False
         self.connect()
 
     def _on_gaze(self, frame: tobii.GazeFrame):
@@ -124,11 +125,15 @@ class TalonEyeTracker:
         self._ts_queue.append(frame.ts)
 
     def connect(self):
+        if self.is_connected:
+            return
         # !!! Using unstable private API that may break at any time !!!
         tracking_system.register("gaze", self._on_gaze)
         self.is_connected = True
 
     def disconnect(self):
+        if not self.is_connected:
+            return
         # !!! Using unstable private API that may break at any time !!!
         tracking_system.unregister("gaze", self._on_gaze)
         self.is_connected = False
