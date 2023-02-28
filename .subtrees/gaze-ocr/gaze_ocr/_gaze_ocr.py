@@ -267,6 +267,8 @@ class Controller:
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
+        start_drag: bool = False,
+        end_drag: bool = False,
     ) -> Generator[
         Sequence[Sequence[WordLocation]],
         Sequence[WordLocation],
@@ -302,6 +304,7 @@ class Controller:
                 cursor_position=cursor_position,
                 include_whitespace=include_whitespace,
                 click_offset_right=click_offset_right,
+                start_drag=start_drag
             ):
                 return None
         finally:
@@ -317,6 +320,7 @@ class Controller:
         cursor_position: str = "middle",
         include_whitespace: bool = False,
         click_offset_right: int = 0,
+        start_drag: bool = False,
     ) -> bool:
         if cursor_position == "before":
             distance_from_left = locations[0].left_char_offset
@@ -334,9 +338,12 @@ class Controller:
                 ):
                     return False
                 self.mouse.move(coordinates)
-                self.mouse.click()
-                if distance_from_left:
-                    self.keyboard.right(distance_from_left)
+                if start_drag:
+                    self.mouse.click_down()
+                else:
+                    self.mouse.click()
+                    if distance_from_left:
+                        self.keyboard.right(distance_from_left)
             else:
                 coordinates = self._apply_click_offset(
                     locations[0].end_coordinates, click_offset_right
@@ -348,14 +355,18 @@ class Controller:
                 ):
                     return False
                 self.mouse.move(coordinates)
-                self.mouse.click()
-                if distance_from_right:
-                    self.keyboard.left(distance_from_right)
+                if start_drag:
+                    self.mouse.click_down()
+                else:
+                    self.mouse.click()
+                    if distance_from_right:
+                        self.keyboard.left(distance_from_right)
             if (
                 include_whitespace
                 and not distance_from_left
                 and self.app_actions
                 and not self.keyboard.is_shift_down()
+                and not start_drag
             ):
                 left_chars = self.app_actions.peek_left()
                 # Check that there is actually a space adjacent (not a newline). Google docs
@@ -384,7 +395,10 @@ class Controller:
             ):
                 return False
             self.mouse.move(coordinates)
-            self.mouse.click()
+            if start_drag:
+                self.mouse.click_down()
+            else:
+                self.mouse.click()
         if cursor_position == "after":
             distance_from_right = locations[-1].right_char_offset
             distance_from_left = locations[-1].left_char_offset + len(
@@ -401,9 +415,12 @@ class Controller:
                 ):
                     return False
                 self.mouse.move(coordinates)
-                self.mouse.click()
-                if distance_from_right:
-                    self.keyboard.left(distance_from_right)
+                if start_drag:
+                    self.mouse.click_down()
+                else:
+                    self.mouse.click()
+                    if distance_from_right:
+                        self.keyboard.left(distance_from_right)
             else:
                 coordinates = self._apply_click_offset(
                     locations[-1].start_coordinates, click_offset_right
@@ -415,14 +432,18 @@ class Controller:
                 ):
                     return False
                 self.mouse.move(coordinates)
-                self.mouse.click()
-                if distance_from_left:
-                    self.keyboard.right(distance_from_left)
+                if start_drag:
+                    self.mouse.click_down()
+                else:
+                    self.mouse.click()
+                    if distance_from_left:
+                        self.keyboard.right(distance_from_left)
             if (
                 include_whitespace
                 and not distance_from_right
                 and self.app_actions
                 and not self.keyboard.is_shift_down()
+                and not start_drag
             ):
                 right_chars = self.app_actions.peek_right()
                 if right_chars and right_chars[0] == " ":
@@ -439,6 +460,7 @@ class Controller:
         click_offset_right: int = 0,
         after_start: bool = False,
         before_end: bool = False,
+        drag: bool = False,
     ) -> Optional[Sequence[WordLocation]]:
         """Select a range of onscreen text.
 
@@ -454,6 +476,7 @@ class Controller:
         click_offset_right: Adjust the X-coordinate when clicking.
         after_start: If true, begin selection after the start word.
         before_end: If true, end selection before the end word.
+        drag: If true, drag from the start to the end rather than clicking and Shift-clicking.
         """
         return self._extract_result(
             self.select_text_generator(
@@ -466,6 +489,7 @@ class Controller:
                 click_offset_right=click_offset_right,
                 after_start=after_start,
                 before_end=before_end,
+                drag=drag,
             )
         )
 
@@ -481,6 +505,7 @@ class Controller:
         after_start: bool = False,
         before_end: bool = False,
         select_pause_seconds: float = 0.01,
+        drag: bool = False,
     ) -> Generator[
         Sequence[Sequence[WordLocation]],
         Sequence[WordLocation],
@@ -499,6 +524,7 @@ class Controller:
             cursor_position="after" if after_start else "before",
             include_whitespace=for_deletion and not after_start,
             click_offset_right=click_offset_right,
+            start_drag=drag,
         )
         if not start_locations:
             return None
@@ -538,7 +564,8 @@ class Controller:
                     filter_location_function=filter_function,
                     include_whitespace=False,
                     click_offset_right=click_offset_right,
-                    hold_shift=True,
+                    hold_shift=not drag,
+                    end_drag=drag,
                 )
             )
         else:
@@ -553,6 +580,8 @@ class Controller:
                     return None
             finally:
                 self.keyboard.shift_up()
+                if drag:
+                    self.mouse.click_up()
             return start_locations
 
     def move_cursor_to_word_action(self):
