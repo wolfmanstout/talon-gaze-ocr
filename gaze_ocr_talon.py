@@ -12,6 +12,11 @@ from talon.types import rect
 
 from .timestamped_captures import TextRange, TimestampedText
 
+try:
+    from talon.experimental import ocr
+except ImportError:
+    ocr = None
+
 # Adjust path to search adjacent package directories. Prefixed with dot to avoid
 # Talon running them itself. Append to search path so that faster binary
 # packages can be used instead if available.
@@ -207,11 +212,13 @@ def reload_backend(name, flags):
             ("ok", "okay", "0k"),
         ],
     )
-    if setting_ocr_use_talon_backend.get():
+    if setting_ocr_use_talon_backend.get() and ocr:
         ocr_reader = screen_ocr.Reader.create_reader(
             backend="talon", radius=200, homophones=homophones
         )
     else:
+        if setting_ocr_use_talon_backend.get() and not ocr:
+            logging.info("Talon OCR not available, will rely on external support.")
         ocr_reader = screen_ocr.Reader.create_fast_reader(
             radius=200, homophones=homophones
         )
