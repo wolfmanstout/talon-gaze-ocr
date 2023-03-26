@@ -146,23 +146,16 @@ default_punctuation_words = {
 }
 
 
-homophones_file_relative_paths = [
-    "wolfmanstout_talon/core/homophones/homophones.csv",
-    "knausj_talon/core/homophones/homophones.csv",
-    "wolfmanstout_talon/code/homophones.csv",
-    "knausj_talon/code/homophones.csv",
-]
 user_dir = Path(__file__).parents[1]
+# Search user_dir to find homophones.csv
 homophones_file = None
-for relative_path in homophones_file_relative_paths:
-    absolute_path = user_dir / relative_path
-    if absolute_path.exists():
-        homophones_file = absolute_path
-        break
-if not homophones_file:
-    logging.warning(
-        f"Could not find homophones file. Attempted: {homophones_file_relative_paths}"
-    )
+for path in user_dir.rglob("homophones.csv"):
+    homophones_file = path
+    break
+if homophones_file:
+    logging.info(f"Found homophones file: {homophones_file}")
+else:
+    logging.warning(f"Could not find homophones.csv. Is knausj_talon installed?")
 
 
 def get_knausj_homophones():
@@ -234,7 +227,8 @@ def reload_backend(name, flags):
 
 def on_ready():
     reload_backend(None, None)
-    fs.watch(str(homophones_file), reload_backend)
+    if homophones_file:
+        fs.watch(str(homophones_file), reload_backend)
 
 
 app.register("ready", on_ready)
