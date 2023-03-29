@@ -46,6 +46,12 @@ setting_ocr_use_talon_backend = mod.setting(
     default=True,
     desc="If true, use Talon backend, otherwise use default fast backend from screen_ocr.",
 )
+setting_ocr_connect_tracker = mod.setting(
+    "ocr_connect_tracker",
+    type=bool,
+    default=True,
+    desc="If true, automatically connect the eye tracker at startup.",
+)
 setting_ocr_logging_dir = mod.setting(
     "ocr_logging_dir",
     type=str,
@@ -179,6 +185,9 @@ def reload_backend(name, flags):
     # Initialize eye tracking and OCR.
     global tracker, ocr_reader, gaze_ocr_controller
     tracker = gaze_ocr.talon.TalonEyeTracker()
+    # Note: tracker is connected automatically in the constructor.
+    if not setting_ocr_connect_tracker.get():
+        tracker.disconnect()
     homophones = get_knausj_homophones()
     # TODO: Get this through an action to support customization.
     add_homophones(
