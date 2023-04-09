@@ -14,20 +14,20 @@ sibling in the same directory.
 
 Required permissions:
 
-* On Mac, Talon requires the ability to read the screen.  As per the 
+- On Mac, Talon requires the ability to read the screen. As per the
   [macOS User Guide](https://support.apple.com/guide/mac-help/control-access-to-screen-recording-on-mac-mchld6aa7d23/mac):
-  1. Choose Apple menu  > System Settings, then click Privacy & Security  in the sidebar. (You may need to scroll down.)
+  1. Choose Apple menu > System Settings, then click Privacy & Security in the sidebar. (You may need to scroll down.)
   2. Click Screen Recording.
   3. Turn screen recording on for Talon.
 
 Required Python packages:
 
-* On Mac, all Python package dependencies are present in the `.subtrees` directory
-so that no pip installations are needed.
-* On Windows, the Talon OCR API is not yet available, so you will need to run
-`%APPDATA%\talon\.venv\Scripts\pip.bat install winrt pillow`.
-* On all platforms, if packages are available through standard pip installation,
-these will be preferred (e.g. so that faster binary installations can be used.)
+- On Mac, all Python package dependencies are present in the `.subtrees` directory
+  so that no pip installations are needed.
+- On Windows, the Talon OCR API is not yet available, so you will need to run
+  `%APPDATA%\talon\.venv\Scripts\pip.bat install winsdk pillow`.
+- On all platforms, if packages are available through standard pip installation,
+  these will be preferred (e.g. so that faster binary installations can be used.)
 
 ## Features:
 

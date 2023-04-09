@@ -20,7 +20,7 @@ setuptools.setup(
     # See README.md for backend recommendations.
     extras_require={
         "tesseract": ["numpy", "pytesseract", "pandas", "scikit-image"],
-        "winrt": ["winrt"],
+        "winrt": ["winsdk"],
         "easyocr": ["easyocr", "numpy"],
     },
     classifiers=[
