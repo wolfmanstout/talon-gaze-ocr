@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="screen-ocr",
-    version="0.4.0",
+    version="0.5.0",
     author="James Stout",
     author_email="james.wolf.stout@gmail.com",
     description="Library for processing screen contents using OCR",
@@ -20,7 +20,7 @@ setuptools.setup(
     # See README.md for backend recommendations.
     extras_require={
         "tesseract": ["numpy", "pytesseract", "pandas", "scikit-image"],
-        "winrt": ["winrt"],
+        "winrt": ["winsdk"],
         "easyocr": ["easyocr", "numpy"],
     },
     classifiers=[

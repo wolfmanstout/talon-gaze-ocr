@@ -8,7 +8,7 @@ Choose one of the following backends and follow the steps. WinRT is recommended 
 
 ### WinRT
 
-WinRT is a Windows-only backend that is very fast and reasonably accurate. It requires Python 3.7, 3.8, or 3.9 (the winrt package is not yet available for 3.10+). To install screen-ocr with WinRT support, run `pip install screen-ocr[winrt]`
+WinRT is a Windows-only backend that is very fast and reasonably accurate. To install screen-ocr with WinRT support, run `pip install screen-ocr[winrt]`
 
 ### Tesseract
 
