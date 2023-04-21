@@ -1,3 +1,4 @@
+import glob
 import logging
 import sys
 from math import floor
@@ -5,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence
 
 import numpy as np
-from talon import Context, Module, actions, app, cron, screen, fs, settings
+from talon import Context, Module, actions, app, cron, fs, screen, settings
 from talon.canvas import Canvas
 from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
@@ -155,7 +156,7 @@ default_punctuation_words = {
 user_dir = Path(__file__).parents[1]
 # Search user_dir to find homophones.csv
 homophones_file = None
-for path in user_dir.rglob("homophones.csv"):
+for path in glob.glob(str(user_dir / "**/homophones.csv"), recursive=True):
     homophones_file = path
     break
 if homophones_file:
