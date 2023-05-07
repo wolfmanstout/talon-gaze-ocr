@@ -116,7 +116,7 @@ class TalonEyeTracker:
         # TODO: Remove once Talon is upgraded to Python 3.10 and bisect supports key arg.
         self._ts_queue = deque(maxlen=1000)
         self.is_connected = False
-        self.connect()
+        # self.connect()
 
     def _on_gaze(self, frame: tobii.GazeFrame):
         if not frame or not frame.gaze:

@@ -77,5 +77,5 @@ replace [{user.ocr_modifiers}] [seen | scene] <user.prose_range> with <user.pros
 phones (seen | scene) <user.timestamped_prose>$:
     user.change_text_homophone(timestamped_prose)
 
-ocr tracker on: user.connect_ocr_eye_tracker()
-ocr tracker off: user.disconnect_ocr_eye_tracker()
+power tracker on: user.connect_ocr_eye_tracker()
+power tracker off: user.disconnect_ocr_eye_tracker()
