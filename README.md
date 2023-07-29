@@ -22,15 +22,14 @@ Required permissions:
 
 Required Python packages:
 
-- On Mac, all Python package dependencies are present in the `.subtrees` directory
-  so that no pip installations are needed.
-- On Windows, the Talon OCR API is only available in Talon Beta, so the default
-  settings depend on an external package. If you wish to use the Talon Beta API,
-  you will need to add `user.ocr_use_talon_backend = 1` to your Talon settings.
-  Otherwise, so you will need to run `%APPDATA%\talon\.venv\Scripts\pip.bat
-install winsdk pillow`.
-- On all platforms, if packages are available through standard pip installation,
-  these will be preferred (e.g. so that faster binary installations can be used.)
+- All Python package dependencies are present in the `.subtrees` directory so
+  that no pip installations are needed. If packages are have been installed
+  manually through pip, these will be preferred (e.g. so that faster binary
+  packages can be used.)
+
+Note: This installation process is for Windows and Mac. Linux is not officially
+supported because Talon does not provide an OCR API. You may be able to get this
+working using Tesseract, but this configuration is not tested by the author.
 
 ## Features:
 
