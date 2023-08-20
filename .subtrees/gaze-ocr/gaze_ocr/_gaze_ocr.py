@@ -718,7 +718,7 @@ class Controller:
         else:
             self._read_nearby_if_gaze_moved()
         filter_function = lambda location: self._is_valid_selection(
-            start_locations[0].start_coordinates, location[-1].end_coordinates
+            start_locations[-1].end_coordinates, location[0].start_coordinates
         )
         (
             end_locations,
