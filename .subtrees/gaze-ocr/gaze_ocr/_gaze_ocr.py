@@ -278,14 +278,11 @@ class Controller:
         if timestamp:
             self.read_nearby(timestamp)
         screen_contents = self.latest_screen_contents()
-        if disambiguate:
-            matches = screen_contents.find_matching_words(words)
-            if filter_location_function:
-                matches = list(filter(filter_location_function, matches))
-        else:
-            match = screen_contents.find_nearest_words(
-                words, filter_function=filter_location_function
-            )
+        matches = screen_contents.find_matching_words(words)
+        if filter_location_function:
+            matches = list(filter(filter_location_function, matches))
+        if not disambiguate:
+            match = screen_contents.find_nearest_words_within_matches(matches)
             matches = [match] if match else []
         self._write_data(screen_contents, words, matches)
         if not matches:
@@ -310,6 +307,138 @@ class Controller:
         return locations
 
     move_text_cursor_to_word = move_text_cursor_to_words
+
+    def move_text_cursor_after_longest_prefix(
+        self,
+        words: str,
+        filter_location_function: Optional[FilterLocationCallable] = None,
+        timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        hold_shift: bool = False,
+    ) -> Tuple[Optional[Sequence[WordLocation]], int]:
+        """Moves the text cursor after the longest prefix of the provided words that
+        matches onscreen text. See move_text_cursor_to_words for argument details."""
+        return self._extract_result(
+            self.move_text_cursor_after_longest_prefix_generator(
+                words,
+                disambiguate=False,
+                filter_location_function=filter_location_function,
+                timestamp=timestamp,
+                click_offset_right=click_offset_right,
+                hold_shift=hold_shift,
+            )
+        )
+
+    def move_text_cursor_after_longest_prefix_generator(
+        self,
+        words: str,
+        disambiguate: bool,
+        filter_location_function: Optional[FilterLocationCallable] = None,
+        timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        hold_shift: bool = False,
+    ) -> Generator[
+        Sequence[Sequence[WordLocation]],
+        Sequence[WordLocation],
+        Tuple[Optional[Sequence[WordLocation]], int],
+    ]:
+        """Same as move_text_cursor_after_longest_prefix, except it supports
+        disambiguation through a generator. See header comment for details."""
+        if timestamp:
+            self.read_nearby(timestamp)
+        screen_contents = self.latest_screen_contents()
+        matches, prefix_length = screen_contents.find_longest_matching_prefix(words)
+        if filter_location_function:
+            matches = list(filter(filter_location_function, matches))
+        if not disambiguate:
+            match = screen_contents.find_nearest_words_within_matches(matches)
+            matches = [match] if match else []
+        self._write_data(screen_contents, words, matches)
+        if not matches:
+            return None, 0
+        if len(matches) > 1:
+            locations = yield matches
+        else:
+            locations = matches[0]
+        if hold_shift:
+            self.keyboard.shift_down()
+        try:
+            if not self._move_text_cursor_to_word_locations(
+                locations,
+                cursor_position="after",
+                click_offset_right=click_offset_right,
+            ):
+                return None, 0
+        finally:
+            if hold_shift:
+                self.keyboard.shift_up()
+        return locations, prefix_length
+
+    def move_text_cursor_before_longest_suffix(
+        self,
+        words: str,
+        filter_location_function: Optional[FilterLocationCallable] = None,
+        timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        hold_shift: bool = False,
+    ) -> Tuple[Optional[Sequence[WordLocation]], int]:
+        """Moves the text cursor before the longest suffix of the provided words that
+        matches onscreen text. See move_text_cursor_to_words for argument details."""
+        return self._extract_result(
+            self.move_text_cursor_before_longest_suffix_generator(
+                words,
+                disambiguate=False,
+                filter_location_function=filter_location_function,
+                timestamp=timestamp,
+                click_offset_right=click_offset_right,
+                hold_shift=hold_shift,
+            )
+        )
+
+    def move_text_cursor_before_longest_suffix_generator(
+        self,
+        words: str,
+        disambiguate: bool,
+        filter_location_function: Optional[FilterLocationCallable] = None,
+        timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        hold_shift: bool = False,
+    ) -> Generator[
+        Sequence[Sequence[WordLocation]],
+        Sequence[WordLocation],
+        Tuple[Optional[Sequence[WordLocation]], int],
+    ]:
+        """Same as move_text_cursor_before_longest_suffix, except it supports
+        disambiguation through a generator. See header comment for details."""
+        if timestamp:
+            self.read_nearby(timestamp)
+        screen_contents = self.latest_screen_contents()
+        matches, suffix_length = screen_contents.find_longest_matching_suffix(words)
+        if filter_location_function:
+            matches = list(filter(filter_location_function, matches))
+        if not disambiguate:
+            match = screen_contents.find_nearest_words_within_matches(matches)
+            matches = [match] if match else []
+        self._write_data(screen_contents, words, matches)
+        if not matches:
+            return None, 0
+        if len(matches) > 1:
+            locations = yield matches
+        else:
+            locations = matches[0]
+        if hold_shift:
+            self.keyboard.shift_down()
+        try:
+            if not self._move_text_cursor_to_word_locations(
+                locations,
+                cursor_position="before",
+                click_offset_right=click_offset_right,
+            ):
+                return None, 0
+        finally:
+            if hold_shift:
+                self.keyboard.shift_up()
+        return locations, suffix_length
 
     def _move_text_cursor_to_word_locations(
         self,
@@ -489,10 +618,8 @@ class Controller:
         """Same as select_text, except it supports disambiguation through a generator.
         See header comment for details.
         """
-        # Automatically split up start word if multiple words are provided.
         if start_timestamp:
             self.read_nearby(start_timestamp)
-        # Always click before the word to avoid subword selection issues on Windows.
         start_locations = yield from self.move_text_cursor_to_words_generator(
             start_words,
             disambiguate=disambiguate,
@@ -502,34 +629,15 @@ class Controller:
         )
         if not start_locations:
             return None
-        # Emacs requires a small sleep in between mouse clicks.
         time.sleep(select_pause_seconds)
         if end_words:
             if end_timestamp:
                 self.read_nearby(end_timestamp)
             else:
-                # If gaze has significantly moved, look for the end word at the final gaze coordinates.
-                current_gaze = (
-                    self.eye_tracker.get_gaze_point() if self.eye_tracker else None
-                )
-                latest_screen_contents = self.latest_screen_contents()
-                previous_gaze = latest_screen_contents.screen_coordinates
-                threshold_squared = (
-                    _squared(latest_screen_contents.search_radius / 2.0)
-                    if latest_screen_contents.search_radius
-                    else 0.0
-                )
-                if (
-                    current_gaze
-                    and previous_gaze
-                    and _distance_squared(current_gaze, previous_gaze)
-                    > threshold_squared
-                ):
-                    self.read_nearby()
+                self._read_nearby_if_gaze_moved()
             filter_function = lambda location: self._is_valid_selection(
                 start_locations[0].start_coordinates, location[-1].end_coordinates
             )
-            # Always click after the word to avoid subword selection issues on Windows.
             return (
                 yield from self.move_text_cursor_to_words_generator(
                     end_words,
@@ -554,6 +662,93 @@ class Controller:
             finally:
                 self.keyboard.shift_up()
             return start_locations
+
+    def select_changed_text(
+        self,
+        words: str,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+    ) -> Optional[Tuple[int, int]]:
+        """Finds onscreen text that matches the beginning and end of the provided text
+        and selects the text in between. Returns the start and end indices corresponding
+        to the selected text, if found. See select_text for argument details.
+        """
+        return self._extract_result(
+            self.select_changed_text_generator(
+                words,
+                disambiguate=False,
+                start_timestamp=start_timestamp,
+                end_timestamp=end_timestamp,
+                click_offset_right=click_offset_right,
+            )
+        )
+
+    def select_changed_text_generator(
+        self,
+        words: str,
+        disambiguate: bool,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        select_pause_seconds: float = 0.01,
+    ) -> Generator[
+        Sequence[Sequence[WordLocation]],
+        Sequence[WordLocation],
+        Optional[Tuple[int, int]],
+    ]:
+        """Same as select_changed_text, except it supports disambiguation through a
+        generator. See header comment for details."""
+        if start_timestamp:
+            self.read_nearby(start_timestamp)
+        (
+            start_locations,
+            prefix_length,
+        ) = yield from self.move_text_cursor_after_longest_prefix_generator(
+            words,
+            disambiguate=disambiguate,
+            click_offset_right=click_offset_right,
+        )
+        if not start_locations:
+            return None
+        remaining_words = words[prefix_length:]
+        time.sleep(select_pause_seconds)
+        if end_timestamp:
+            self.read_nearby(end_timestamp)
+        else:
+            self._read_nearby_if_gaze_moved()
+        filter_function = lambda location: self._is_valid_selection(
+            start_locations[0].start_coordinates, location[-1].end_coordinates
+        )
+        (
+            end_locations,
+            suffix_length,
+        ) = yield from self.move_text_cursor_before_longest_suffix_generator(
+            remaining_words,
+            disambiguate=disambiguate,
+            filter_location_function=filter_function,
+            click_offset_right=click_offset_right,
+            hold_shift=True,
+        )
+        if not end_locations:
+            return None
+        return prefix_length, len(words) - suffix_length
+
+    def _read_nearby_if_gaze_moved(self):
+        current_gaze = self.eye_tracker.get_gaze_point() if self.eye_tracker else None
+        latest_screen_contents = self.latest_screen_contents()
+        previous_gaze = latest_screen_contents.screen_coordinates
+        threshold_squared = (
+            _squared(latest_screen_contents.search_radius / 2.0)
+            if latest_screen_contents.search_radius
+            else 0.0
+        )
+        if (
+            current_gaze
+            and previous_gaze
+            and _distance_squared(current_gaze, previous_gaze) > threshold_squared
+        ):
+            self.read_nearby()
 
     def move_cursor_to_word_action(self):
         raise RuntimeError(

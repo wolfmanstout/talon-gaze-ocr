@@ -483,20 +483,20 @@ class ScreenContents:
         target: str,
         filter_function: Optional[Callable[[Sequence[WordLocation]], bool]] = None,
     ) -> Optional[Sequence[WordLocation]]:
-        """Return the location of the nearest sequence of the provided words.
+        """Return the locations of the nearest sequence of the provided words.
 
         Uses fuzzy matching.
         """
         sequences = self.find_matching_words(target)
         if filter_function:
             sequences = list(filter(filter_function, sequences))
-        if not sequences:
-            return None
         return self.find_nearest_words_within_matches(sequences)
 
     def find_nearest_words_within_matches(
         self, sequences: Sequence[Sequence[WordLocation]]
     ) -> Optional[Sequence[WordLocation]]:
+        if not sequences:
+            return None
         if not self.screen_coordinates:
             # "Nearest" is undefined.
             return None
@@ -514,29 +514,35 @@ class ScreenContents:
         return min(distance_to_words, key=lambda x: x[0])[1]
 
     # Special-case "0k" which frequently shows up instead of the correct "OK".
-    _SUBWORD_REGEX = re.compile(r"(\b0[Kk]\b|[A-Z][A-Z]+|[A-Za-z'][a-z']*|.)")
+    _SUBWORD_REGEX = re.compile(r"\b0[Kk]\b|[A-Z][A-Z]+|[A-Za-z'][a-z']*|\S")
 
-    def find_matching_words(self, target: str) -> Sequence[Sequence[WordLocation]]:
+    def find_matching_words(
+        self, target: str, match_each_word: bool = False
+    ) -> Sequence[Sequence[WordLocation]]:
         """Return the locations of all sequences of the provided words.
 
         Uses fuzzy matching.
         """
         if not target:
             raise ValueError("target is empty")
-        target_words = list(
-            map(
-                self._normalize,
-                (
-                    subword
-                    for word in target.split()
-                    for subword in re.findall(self._SUBWORD_REGEX, word)
-                ),
-            )
-        )
+        target_words = [
+            self._normalize(subword)
+            for subword in re.findall(self._SUBWORD_REGEX, target)
+        ]
+
         # First, find all matches tied for highest score.
         scored_words = [
-            (self._score_words(candidates, target_words), candidates)
-            for candidates in self._generate_candidates(self.result, len(target_words))
+            (
+                self._score_words(
+                    candidates, target_words, match_each_word=match_each_word
+                ),
+                candidates,
+            )
+            for candidates in self._generate_candidates(
+                self.result,
+                len(target_words),
+                include_compound_words=not match_each_word,
+            )
         ]
         # print("\n".join(map(str, scored_words)))
         scored_words = [words for words in scored_words if words[0]]
@@ -557,15 +563,75 @@ class ScreenContents:
             <= self._search_radius_squared
         ]
 
+    def find_longest_matching_prefix(
+        self, target: str
+    ) -> Tuple[Sequence[Sequence[WordLocation]], int]:
+        """Return a tuple of the locations of all longest matching prefixes of the
+        provided words, and the length of the prefix.
+
+        Uses fuzzy matching.
+        """
+        if not target:
+            raise ValueError("target is empty")
+        target_words_and_prefix_lengths = [
+            (self._normalize(match.group()), match.end())
+            for match in re.finditer(self._SUBWORD_REGEX, target)
+        ]
+        target_words, prefix_lengths = zip(*target_words_and_prefix_lengths)
+
+        last_word_sequences = []
+        last_prefix_length = 0
+        for prefix_num_words in range(1, len(target_words) + 1):
+            target_prefix_words = target_words[:prefix_num_words]
+            prefix_length = prefix_lengths[prefix_num_words - 1]
+            word_sequences = self.find_matching_words(
+                " ".join(target_prefix_words), match_each_word=True
+            )
+            if not word_sequences:
+                break
+            last_word_sequences = word_sequences
+            last_prefix_length = prefix_length
+        return last_word_sequences, last_prefix_length
+
+    def find_longest_matching_suffix(
+        self, target: str
+    ) -> Tuple[Sequence[Sequence[WordLocation]], int]:
+        """Return a tuple of the locations of all longest matching suffixes of the
+        provided words, and the length of the suffix.
+
+        Uses fuzzy matching.
+        """
+        if not target:
+            raise ValueError("target is empty")
+        target_words_and_suffix_lengths = [
+            (self._normalize(match.group()), len(target) - match.start())
+            for match in re.finditer(self._SUBWORD_REGEX, target)
+        ]
+        target_words, suffix_lengths = zip(*target_words_and_suffix_lengths)
+
+        last_word_sequences = []
+        last_suffix_length = 0
+        for suffix_num_words in range(1, len(target_words) + 1):
+            target_suffix_words = target_words[-suffix_num_words:]
+            suffix_length = suffix_lengths[-suffix_num_words]
+            word_sequences = self.find_matching_words(
+                " ".join(target_suffix_words), match_each_word=True
+            )
+            if not word_sequences:
+                break
+            last_word_sequences = word_sequences
+            last_suffix_length = suffix_length
+        return last_word_sequences, last_suffix_length
+
     @staticmethod
     def _generate_candidates(
-        result: _base.OcrResult, length: int
+        result: _base.OcrResult, length: int, include_compound_words: bool
     ) -> Iterator[Sequence[WordLocation]]:
         for line in result.lines:
             candidates = list(ScreenContents._generate_candidates_from_line(line))
-            for candidate in candidates:
-                # Always include the word by itself in case the target words are smashed together.
-                yield [candidate]
+            if include_compound_words or length == 1:
+                for candidate in candidates:
+                    yield [candidate]
             if length > 1:
                 yield from ScreenContents._sliding_window(candidates, length)
 
@@ -574,7 +640,7 @@ class ScreenContents:
         for word in line.words:
             left_offset = 0
             for match in re.finditer(ScreenContents._SUBWORD_REGEX, word.text):
-                subword = match.group(0)
+                subword = match.group()
                 right_offset = len(word.text) - (left_offset + len(subword))
                 yield WordLocation(
                     left=int(word.left),
@@ -604,16 +670,23 @@ class ScreenContents:
         return new_homophones
 
     def _score_words(
-        self, candidates: Sequence[WordLocation], normalized_targets: Sequence[str]
+        self,
+        candidates: Sequence[WordLocation],
+        normalized_targets: Sequence[str],
+        match_each_word: bool,
     ) -> float:
         if len(candidates) == 1:
             # Handle the case where the target words are smashed together.
             score = self._score_word(candidates[0], "".join(normalized_targets))
             return score if score >= self.confidence_threshold else 0
         scores = list(map(self._score_word, candidates, normalized_targets))
-        score = sum(
-            score * len(word) for score, word in zip(scores, normalized_targets)
-        ) / sum(map(len, normalized_targets))
+        if match_each_word:
+            score = min(scores)
+        else:
+            # Weighted average of scores based on word lengths.
+            score = sum(
+                score * len(word) for score, word in zip(scores, normalized_targets)
+            ) / sum(map(len, normalized_targets))
         return score if score >= self.confidence_threshold else 0
 
     def _score_word(self, candidate: WordLocation, normalized_target: str) -> float:

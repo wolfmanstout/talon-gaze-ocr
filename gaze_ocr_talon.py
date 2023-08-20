@@ -352,6 +352,22 @@ def move_text_cursor_to_word_generator(
         raise RuntimeError('Unable to find: "{}"'.format(text))
 
 
+def move_text_cursor_after_longest_prefix_generator(text: TimestampedText):
+    (
+        locations,
+        prefix_length,
+    ) = yield from gaze_ocr_controller.move_text_cursor_after_longest_prefix_generator(
+        text.text,
+        disambiguate=True,
+        timestamp=text.start,
+        click_offset_right=setting_ocr_click_offset_right.get(),
+    )
+    if not locations:
+        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        raise RuntimeError('Unable to find: "{}"'.format(text))
+    return prefix_length
+
+
 def select_text_generator(
     start: TimestampedText,
     end: Optional[TimestampedText] = None,
@@ -378,6 +394,21 @@ def select_text_generator(
             "text", False, f"{start.text}...{end.text if end else None}"
         )
         raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
+
+
+def select_changed_text_generator(text: TimestampedText):
+    result = yield from gaze_ocr_controller.select_changed_text_generator(
+        text.text,
+        disambiguate=True,
+        start_timestamp=text.start,
+        end_timestamp=text.end,
+        click_offset_right=setting_ocr_click_offset_right.get(),
+        select_pause_seconds=setting_ocr_select_pause_seconds.get(),
+    )
+    if not result:
+        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        raise RuntimeError('Unable to find: "{}"'.format(text))
+    return result
 
 
 def perform_ocr_action_generator(
@@ -507,6 +538,36 @@ class GazeOcrActions:
                 find_text,
                 position,
             )
+            if settings.get("user.context_sensitive_dictation"):
+                actions.user.dictation_insert(insertion_text)
+            else:
+                actions.insert(insertion_text)
+
+        begin_generator(run())
+
+    def resume_text(text: TimestampedText):
+        """Finds onscreen text that matches the beginning of the provided prose and
+        appends the rest to it."""
+
+        def run():
+            prefix_length = yield from move_text_cursor_after_longest_prefix_generator(
+                text
+            )
+            insertion_text = text.text[prefix_length:]
+            if settings.get("user.context_sensitive_dictation"):
+                actions.user.dictation_insert(insertion_text)
+            else:
+                actions.insert(insertion_text)
+
+        begin_generator(run())
+
+    def revise_text(text: TimestampedText):
+        """Finds onscreen text that matches the beginning and end of the provided prose
+        and replaces it."""
+
+        def run():
+            start, end = yield from select_changed_text_generator(text)
+            insertion_text = text.text[start:end]
             if settings.get("user.context_sensitive_dictation"):
                 actions.user.dictation_insert(insertion_text)
             else:
