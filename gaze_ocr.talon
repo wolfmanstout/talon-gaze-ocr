@@ -98,6 +98,8 @@ resume with <user.timestamped_prose>$:
     user.resume_text(timestamped_prose)
 revise with <user.timestamped_prose>$:
     user.revise_text(timestamped_prose)
+revise from <user.timestamped_prose>$:
+    user.revise_text_until_caret(timestamped_prose)
 
 ocr tracker on: user.connect_ocr_eye_tracker()
 ocr tracker off: user.disconnect_ocr_eye_tracker()

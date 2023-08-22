@@ -352,7 +352,9 @@ def move_text_cursor_to_word_generator(
         raise RuntimeError('Unable to find: "{}"'.format(text))
 
 
-def move_text_cursor_after_longest_prefix_generator(text: TimestampedText):
+def move_text_cursor_after_longest_prefix_generator(
+    text: TimestampedText, hold_shift: bool = False
+):
     (
         locations,
         prefix_length,
@@ -361,6 +363,7 @@ def move_text_cursor_after_longest_prefix_generator(text: TimestampedText):
         disambiguate=True,
         timestamp=text.start,
         click_offset_right=setting_ocr_click_offset_right.get(),
+        hold_shift=hold_shift,
     )
     if not locations:
         actions.user.show_ocr_overlay("text", False, f"{text.text}")
@@ -568,6 +571,22 @@ class GazeOcrActions:
         def run():
             start, end = yield from select_changed_text_generator(text)
             insertion_text = text.text[start:end]
+            if settings.get("user.context_sensitive_dictation"):
+                actions.user.dictation_insert(insertion_text)
+            else:
+                actions.insert(insertion_text)
+
+        begin_generator(run())
+
+    def revise_text_until_caret(text: TimestampedText):
+        """Finds onscreen text that matches the beginning of the provided prose until
+        the caret and replaces it."""
+
+        def run():
+            prefix_length = yield from move_text_cursor_after_longest_prefix_generator(
+                text, hold_shift=True
+            )
+            insertion_text = text.text[prefix_length:]
             if settings.get("user.context_sensitive_dictation"):
                 actions.user.dictation_insert(insertion_text)
             else:
