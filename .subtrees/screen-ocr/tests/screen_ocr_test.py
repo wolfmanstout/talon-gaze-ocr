@@ -2,6 +2,56 @@ import screen_ocr
 from screen_ocr import _base
 
 
+def test_find_longest_matching_suffix():
+    line = _base.OcrLine(
+        words=[
+            _base.OcrWord(text="a", left=0, top=0, width=10, height=10),
+            _base.OcrWord(text="test.", left=0, top=0, width=10, height=10),
+            _base.OcrWord(text="b", left=0, top=0, width=10, height=10),
+        ]
+    )
+    ocr_result = _base.OcrResult(lines=[line])
+    contents = screen_ocr.ScreenContents(
+        screen_coordinates=None,
+        screen_offset=(0, 0),
+        screenshot=None,
+        result=ocr_result,
+        confidence_threshold=1,
+        homophones={},
+        search_radius=None,
+    )
+    locations, suffix_length = contents.find_longest_matching_suffix("test word.")
+    assert locations == [
+        [
+            screen_ocr.WordLocation(
+                text=".",
+                left_char_offset=4,
+                right_char_offset=0,
+                left=0,
+                top=0,
+                width=10,
+                height=10,
+            )
+        ]
+    ]
+    assert suffix_length == 1
+    locations, suffix_length = contents.find_longest_matching_suffix(" word.")
+    assert locations == [
+        [
+            screen_ocr.WordLocation(
+                text=".",
+                left_char_offset=4,
+                right_char_offset=0,
+                left=0,
+                top=0,
+                width=10,
+                height=10,
+            )
+        ]
+    ]
+    assert suffix_length == 1
+
+
 def test_generate_candidates_from_line():
     line = _base.OcrLine(
         words=[
