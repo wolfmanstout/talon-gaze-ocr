@@ -308,20 +308,22 @@ class Controller:
 
     move_text_cursor_to_word = move_text_cursor_to_words
 
-    def move_text_cursor_after_longest_prefix(
+    def move_text_cursor_to_longest_prefix(
         self,
         words: str,
+        cursor_position: str = "middle",
         filter_location_function: Optional[FilterLocationCallable] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
     ) -> Tuple[Optional[Sequence[WordLocation]], int]:
-        """Moves the text cursor after the longest prefix of the provided words that
+        """Moves the text cursor to the longest prefix of the provided words that
         matches onscreen text. See move_text_cursor_to_words for argument details."""
         return self._extract_result(
-            self.move_text_cursor_after_longest_prefix_generator(
+            self.move_text_cursor_to_longest_prefix_generator(
                 words,
                 disambiguate=False,
+                cursor_position=cursor_position,
                 filter_location_function=filter_location_function,
                 timestamp=timestamp,
                 click_offset_right=click_offset_right,
@@ -329,10 +331,11 @@ class Controller:
             )
         )
 
-    def move_text_cursor_after_longest_prefix_generator(
+    def move_text_cursor_to_longest_prefix_generator(
         self,
         words: str,
         disambiguate: bool,
+        cursor_position: str = "middle",
         filter_location_function: Optional[FilterLocationCallable] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
@@ -342,7 +345,7 @@ class Controller:
         Sequence[WordLocation],
         Tuple[Optional[Sequence[WordLocation]], int],
     ]:
-        """Same as move_text_cursor_after_longest_prefix, except it supports
+        """Same as move_text_cursor_to_longest_prefix, except it supports
         disambiguation through a generator. See header comment for details."""
         if timestamp:
             self.read_nearby(timestamp)
@@ -365,7 +368,7 @@ class Controller:
         try:
             if not self._move_text_cursor_to_word_locations(
                 locations,
-                cursor_position="after",
+                cursor_position=cursor_position,
                 click_offset_right=click_offset_right,
             ):
                 return None, 0
@@ -374,20 +377,22 @@ class Controller:
                 self.keyboard.shift_up()
         return locations, prefix_length
 
-    def move_text_cursor_before_longest_suffix(
+    def move_text_cursor_to_longest_suffix(
         self,
         words: str,
+        cursor_position: str = "middle",
         filter_location_function: Optional[FilterLocationCallable] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
     ) -> Tuple[Optional[Sequence[WordLocation]], int]:
-        """Moves the text cursor before the longest suffix of the provided words that
+        """Moves the text cursor to the longest suffix of the provided words that
         matches onscreen text. See move_text_cursor_to_words for argument details."""
         return self._extract_result(
-            self.move_text_cursor_before_longest_suffix_generator(
+            self.move_text_cursor_to_longest_suffix_generator(
                 words,
                 disambiguate=False,
+                cursor_position=cursor_position,
                 filter_location_function=filter_location_function,
                 timestamp=timestamp,
                 click_offset_right=click_offset_right,
@@ -395,10 +400,11 @@ class Controller:
             )
         )
 
-    def move_text_cursor_before_longest_suffix_generator(
+    def move_text_cursor_to_longest_suffix_generator(
         self,
         words: str,
         disambiguate: bool,
+        cursor_position: str = "middle",
         filter_location_function: Optional[FilterLocationCallable] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
@@ -408,7 +414,7 @@ class Controller:
         Sequence[WordLocation],
         Tuple[Optional[Sequence[WordLocation]], int],
     ]:
-        """Same as move_text_cursor_before_longest_suffix, except it supports
+        """Same as move_text_cursor_to_longest_suffix, except it supports
         disambiguation through a generator. See header comment for details."""
         if timestamp:
             self.read_nearby(timestamp)
@@ -431,7 +437,7 @@ class Controller:
         try:
             if not self._move_text_cursor_to_word_locations(
                 locations,
-                cursor_position="before",
+                cursor_position=cursor_position,
                 click_offset_right=click_offset_right,
             ):
                 return None, 0
@@ -663,19 +669,18 @@ class Controller:
                 self.keyboard.shift_up()
             return start_locations
 
-    def select_changed_text(
+    def select_matching_text(
         self,
         words: str,
         start_timestamp: Optional[float] = None,
         end_timestamp: Optional[float] = None,
         click_offset_right: int = 0,
     ) -> Optional[Tuple[int, int]]:
-        """Finds onscreen text that matches the beginning and end of the provided text
-        and selects the text in between. Returns the start and end indices corresponding
-        to the selected text, if found. See select_text for argument details.
-        """
+        """Selects onscreen text that matches the beginning and end of the provided
+        text. Returns the start and end indices corresponding to the changed text, if
+        found. See select_text for argument details."""
         return self._extract_result(
-            self.select_changed_text_generator(
+            self.select_matching_text_generator(
                 words,
                 disambiguate=False,
                 start_timestamp=start_timestamp,
@@ -684,7 +689,7 @@ class Controller:
             )
         )
 
-    def select_changed_text_generator(
+    def select_matching_text_generator(
         self,
         words: str,
         disambiguate: bool,
@@ -697,15 +702,16 @@ class Controller:
         Sequence[WordLocation],
         Optional[Tuple[int, int]],
     ]:
-        """Same as select_changed_text, except it supports disambiguation through a
+        """Same as select_matching_text, except it supports disambiguation through a
         generator. See header comment for details."""
         if start_timestamp:
             self.read_nearby(start_timestamp)
         (
             start_locations,
             prefix_length,
-        ) = yield from self.move_text_cursor_after_longest_prefix_generator(
+        ) = yield from self.move_text_cursor_to_longest_prefix_generator(
             words,
+            cursor_position="before",
             disambiguate=disambiguate,
             click_offset_right=click_offset_right,
         )
@@ -723,8 +729,9 @@ class Controller:
         (
             end_locations,
             suffix_length,
-        ) = yield from self.move_text_cursor_before_longest_suffix_generator(
+        ) = yield from self.move_text_cursor_to_longest_suffix_generator(
             remaining_words,
+            cursor_position="after",
             disambiguate=disambiguate,
             filter_location_function=filter_function,
             click_offset_right=click_offset_right,

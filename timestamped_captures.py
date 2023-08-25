@@ -33,6 +33,7 @@ class TextPosition:
 def timestamped_prose(m) -> TimestampedText:
     """Dictated text appearing onscreen."""
     formatter = DictationFormat()
+    formatter.state = None
     return TimestampedText(
         text="".join([formatter.format(item.text) for item in m]),
         start=m[0].start,

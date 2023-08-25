@@ -352,15 +352,16 @@ def move_text_cursor_to_word_generator(
         raise RuntimeError('Unable to find: "{}"'.format(text))
 
 
-def move_text_cursor_after_longest_prefix_generator(
-    text: TimestampedText, hold_shift: bool = False
+def move_text_cursor_to_longest_prefix_generator(
+    text: TimestampedText, position: str, hold_shift: bool = False
 ):
     (
         locations,
         prefix_length,
-    ) = yield from gaze_ocr_controller.move_text_cursor_after_longest_prefix_generator(
+    ) = yield from gaze_ocr_controller.move_text_cursor_to_longest_prefix_generator(
         text.text,
         disambiguate=True,
+        cursor_position=position,
         timestamp=text.start,
         click_offset_right=setting_ocr_click_offset_right.get(),
         hold_shift=hold_shift,
@@ -371,15 +372,16 @@ def move_text_cursor_after_longest_prefix_generator(
     return prefix_length
 
 
-def move_text_cursor_before_longest_suffix_generator(
-    text: TimestampedText, hold_shift: bool = False
+def move_text_cursor_to_longest_suffix_generator(
+    text: TimestampedText, position: str, hold_shift: bool = False
 ):
     (
         locations,
         prefix_length,
-    ) = yield from gaze_ocr_controller.move_text_cursor_before_longest_suffix_generator(
+    ) = yield from gaze_ocr_controller.move_text_cursor_to_longest_suffix_generator(
         text.text,
         disambiguate=True,
+        cursor_position=position,
         timestamp=text.start,
         click_offset_right=setting_ocr_click_offset_right.get(),
         hold_shift=hold_shift,
@@ -418,8 +420,8 @@ def select_text_generator(
         raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
 
 
-def select_changed_text_generator(text: TimestampedText):
-    result = yield from gaze_ocr_controller.select_changed_text_generator(
+def select_matching_text_generator(text: TimestampedText):
+    result = yield from gaze_ocr_controller.select_matching_text_generator(
         text.text,
         disambiguate=True,
         start_timestamp=text.start,
@@ -430,7 +432,6 @@ def select_changed_text_generator(text: TimestampedText):
     if not result:
         actions.user.show_ocr_overlay("text", False, f"{text.text}")
         raise RuntimeError('Unable to find: "{}"'.format(text))
-    return result
 
 
 def perform_ocr_action_generator(
@@ -572,8 +573,8 @@ class GazeOcrActions:
         appends the rest to it."""
 
         def run():
-            prefix_length = yield from move_text_cursor_after_longest_prefix_generator(
-                text
+            prefix_length = yield from move_text_cursor_to_longest_prefix_generator(
+                text, "after"
             )
             insertion_text = text.text[prefix_length:]
             if settings.get("user.context_sensitive_dictation"):
@@ -588,8 +589,8 @@ class GazeOcrActions:
         prepends the rest to it."""
 
         def run():
-            suffix_length = yield from move_text_cursor_before_longest_suffix_generator(
-                text
+            suffix_length = yield from move_text_cursor_to_longest_suffix_generator(
+                text, "before"
             )
             insertion_text = text.text[:-suffix_length]
             if settings.get("user.context_sensitive_dictation"):
@@ -604,8 +605,8 @@ class GazeOcrActions:
         and replaces it."""
 
         def run():
-            start, end = yield from select_changed_text_generator(text)
-            insertion_text = text.text[start:end]
+            yield from select_matching_text_generator(text)
+            insertion_text = text.text
             if settings.get("user.context_sensitive_dictation"):
                 actions.user.dictation_insert(insertion_text)
             else:
@@ -618,10 +619,10 @@ class GazeOcrActions:
         and replaces it until the caret."""
 
         def run():
-            prefix_length = yield from move_text_cursor_after_longest_prefix_generator(
-                text, hold_shift=True
+            yield from move_text_cursor_to_longest_prefix_generator(
+                text, "before", hold_shift=True
             )
-            insertion_text = text.text[prefix_length:]
+            insertion_text = text.text
             if settings.get("user.context_sensitive_dictation"):
                 actions.user.dictation_insert(insertion_text)
             else:
@@ -634,10 +635,10 @@ class GazeOcrActions:
         replaces it until the caret."""
 
         def run():
-            suffix_length = yield from move_text_cursor_before_longest_suffix_generator(
-                text, hold_shift=True
+            yield from move_text_cursor_to_longest_suffix_generator(
+                text, "after", hold_shift=True
             )
-            insertion_text = text.text[:-suffix_length]
+            insertion_text = text.text
             if settings.get("user.context_sensitive_dictation"):
                 actions.user.dictation_insert(insertion_text)
             else:
