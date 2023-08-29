@@ -94,8 +94,8 @@ ctx.lists["self.ocr_actions"] = {
     "paste to": "paste",
     "clear": "delete",
     "change": "delete",
-    "delete": "delete",
-    "chuck": "delete",
+    "delete": "delete_with_whitespace",
+    "chuck": "delete_with_whitespace",
     "cap": "capitalize",
     "lower": "lowercase",
     # Note: the following are not defined by default in knausj.
@@ -397,7 +397,7 @@ def perform_ocr_action_generator(
         for_deletion = (
             for_deletion
             if for_deletion is not None
-            else ocr_action in ("cut", "delete")
+            else ocr_action in ("cut", "delete_with_whitespace")
         )
         yield from select_text_generator(
             text_range.start,
@@ -421,7 +421,7 @@ def perform_ocr_action_generator(
         actions.edit.cut()
     elif ocr_action == "paste":
         actions.edit.paste()
-    elif ocr_action == "delete":
+    elif ocr_action in ("delete", "delete_with_whitespace"):
         actions.key("backspace")
     elif ocr_action == "capitalize":
         text = actions.edit.selected_text()
