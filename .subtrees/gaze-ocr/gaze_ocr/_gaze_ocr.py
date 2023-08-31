@@ -9,6 +9,7 @@ completes, next() or send() will raise StopIteration with the .value set to the 
 import os.path
 import time
 from concurrent import futures
+from enum import Enum, auto
 from typing import Callable, Generator, Optional, Sequence, Tuple
 
 from screen_ocr import Reader, ScreenContents, WordLocation
@@ -223,6 +224,11 @@ class Controller:
     # Returns true if the location should be included as a candidate.
     FilterLocationCallable = Callable[[Sequence[WordLocation]], bool]
 
+    class SelectionPosition(Enum):
+        NONE = auto()
+        LEFT = auto()
+        RIGHT = auto()
+
     def move_text_cursor_to_words(
         self,
         words: str,
@@ -267,6 +273,7 @@ class Controller:
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
+        selection_position: Optional[SelectionPosition] = None,
     ) -> Generator[
         Sequence[Sequence[WordLocation]],
         Sequence[WordLocation],
@@ -294,11 +301,22 @@ class Controller:
         if hold_shift:
             self.keyboard.shift_down()
         try:
+            if not selection_position:
+                # Guess the selection position.
+                if not hold_shift:
+                    selection_position = self.SelectionPosition.NONE
+                elif cursor_position == "before":
+                    selection_position = self.SelectionPosition.LEFT
+                elif cursor_position == "after":
+                    selection_position = self.SelectionPosition.RIGHT
+                else:
+                    selection_position = self.SelectionPosition.NONE
             if not self._move_text_cursor_to_word_locations(
                 locations,
                 cursor_position=cursor_position,
                 include_whitespace=include_whitespace,
                 click_offset_right=click_offset_right,
+                selection_position=selection_position,
             ):
                 return None
         finally:
@@ -366,10 +384,18 @@ class Controller:
         if hold_shift:
             self.keyboard.shift_down()
         try:
+            # Guess the selection position.
+            selection_position = (
+                self.SelectionPosition.LEFT
+                if hold_shift
+                else self.SelectionPosition.NONE
+            )
             if not self._move_text_cursor_to_word_locations(
                 locations,
                 cursor_position=cursor_position,
+                include_whitespace=False,
                 click_offset_right=click_offset_right,
+                selection_position=selection_position,
             ):
                 return None, 0
         finally:
@@ -435,10 +461,18 @@ class Controller:
         if hold_shift:
             self.keyboard.shift_down()
         try:
+            # Guess the selection position.
+            selection_position = (
+                self.SelectionPosition.RIGHT
+                if hold_shift
+                else self.SelectionPosition.NONE
+            )
             if not self._move_text_cursor_to_word_locations(
                 locations,
                 cursor_position=cursor_position,
+                include_whitespace=False,
                 click_offset_right=click_offset_right,
+                selection_position=selection_position,
             ):
                 return None, 0
         finally:
@@ -449,43 +483,25 @@ class Controller:
     def _move_text_cursor_to_word_locations(
         self,
         locations: Sequence[WordLocation],
-        cursor_position: str = "middle",
-        include_whitespace: bool = False,
-        click_offset_right: int = 0,
+        cursor_position: str,
+        include_whitespace: bool,
+        click_offset_right: int,
+        selection_position: SelectionPosition,
     ) -> bool:
         if cursor_position == "before":
             distance_from_left = locations[0].left_char_offset
             distance_from_right = locations[0].right_char_offset + len(
                 locations[0].text
             )
-            if distance_from_left <= distance_from_right:
-                coordinates = self._apply_click_offset(
-                    locations[0].start_coordinates, click_offset_right
-                )
-                if self._screenshot_changed_near_coordinates(
-                    self.latest_screen_contents().screenshot,
-                    self.latest_screen_contents().screen_offset,
-                    coordinates,
-                ):
-                    return False
-                self.mouse.move(coordinates)
-                self.mouse.click()
-                if distance_from_left:
-                    self.keyboard.right(distance_from_left)
-            else:
-                coordinates = self._apply_click_offset(
-                    locations[0].end_coordinates, click_offset_right
-                )
-                if self._screenshot_changed_near_coordinates(
-                    self.latest_screen_contents().screenshot,
-                    self.latest_screen_contents().screen_offset,
-                    coordinates,
-                ):
-                    return False
-                self.mouse.move(coordinates)
-                self.mouse.click()
-                if distance_from_right:
-                    self.keyboard.left(distance_from_right)
+            if not self._move_text_cursor_to_position(
+                start_coordinates=locations[0].start_coordinates,
+                end_coordinates=locations[0].end_coordinates,
+                click_offset_right=click_offset_right,
+                distance_from_left=distance_from_left,
+                distance_from_right=distance_from_right,
+                selection_position=selection_position,
+            ):
+                return False
             if (
                 include_whitespace
                 and not distance_from_left
@@ -525,34 +541,15 @@ class Controller:
             distance_from_left = locations[-1].left_char_offset + len(
                 locations[-1].text
             )
-            if distance_from_right <= distance_from_left:
-                coordinates = self._apply_click_offset(
-                    locations[-1].end_coordinates, click_offset_right
-                )
-                if self._screenshot_changed_near_coordinates(
-                    self.latest_screen_contents().screenshot,
-                    self.latest_screen_contents().screen_offset,
-                    coordinates,
-                ):
-                    return False
-                self.mouse.move(coordinates)
-                self.mouse.click()
-                if distance_from_right:
-                    self.keyboard.left(distance_from_right)
-            else:
-                coordinates = self._apply_click_offset(
-                    locations[-1].start_coordinates, click_offset_right
-                )
-                if self._screenshot_changed_near_coordinates(
-                    self.latest_screen_contents().screenshot,
-                    self.latest_screen_contents().screen_offset,
-                    coordinates,
-                ):
-                    return False
-                self.mouse.move(coordinates)
-                self.mouse.click()
-                if distance_from_left:
-                    self.keyboard.right(distance_from_left)
+            if not self._move_text_cursor_to_position(
+                start_coordinates=locations[-1].start_coordinates,
+                end_coordinates=locations[-1].end_coordinates,
+                click_offset_right=click_offset_right,
+                distance_from_left=distance_from_left,
+                distance_from_right=distance_from_right,
+                selection_position=selection_position,
+            ):
+                return False
             if (
                 include_whitespace
                 and not distance_from_right
@@ -562,6 +559,59 @@ class Controller:
                 right_chars = self.app_actions.peek_right()
                 if right_chars and right_chars[0] == " ":
                     self.keyboard.right(1)
+        return True
+
+    def _move_text_cursor_to_position(
+        self,
+        start_coordinates: Tuple[int, int],
+        end_coordinates: Tuple[int, int],
+        click_offset_right: int,
+        distance_from_left: int,
+        distance_from_right: int,
+        selection_position: SelectionPosition,
+    ):
+        # Determine whether to start from the left or the right.
+        if not distance_from_left:
+            start_from_left = True
+        elif not distance_from_right:
+            start_from_left = False
+        elif selection_position == self.SelectionPosition.RIGHT:
+            # Mac selection can only be reliably expanded outward.
+            start_from_left = True
+        elif selection_position == self.SelectionPosition.LEFT:
+            # Mac selection can only be reliably expanded outward.
+            start_from_left = False
+        elif distance_from_left <= distance_from_right:
+            start_from_left = True
+        else:
+            start_from_left = False
+        if start_from_left:
+            coordinates = self._apply_click_offset(
+                start_coordinates, click_offset_right
+            )
+            if self._screenshot_changed_near_coordinates(
+                self.latest_screen_contents().screenshot,
+                self.latest_screen_contents().screen_offset,
+                coordinates,
+            ):
+                return False
+            self.mouse.move(coordinates)
+            self.mouse.click()
+            if distance_from_left:
+                self.keyboard.right(distance_from_left)
+        else:
+            # Start from the right.
+            coordinates = self._apply_click_offset(end_coordinates, click_offset_right)
+            if self._screenshot_changed_near_coordinates(
+                self.latest_screen_contents().screenshot,
+                self.latest_screen_contents().screen_offset,
+                coordinates,
+            ):
+                return False
+            self.mouse.move(coordinates)
+            self.mouse.click()
+            if distance_from_right:
+                self.keyboard.left(distance_from_right)
         return True
 
     def select_text(
@@ -632,6 +682,7 @@ class Controller:
             cursor_position="after" if after_start else "before",
             include_whitespace=for_deletion and not after_start,
             click_offset_right=click_offset_right,
+            selection_position=self.SelectionPosition.LEFT,
         )
         if not start_locations:
             return None
@@ -653,6 +704,7 @@ class Controller:
                     include_whitespace=False,
                     click_offset_right=click_offset_right,
                     hold_shift=True,
+                    selection_position=self.SelectionPosition.RIGHT,
                 )
             )
         else:
@@ -663,6 +715,7 @@ class Controller:
                     cursor_position="before" if before_end else "after",
                     include_whitespace=False,
                     click_offset_right=click_offset_right,
+                    selection_position=self.SelectionPosition.RIGHT,
                 ):
                     return None
             finally:

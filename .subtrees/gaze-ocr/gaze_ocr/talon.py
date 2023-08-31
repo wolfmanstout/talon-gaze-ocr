@@ -52,15 +52,6 @@ class Keyboard:
         return self._shift
 
     def left(self, n=1):
-        # HACK: When adjusting selected text, Mac does not perform the
-        # adjustments wherever the cursor was last placed. Instead, it bases
-        # this on the first move of the cursor. We start with shift-right to
-        # make it possible to shrink the selection from the right. This works in
-        # most cases, except when the text has nothing to the right.
-        if self._shift:
-            if app.platform == "mac":
-                actions.key("shift-right")
-                actions.key("shift-left")
         for _ in range(n):
             if self._shift:
                 actions.key("shift-left")
