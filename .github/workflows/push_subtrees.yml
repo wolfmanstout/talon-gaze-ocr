@@ -19,8 +19,8 @@ jobs:
 
       - name: Push screen-ocr
         run: |
-          git subtree push --prefix=.subtrees/screen-ocr https://wolfmanstout:${{ secrets.GH_SUBTREE_TOKEN }}@github.com/wolfmanstout/screen-ocr.git master
+          git subtree push --prefix=.subtrees/screen-ocr https://oauth2:${{ secrets.GH_SUBTREE_TOKEN }}@github.com/wolfmanstout/screen-ocr.git master
           
       - name: Push gaze-ocr
         run: |
-          git subtree push --prefix=.subtrees/gaze-ocr https://wolfmanstout:${{ secrets.GH_SUBTREE_TOKEN }}@github.com/wolfmanstout/gaze-ocr.git master
+          git subtree push --prefix=.subtrees/gaze-ocr https://oauth2:${{ secrets.GH_SUBTREE_TOKEN }}@github.com/wolfmanstout/gaze-ocr.git master
