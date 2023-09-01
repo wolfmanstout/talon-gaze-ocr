@@ -382,7 +382,7 @@ def move_text_cursor_to_longest_suffix_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        timestamp=text.start,
+        timestamp=text.end,
         click_offset_right=setting_ocr_click_offset_right.get(),
         hold_shift=hold_shift,
     )
