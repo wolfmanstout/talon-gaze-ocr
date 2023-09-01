@@ -544,10 +544,7 @@ class GazeOcrActions:
                 text_range,
                 for_deletion=settings.get("user.context_sensitive_dictation"),
             )
-            if settings.get("user.context_sensitive_dictation"):
-                actions.user.dictation_insert(replacement)
-            else:
-                actions.insert(replacement)
+            actions.user.dictation_insert(replacement)
 
         begin_generator(run())
 
@@ -561,10 +558,7 @@ class GazeOcrActions:
                 find_text,
                 position,
             )
-            if settings.get("user.context_sensitive_dictation"):
-                actions.user.dictation_insert(insertion_text)
-            else:
-                actions.insert(insertion_text)
+            actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())
 
@@ -577,10 +571,7 @@ class GazeOcrActions:
                 text, "after"
             )
             insertion_text = text.text[prefix_length:]
-            if settings.get("user.context_sensitive_dictation"):
-                actions.user.dictation_insert(insertion_text)
-            else:
-                actions.insert(insertion_text)
+            actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())
 
@@ -593,10 +584,7 @@ class GazeOcrActions:
                 text, "before"
             )
             insertion_text = text.text[:-suffix_length]
-            if settings.get("user.context_sensitive_dictation"):
-                actions.user.dictation_insert(insertion_text)
-            else:
-                actions.insert(insertion_text)
+            actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())
 
@@ -607,10 +595,7 @@ class GazeOcrActions:
         def run():
             yield from select_matching_text_generator(text)
             insertion_text = text.text
-            if settings.get("user.context_sensitive_dictation"):
-                actions.user.dictation_insert(insertion_text)
-            else:
-                actions.insert(insertion_text)
+            actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())
 
@@ -623,10 +608,7 @@ class GazeOcrActions:
                 text, "before", hold_shift=True
             )
             insertion_text = text.text
-            if settings.get("user.context_sensitive_dictation"):
-                actions.user.dictation_insert(insertion_text)
-            else:
-                actions.insert(insertion_text)
+            actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())
 
@@ -639,10 +621,7 @@ class GazeOcrActions:
                 text, "after", hold_shift=True
             )
             insertion_text = text.text
-            if settings.get("user.context_sensitive_dictation"):
-                actions.user.dictation_insert(insertion_text)
-            else:
-                actions.insert(insertion_text)
+            actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())
 
