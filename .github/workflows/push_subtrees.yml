@@ -12,6 +12,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GH_SUBTREE_TOKEN }}
       - name: Configure Git User
         run: |
           git config user.name "GitHub Action"
@@ -19,8 +21,8 @@ jobs:
 
       - name: Push screen-ocr
         run: |
-          git subtree push --prefix=.subtrees/screen-ocr https://oauth2:${{ secrets.GH_SUBTREE_TOKEN }}@github.com/wolfmanstout/screen-ocr.git master
+          git subtree push --prefix=.subtrees/screen-ocr https://github.com/wolfmanstout/screen-ocr.git master
           
       - name: Push gaze-ocr
         run: |
-          git subtree push --prefix=.subtrees/gaze-ocr https://oauth2:${{ secrets.GH_SUBTREE_TOKEN }}@github.com/wolfmanstout/gaze-ocr.git master
+          git subtree push --prefix=.subtrees/gaze-ocr https://github.com/wolfmanstout/gaze-ocr.git master
