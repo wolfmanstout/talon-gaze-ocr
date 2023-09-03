@@ -52,7 +52,11 @@ class Controller:
 
     def start_reading_nearby(self) -> None:
         """Start OCR nearby the gaze point in a background thread."""
-        gaze_point = self.eye_tracker.get_gaze_point() if self.eye_tracker else None
+        gaze_point = (
+            self.eye_tracker.get_gaze_point()
+            if self.eye_tracker and self.eye_tracker.is_connected
+            else None
+        )
         # Don't enqueue multiple requests.
         if self._future and not self._future.done():
             self._future.cancel()
@@ -71,9 +75,9 @@ class Controller:
         """
         gaze_point = (
             self.eye_tracker.get_gaze_point_at_timestamp(timestamp)
-            if self.eye_tracker and timestamp
+            if self.eye_tracker and self.eye_tracker.is_connected and timestamp
             else self.eye_tracker.get_gaze_point()
-            if self.eye_tracker
+            if self.eye_tracker and self.eye_tracker.is_connected
             else None
         )
         self._future = futures.Future()
@@ -795,7 +799,11 @@ class Controller:
         return prefix_length, len(words) - suffix_length
 
     def _read_nearby_if_gaze_moved(self):
-        current_gaze = self.eye_tracker.get_gaze_point() if self.eye_tracker else None
+        current_gaze = (
+            self.eye_tracker.get_gaze_point()
+            if self.eye_tracker and self.eye_tracker.is_connected
+            else None
+        )
         latest_screen_contents = self.latest_screen_contents()
         previous_gaze = latest_screen_contents.screen_coordinates
         threshold_squared = (
