@@ -8,7 +8,7 @@ for an overview.
 
 ## Installation
 
-`git clone` this repo into your user directory. Requires
+`git clone` this repo into your Talon user scripts folder. Requires
 [knausj_talon](https://github.com/knausj85/knausj_talon) to be installed as a
 sibling in the same directory.
 
