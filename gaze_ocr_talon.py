@@ -392,6 +392,22 @@ def move_text_cursor_to_longest_suffix_generator(
     return prefix_length
 
 
+def move_text_cursor_to_insertion_point(text: TimestampedText):
+    result = (
+        yield from gaze_ocr_controller.move_text_cursor_to_insertion_point_generator(
+            text.text,
+            disambiguate=True,
+            start_timestamp=text.start,
+            end_timestamp=text.end,
+            click_offset_right=setting_ocr_click_offset_right.get(),
+        )
+    )
+    if not result:
+        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        raise RuntimeError('Unable to find: "{}"'.format(text))
+    return result
+
+
 def select_text_generator(
     start: TimestampedText,
     end: Optional[TimestampedText] = None,
@@ -558,6 +574,15 @@ class GazeOcrActions:
                 find_text,
                 position,
             )
+            actions.user.dictation_insert(insertion_text)
+
+        begin_generator(run())
+
+    def insert_text_within(text: TimestampedText):
+        """TODO"""
+
+        def run():
+            insertion_text = yield from move_text_cursor_to_insertion_point(text)
             actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())

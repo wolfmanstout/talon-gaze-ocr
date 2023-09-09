@@ -94,15 +94,17 @@ replace [{user.ocr_modifiers}] [seen | scene] <user.prose_range> with <user.pros
     user.insert_adjacent_to_text(timestamped_prose, "after", prose)
 phones (seen | scene) <user.timestamped_prose>$:
     user.change_text_homophone(timestamped_prose)
-append (with | from) <user.timestamped_prose>$:
+append with <user.timestamped_prose>$:
     user.append_text(timestamped_prose)
-prepend (with | through) <user.timestamped_prose>$:
+prepend with <user.timestamped_prose>$:
     user.prepend_text(timestamped_prose)
+insert with <user.timestamped_prose>$:
+    user.insert_text_within(timestamped_prose)
 revise with <user.timestamped_prose>$:
     user.revise_text(timestamped_prose)
-revise from <user.timestamped_prose>$:
+revise with <user.timestamped_prose> cursor$:
     user.revise_text_starting_with(timestamped_prose)
-revise through <user.timestamped_prose>$:
+revise with cursor <user.timestamped_prose>$:
     user.revise_text_ending_with(timestamped_prose)
 
 ocr tracker on: user.connect_ocr_eye_tracker()

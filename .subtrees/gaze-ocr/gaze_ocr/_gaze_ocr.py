@@ -484,6 +484,59 @@ class Controller:
                 self.keyboard.shift_up()
         return locations, suffix_length
 
+    def move_text_cursor_to_insertion_point_generator(
+        self,
+        words: str,
+        disambiguate: bool,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+    ) -> Generator[Sequence[Sequence[WordLocation]], Sequence[WordLocation], str,]:
+        """TODO"""
+        if start_timestamp:
+            self.read_nearby(start_timestamp)
+        screen_contents = self.latest_screen_contents()
+        prefix_matches, prefix_length = screen_contents.find_longest_matching_prefix(
+            words
+        )
+        if end_timestamp:
+            self.read_nearby(end_timestamp)
+        screen_contents = self.latest_screen_contents()
+        suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
+            words
+        )
+        if not prefix_matches and not suffix_matches:
+            return ""
+        elif prefix_matches and suffix_matches:
+            remainder = words[prefix_length:-suffix_length].strip()
+            # TODO: Check if locations are misaligned or assume anchored one side
+        elif prefix_matches:
+            remainder = words[prefix_length:]
+        else:
+            assert suffix_matches
+            remainder = words[:-suffix_length]
+        matches = prefix_matches + suffix_matches
+        if not disambiguate:
+            match = screen_contents.find_nearest_words_within_matches(matches)
+            matches = [match] if match else []
+        self._write_data(screen_contents, words, matches)
+        if not matches:
+            return ""
+        if len(matches) > 1:
+            locations = yield matches
+        else:
+            locations = matches[0]
+        cursor_position = "after" if locations in prefix_matches else "before"
+        if not self._move_text_cursor_to_word_locations(
+            locations,
+            cursor_position=cursor_position,
+            include_whitespace=False,
+            click_offset_right=click_offset_right,
+            selection_position=self.SelectionPosition.NONE,
+        ):
+            return ""
+        return remainder
+
     def _move_text_cursor_to_word_locations(
         self,
         locations: Sequence[WordLocation],
