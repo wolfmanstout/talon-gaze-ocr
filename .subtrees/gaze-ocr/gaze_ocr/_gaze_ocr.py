@@ -6,10 +6,10 @@ matches if disambiguation is needed. Resume computation with generator.send(matc
 completes, next() or send() will raise StopIteration with the .value set to the return value.
 """
 
-from dataclasses import dataclass, field
 import os.path
 import time
 from concurrent import futures
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Generator, Optional, Sequence, Tuple
 
@@ -809,7 +809,6 @@ class Controller:
                 end_location.go()
             finally:
                 self.keyboard.shift_up()
-            print(f"Locations: {start_location}, {end_location}")
             return end_location
 
     def select_matching_text(
