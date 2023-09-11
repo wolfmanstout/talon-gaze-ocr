@@ -37,6 +37,8 @@ class CursorLocation:
     def go(self):
         self.mouse.move(self.click_coordinates)
         self.mouse.click()
+        # Needed to avoid selection issues on Mac.
+        time.sleep(0.01)
         if self.move_distance:
             if self.move_cursor_right:
                 self.keyboard.right(self.move_distance)
@@ -807,6 +809,7 @@ class Controller:
                 end_location.go()
             finally:
                 self.keyboard.shift_up()
+            print(f"Locations: {start_location}, {end_location}")
             return end_location
 
     def select_matching_text(
