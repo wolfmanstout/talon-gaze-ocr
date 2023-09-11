@@ -253,7 +253,7 @@ def has_light_background(screenshot):
 
 disambiguation_canvas = None
 debug_canvas = None
-ambiguous_matches = None
+ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
 disambiguation_generator = None
 
 
@@ -278,7 +278,7 @@ def show_disambiguation():
         debug_color = (
             "000000" if has_light_background(contents.screenshot) else "ffffff"
         )
-        nearest = contents.find_nearest_words_within_matches(ambiguous_matches)
+        nearest = gaze_ocr_controller.find_nearest_cursor_location(ambiguous_matches)
         used_locations = set()
         for i, match in enumerate(ambiguous_matches):
             if nearest == match:
@@ -287,13 +287,14 @@ def show_disambiguation():
                 )
             else:
                 c.paint.typeface = ""
-            c.paint.textsize = max(round(match[0].height * 2), 15)
+            c.paint.textsize = max(round(match.text_height * 2), 15)
             c.paint.style = c.paint.Style.FILL
             c.paint.color = debug_color
-            location = (match[0].left, match[0].top)
+            location = (match.visual_coordinates[0], match.visual_coordinates[1])
+            # TODO: Check for nearby used locations, not just identical.
             while location in used_locations:
                 # Shift right.
-                location = (location[0] + match[0].height, location[1])
+                location = (location[0] + match.text_height, location[1])
             used_locations.add(location)
             c.draw_text(str(i + 1), *location)
         if setting_ocr_disambiguation_display_seconds.get():
