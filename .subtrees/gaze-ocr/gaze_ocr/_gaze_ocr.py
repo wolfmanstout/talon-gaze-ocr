@@ -517,16 +517,6 @@ class Controller:
         suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
             words
         )
-        if not prefix_matches and not suffix_matches:
-            return None
-        elif prefix_matches and suffix_matches:
-            remainder = words[prefix_length:-suffix_length].strip()
-            # TODO: Check if locations are misaligned or assume anchored one side
-        elif prefix_matches:
-            remainder = words[prefix_length:]
-        else:
-            assert suffix_matches
-            remainder = words[:-suffix_length]
         matches = list(prefix_matches) + list(suffix_matches)
         self._write_data(screen_contents, words, matches)
         prefix_locations = self._plan_cursor_locations(
@@ -552,7 +542,11 @@ class Controller:
         if not location:
             return None
         location.go()
-        return remainder
+        if location in prefix_locations:
+            return words[prefix_length:]
+        else:
+            assert location in suffix_locations
+            return words[:-suffix_length]
 
     def _plan_cursor_locations(
         self,
