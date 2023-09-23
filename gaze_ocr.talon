@@ -102,7 +102,7 @@ insert with <user.timestamped_prose>$:
     user.insert_text_within(timestamped_prose)
 revise with <user.timestamped_prose>$:
     user.revise_text(timestamped_prose)
-revise from <user.timestamped_prose>$ | revise with <user.timestamped_prose> cursor$:
+(revise from <user.timestamped_prose> | revise with <user.timestamped_prose> cursor)$:
     user.revise_text_starting_with(timestamped_prose)
 revise through <user.timestamped_prose>$:
     user.revise_text_ending_with(timestamped_prose)
