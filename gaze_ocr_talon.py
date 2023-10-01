@@ -583,7 +583,8 @@ class GazeOcrActions:
         """TODO"""
 
         def run():
-            insertion_text = yield from move_text_cursor_to_insertion_point(text)
+            start, end = yield from move_text_cursor_to_insertion_point(text)
+            insertion_text = text.text[start:end]
             actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())
@@ -630,9 +631,13 @@ class GazeOcrActions:
         and replaces it until the caret."""
 
         def run():
-            yield from move_text_cursor_to_longest_prefix_generator(
-                text, "before", hold_shift=True
-            )
+            try:
+                yield from move_text_cursor_to_longest_prefix_generator(
+                    text, "before", hold_shift=True
+                )
+            except RuntimeError as e:
+                # Keep going so the user doesn't lose the dictated text.
+                print(e)
             insertion_text = text.text
             actions.user.dictation_insert(insertion_text)
 
@@ -640,12 +645,16 @@ class GazeOcrActions:
 
     def revise_text_ending_with(text: TimestampedText):
         """Finds onscreen text that matches the end of the provided prose and
-        replaces it until the caret."""
+        replaces it from the caret."""
 
         def run():
-            yield from move_text_cursor_to_longest_suffix_generator(
-                text, "after", hold_shift=True
-            )
+            try:
+                yield from move_text_cursor_to_longest_suffix_generator(
+                    text, "after", hold_shift=True
+                )
+            except RuntimeError as e:
+                # Keep going so the user doesn't lose the dictated text.
+                print(e)
             insertion_text = text.text
             actions.user.dictation_insert(insertion_text)
 

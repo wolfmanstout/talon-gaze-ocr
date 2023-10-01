@@ -503,7 +503,7 @@ class Controller:
         start_timestamp: Optional[float] = None,
         end_timestamp: Optional[float] = None,
         click_offset_right: int = 0,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[str]]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[Tuple[int, int]]]:
         """TODO"""
         if start_timestamp:
             self.read_nearby(start_timestamp)
@@ -543,10 +543,10 @@ class Controller:
             return None
         location.go()
         if location in prefix_locations:
-            return words[prefix_length:]
+            return (prefix_length, len(words))
         else:
             assert location in suffix_locations
-            return words[:-suffix_length]
+            return (0, len(words) - suffix_length)
 
     def _plan_cursor_locations(
         self,
@@ -812,7 +812,7 @@ class Controller:
         end_timestamp: Optional[float] = None,
         click_offset_right: int = 0,
     ) -> Optional[Tuple[int, int]]:
-        """Selects onscreen text that matches the beginning and end of the provided
+        """Selects onscreen text that matches the beginning and/or end of the provided
         text. Returns the start and end indices corresponding to the changed text, if
         found. See select_text for argument details."""
         return self._extract_result(
@@ -842,40 +842,98 @@ class Controller:
         generator. See header comment for details."""
         if start_timestamp:
             self.read_nearby(start_timestamp)
-        (
-            start_location,
-            prefix_length,
-        ) = yield from self.move_text_cursor_to_longest_prefix_generator(
-            words,
-            cursor_position="before",
-            disambiguate=disambiguate,
-            click_offset_right=click_offset_right,
+        screen_contents = self.latest_screen_contents()
+        prefix_matches, prefix_length = screen_contents.find_longest_matching_prefix(
+            words
         )
-        if not start_location:
-            return None
-        remaining_words = words[prefix_length:]
-        time.sleep(select_pause_seconds)
+        before_prefix_locations = self._plan_cursor_locations(
+            prefix_matches,
+            cursor_position="before",
+            include_whitespace=False,
+            click_offset_right=click_offset_right,
+            selection_position=self.SelectionPosition.LEFT,
+        )
+        before_prefix_location = yield from self._choose_cursor_location(
+            disambiguate=disambiguate,
+            matches=before_prefix_locations,
+            filter_location_function=None,
+        )
+        if before_prefix_location:
+            before_prefix_location.go()
+            time.sleep(select_pause_seconds)
         if end_timestamp:
             self.read_nearby(end_timestamp)
         else:
             self._read_nearby_if_gaze_moved()
-        filter_function = lambda location: self._is_valid_selection(
-            start_location.click_coordinates, location.click_coordinates
+        screen_contents = self.latest_screen_contents()
+        suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
+            words
         )
-        (
-            end_locations,
-            suffix_length,
-        ) = yield from self.move_text_cursor_to_longest_suffix_generator(
-            remaining_words,
+        after_suffix_locations = self._plan_cursor_locations(
+            suffix_matches,
             cursor_position="after",
-            disambiguate=disambiguate,
-            filter_location_function=filter_function,
+            include_whitespace=False,
             click_offset_right=click_offset_right,
-            hold_shift=True,
+            selection_position=self.SelectionPosition.RIGHT,
         )
-        if not end_locations:
+        if before_prefix_location:
+            filter_function = lambda location: self._is_valid_selection(
+                before_prefix_location.click_coordinates, location.click_coordinates
+            )
+        else:
+            filter_function = None
+        after_suffix_location = yield from self._choose_cursor_location(
+            disambiguate=disambiguate,
+            matches=after_suffix_locations,
+            filter_location_function=filter_function,
+        )
+        if before_prefix_location and after_suffix_location:
+            self.keyboard.shift_down()
+            try:
+                after_suffix_location.go()
+            finally:
+                self.keyboard.shift_up()
+            return (prefix_length, len(words) - suffix_length)
+        elif not before_prefix_location and not after_suffix_location:
             return None
-        return prefix_length, len(words) - suffix_length
+        elif before_prefix_location:
+            assert not after_suffix_location
+            prefix_match = prefix_matches[
+                before_prefix_locations.index(before_prefix_location)
+            ]
+            after_prefix_location = self._plan_cursor_location(
+                prefix_match,
+                cursor_position="after",
+                include_whitespace=False,
+                click_offset_right=click_offset_right,
+                selection_position=self.SelectionPosition.RIGHT,
+            )
+            self.keyboard.shift_down()
+            try:
+                after_prefix_location.go()
+            finally:
+                self.keyboard.shift_up()
+            return (0, prefix_length)
+        else:
+            assert after_suffix_location and not before_prefix_location
+            suffix_match = suffix_matches[
+                after_suffix_locations.index(after_suffix_location)
+            ]
+            before_suffix_location = self._plan_cursor_location(
+                suffix_match,
+                cursor_position="before",
+                include_whitespace=False,
+                click_offset_right=click_offset_right,
+                selection_position=self.SelectionPosition.LEFT,
+            )
+            before_suffix_location.go()
+            time.sleep(select_pause_seconds)
+            self.keyboard.shift_down()
+            try:
+                after_suffix_location.go()
+            finally:
+                self.keyboard.shift_up()
+            return (len(words) - suffix_length, len(words))
 
     def find_nearest_cursor_location(
         self, locations: Sequence[CursorLocation]
