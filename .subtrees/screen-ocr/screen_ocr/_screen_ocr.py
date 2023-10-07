@@ -413,15 +413,18 @@ class WordLocation:
     def end_coordinates(self) -> Tuple[int, int]:
         return (self.right, self.middle_y)
 
-    def is_adjacent_to(self, other: "WordLocation") -> bool:
+    def is_adjacent_left_of(
+        self, other: "WordLocation", allow_whitespace: bool
+    ) -> bool:
         """Return True if the other word is adjacent to this word."""
         if self.ocr_line_index != other.ocr_line_index:
             return False
-        return (
-            abs(self.ocr_word_index - other.ocr_word_index) == 1
-            and self.right_char_offset == 0
-            and other.left_char_offset == 0
-        )
+        elif self.ocr_word_index == other.ocr_word_index:
+            return self.left_char_offset + len(self.text) == other.left_char_offset
+        elif allow_whitespace and self.ocr_word_index + 1 == other.ocr_word_index:
+            return self.right_char_offset == 0 and other.left_char_offset == 0
+        else:
+            return False
 
 
 class ScreenContents:
