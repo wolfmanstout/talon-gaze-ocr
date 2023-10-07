@@ -496,7 +496,7 @@ class Controller:
                 self.keyboard.shift_up()
         return location, suffix_length
 
-    def move_text_cursor_to_insertion_point_generator(
+    def move_text_cursor_to_difference_in_matching_text_generator(
         self,
         words: str,
         disambiguate: bool,
@@ -504,7 +504,9 @@ class Controller:
         end_timestamp: Optional[float] = None,
         click_offset_right: int = 0,
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[Tuple[int, int]]]:
-        """TODO"""
+        """Finds onscreen text that matches the start and/or end of the provided words,
+        and moves the text cursor to the start of where the words differ. Returns the
+        start and end indices of the differing text, if found."""
         if start_timestamp:
             self.read_nearby(start_timestamp)
         screen_contents = self.latest_screen_contents()
@@ -519,21 +521,37 @@ class Controller:
         )
         matches = list(prefix_matches) + list(suffix_matches)
         self._write_data(screen_contents, words, matches)
-        prefix_locations = self._plan_cursor_locations(
-            prefix_matches,
-            cursor_position="after",
-            include_whitespace=False,
-            click_offset_right=click_offset_right,
-            selection_position=self.SelectionPosition.NONE,
-        )
-        suffix_locations = self._plan_cursor_locations(
-            suffix_matches,
-            cursor_position="before",
-            include_whitespace=False,
-            click_offset_right=click_offset_right,
-            selection_position=self.SelectionPosition.NONE,
-        )
-        locations = list(prefix_locations) + list(suffix_locations)
+        # Find any pairs of matches that are adjacent onscreen.
+        adjacent_prefix_matches = [
+            prefix_match
+            for prefix_match in prefix_matches
+            for suffix_match in suffix_matches
+            if prefix_match[-1].is_adjacent_to(suffix_match[0])
+        ]
+        if adjacent_prefix_matches:
+            locations = self._plan_cursor_locations(
+                adjacent_prefix_matches,
+                cursor_position="after",
+                include_whitespace=False,
+                click_offset_right=click_offset_right,
+                selection_position=self.SelectionPosition.NONE,
+            )
+        else:
+            prefix_locations = self._plan_cursor_locations(
+                prefix_matches,
+                cursor_position="after",
+                include_whitespace=False,
+                click_offset_right=click_offset_right,
+                selection_position=self.SelectionPosition.NONE,
+            )
+            suffix_locations = self._plan_cursor_locations(
+                suffix_matches,
+                cursor_position="before",
+                include_whitespace=False,
+                click_offset_right=click_offset_right,
+                selection_position=self.SelectionPosition.NONE,
+            )
+            locations = list(prefix_locations) + list(suffix_locations)
         location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=locations,
@@ -542,7 +560,12 @@ class Controller:
         if not location:
             return None
         location.go()
-        if location in prefix_locations:
+        if adjacent_prefix_matches:
+            # Subtract one from the end index to account for the space to the left of
+            # the suffix matches.
+            assert words[len(words) - suffix_length - 1] == " "
+            return (prefix_length, len(words) - suffix_length - 1)
+        elif location in prefix_locations:
             return (prefix_length, len(words))
         else:
             assert location in suffix_locations

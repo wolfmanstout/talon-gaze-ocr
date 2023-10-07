@@ -382,6 +382,8 @@ class WordLocation:
     left_char_offset: int
     right_char_offset: int
     text: str
+    ocr_word_index: int
+    ocr_line_index: int
 
     @property
     def right(self) -> int:
@@ -410,6 +412,16 @@ class WordLocation:
     @property
     def end_coordinates(self) -> Tuple[int, int]:
         return (self.right, self.middle_y)
+
+    def is_adjacent_to(self, other: "WordLocation") -> bool:
+        """Return True if the other word is adjacent to this word."""
+        if self.ocr_line_index != other.ocr_line_index:
+            return False
+        return (
+            abs(self.ocr_word_index - other.ocr_word_index) == 1
+            and self.right_char_offset == 0
+            and other.left_char_offset == 0
+        )
 
 
 class ScreenContents:
@@ -627,8 +639,10 @@ class ScreenContents:
     def _generate_candidates(
         result: _base.OcrResult, length: int, include_compound_words: bool
     ) -> Iterator[Sequence[WordLocation]]:
-        for line in result.lines:
-            candidates = list(ScreenContents._generate_candidates_from_line(line))
+        for line_index, line in enumerate(result.lines):
+            candidates = list(
+                ScreenContents._generate_candidates_from_line(line, line_index)
+            )
             if include_compound_words or length == 1:
                 for candidate in candidates:
                     yield [candidate]
@@ -636,8 +650,10 @@ class ScreenContents:
                 yield from ScreenContents._sliding_window(candidates, length)
 
     @staticmethod
-    def _generate_candidates_from_line(line: _base.OcrLine) -> Iterator[WordLocation]:
-        for word in line.words:
+    def _generate_candidates_from_line(
+        line: _base.OcrLine, line_index: int
+    ) -> Iterator[WordLocation]:
+        for word_index, word in enumerate(line.words):
             left_offset = 0
             for match in re.finditer(ScreenContents._SUBWORD_REGEX, word.text):
                 subword = match.group()
@@ -650,6 +666,8 @@ class ScreenContents:
                     left_char_offset=left_offset,
                     right_char_offset=right_offset,
                     text=subword,
+                    ocr_word_index=word_index,
+                    ocr_line_index=line_index,
                 )
                 left_offset += len(subword)
 

@@ -394,14 +394,12 @@ def move_text_cursor_to_longest_suffix_generator(
 
 
 def move_text_cursor_to_insertion_point(text: TimestampedText):
-    result = (
-        yield from gaze_ocr_controller.move_text_cursor_to_insertion_point_generator(
-            text.text,
-            disambiguate=True,
-            start_timestamp=text.start,
-            end_timestamp=text.end,
-            click_offset_right=setting_ocr_click_offset_right.get(),
-        )
+    result = yield from gaze_ocr_controller.move_text_cursor_to_difference_in_matching_text_generator(
+        text.text,
+        disambiguate=True,
+        start_timestamp=text.start,
+        end_timestamp=text.end,
+        click_offset_right=setting_ocr_click_offset_right.get(),
     )
     if not result:
         actions.user.show_ocr_overlay("text", False, f"{text.text}")
