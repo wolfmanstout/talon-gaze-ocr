@@ -393,8 +393,8 @@ def move_text_cursor_to_longest_suffix_generator(
     return prefix_length
 
 
-def move_text_cursor_to_insertion_point(text: TimestampedText):
-    result = yield from gaze_ocr_controller.move_text_cursor_to_difference_in_matching_text_generator(
+def move_text_cursor_to_difference(text: TimestampedText):
+    result = yield from gaze_ocr_controller.move_text_cursor_to_difference_generator(
         text.text,
         disambiguate=True,
         start_timestamp=text.start,
@@ -577,18 +577,19 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def insert_text_within(text: TimestampedText):
-        """TODO"""
+    def insert_text_difference(text: TimestampedText):
+        """Finds onscreen text that matches the start and/or end of the provided text
+        and inserts the difference."""
 
         def run():
-            start, end = yield from move_text_cursor_to_insertion_point(text)
+            start, end = yield from move_text_cursor_to_difference(text)
             insertion_text = text.text[start:end]
             actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())
 
     def append_text(text: TimestampedText):
-        """Finds onscreen text that matches the beginning of the provided prose and
+        """Finds onscreen text that matches the beginning of the provided text and
         appends the rest to it."""
 
         def run():
@@ -601,7 +602,7 @@ class GazeOcrActions:
         begin_generator(run())
 
     def prepend_text(text: TimestampedText):
-        """Finds onscreen text that matches the end of the provided prose and
+        """Finds onscreen text that matches the end of the provided text and
         prepends the rest to it."""
 
         def run():
@@ -614,7 +615,7 @@ class GazeOcrActions:
         begin_generator(run())
 
     def revise_text(text: TimestampedText):
-        """Finds onscreen text that matches the beginning and end of the provided prose
+        """Finds onscreen text that matches the beginning and end of the provided text
         and replaces it."""
 
         def run():
@@ -625,7 +626,7 @@ class GazeOcrActions:
         begin_generator(run())
 
     def revise_text_starting_with(text: TimestampedText):
-        """Finds onscreen text that matches the beginning of the provided prose
+        """Finds onscreen text that matches the beginning of the provided text
         and replaces it until the caret."""
 
         def run():
@@ -642,7 +643,7 @@ class GazeOcrActions:
         begin_generator(run())
 
     def revise_text_ending_with(text: TimestampedText):
-        """Finds onscreen text that matches the end of the provided prose and
+        """Finds onscreen text that matches the end of the provided text and
         replaces it from the caret."""
 
         def run():

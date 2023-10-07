@@ -99,7 +99,7 @@ append with <user.timestamped_prose>$:
 prepend with <user.timestamped_prose>$:
     user.prepend_text(timestamped_prose)
 insert with <user.timestamped_prose>$:
-    user.insert_text_within(timestamped_prose)
+    user.insert_text_difference(timestamped_prose)
 revise with <user.timestamped_prose>$:
     user.revise_text(timestamped_prose)
 (revise from <user.timestamped_prose> | revise with <user.timestamped_prose> cursor)$:

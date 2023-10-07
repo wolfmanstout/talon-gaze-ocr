@@ -496,7 +496,7 @@ class Controller:
                 self.keyboard.shift_up()
         return location, suffix_length
 
-    def move_text_cursor_to_difference_in_matching_text_generator(
+    def move_text_cursor_to_difference_generator(
         self,
         words: str,
         disambiguate: bool,
@@ -506,7 +506,7 @@ class Controller:
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[Tuple[int, int]]]:
         """Finds onscreen text that matches the start and/or end of the provided words,
         and moves the text cursor to the start of where the words differ. Returns the
-        start and end indices of the differing text, if found."""
+        start and end indices of the differing text in the provided words, if found."""
         if start_timestamp:
             self.read_nearby(start_timestamp)
         screen_contents = self.latest_screen_contents()
