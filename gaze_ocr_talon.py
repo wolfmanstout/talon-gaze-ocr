@@ -577,17 +577,6 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def insert_text_difference(text: TimestampedText):
-        """Finds onscreen text that matches the start and/or end of the provided text
-        and inserts the difference."""
-
-        def run():
-            start, end = yield from move_text_cursor_to_difference(text)
-            insertion_text = text.text[start:end]
-            actions.user.dictation_insert(insertion_text)
-
-        begin_generator(run())
-
     def append_text(text: TimestampedText):
         """Finds onscreen text that matches the beginning of the provided text and
         appends the rest to it."""
@@ -610,6 +599,17 @@ class GazeOcrActions:
                 text, "before"
             )
             insertion_text = text.text[:-suffix_length]
+            actions.user.dictation_insert(insertion_text)
+
+        begin_generator(run())
+
+    def insert_text_difference(text: TimestampedText):
+        """Finds onscreen text that matches the start and/or end of the provided text
+        and inserts the difference."""
+
+        def run():
+            start, end = yield from move_text_cursor_to_difference(text)
+            insertion_text = text.text[start:end]
             actions.user.dictation_insert(insertion_text)
 
         begin_generator(run())

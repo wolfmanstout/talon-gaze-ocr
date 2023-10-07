@@ -34,7 +34,10 @@ class CursorLocation:
     def visual_coordinates(self) -> Tuple[int, int]:
         return self.click_coordinates
 
-    def go(self):
+    def move_mouse_cursor(self):
+        self.mouse.move(self.click_coordinates)
+
+    def move_text_cursor(self):
         self.mouse.move(self.click_coordinates)
         self.mouse.click()
         # Needed to avoid selection issues on Mac.
@@ -74,6 +77,13 @@ class Controller:
 
     Provide Mouse and Keyboard from gaze_ocr.dragonfly or gaze_ocr.talon. AppActions is optional.
     """
+
+    CursorLocationPredicate = Callable[[CursorLocation], bool]
+
+    class SelectionPosition(Enum):
+        NONE = auto()
+        LEFT = auto()
+        RIGHT = auto()
 
     def __init__(
         self,
@@ -251,25 +261,16 @@ class Controller:
         )
         if not location:
             return None
-        # Move without clicking.
-        self.mouse.move(location.click_coordinates)
+        location.move_mouse_cursor()
         return location.click_coordinates
 
     move_cursor_to_word = move_cursor_to_words
-
-    # Returns true if the location should be included as a candidate.
-    FilterLocationCallable = Callable[[CursorLocation], bool]
-
-    class SelectionPosition(Enum):
-        NONE = auto()
-        LEFT = auto()
-        RIGHT = auto()
 
     def move_text_cursor_to_words(
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[FilterLocationCallable] = None,
+        filter_location_function: Optional[CursorLocationPredicate] = None,
         include_whitespace: bool = False,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
@@ -304,7 +305,7 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[FilterLocationCallable] = None,
+        filter_location_function: Optional[CursorLocationPredicate] = None,
         include_whitespace: bool = False,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
@@ -346,7 +347,7 @@ class Controller:
         if hold_shift:
             self.keyboard.shift_down()
         try:
-            location.go()
+            location.move_text_cursor()
         finally:
             if hold_shift:
                 self.keyboard.shift_up()
@@ -358,7 +359,7 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[FilterLocationCallable] = None,
+        filter_location_function: Optional[CursorLocationPredicate] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
@@ -382,7 +383,7 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[FilterLocationCallable] = None,
+        filter_location_function: Optional[CursorLocationPredicate] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
@@ -419,7 +420,7 @@ class Controller:
         if hold_shift:
             self.keyboard.shift_down()
         try:
-            location.go()
+            location.move_text_cursor()
         finally:
             if hold_shift:
                 self.keyboard.shift_up()
@@ -429,7 +430,7 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[FilterLocationCallable] = None,
+        filter_location_function: Optional[CursorLocationPredicate] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
@@ -453,7 +454,7 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[FilterLocationCallable] = None,
+        filter_location_function: Optional[CursorLocationPredicate] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
@@ -490,7 +491,7 @@ class Controller:
         if hold_shift:
             self.keyboard.shift_down()
         try:
-            location.go()
+            location.move_text_cursor()
         finally:
             if hold_shift:
                 self.keyboard.shift_up()
@@ -559,7 +560,7 @@ class Controller:
         )
         if not location:
             return None
-        location.go()
+        location.move_text_cursor()
         if adjacent_prefix_matches:
             # Subtract one from the end index to account for the space to the left of
             # the suffix matches.
@@ -570,6 +571,312 @@ class Controller:
         else:
             assert location in suffix_locations
             return (0, len(words) - suffix_length)
+
+    def select_text(
+        self,
+        start_words: str,
+        end_words: Optional[str] = None,
+        for_deletion: bool = False,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        after_start: bool = False,
+        before_end: bool = False,
+    ) -> Optional[CursorLocation]:
+        """Select a range of onscreen text.
+
+        If only start_words is provided, the full word or phrase is selected. If
+        end_word is provided, a range from the start words to end words will be
+        selected.
+
+        Arguments:
+        for_deletion: If True, select adjacent whitespace for clean deletion of
+                      the selected text.
+        start_timestamp: If specified, read start nearby gaze at the provided timestamp.
+        end_timestamp: If specified, read end nearby gaze at the provided timestamp.
+        click_offset_right: Adjust the X-coordinate when clicking.
+        after_start: If true, begin selection after the start word.
+        before_end: If true, end selection before the end word.
+        """
+        return self._extract_result(
+            self.select_text_generator(
+                start_words,
+                disambiguate=False,
+                end_words=end_words,
+                for_deletion=for_deletion,
+                start_timestamp=start_timestamp,
+                end_timestamp=end_timestamp,
+                click_offset_right=click_offset_right,
+                after_start=after_start,
+                before_end=before_end,
+            )
+        )
+
+    def select_text_generator(
+        self,
+        start_words: str,
+        disambiguate: bool,
+        end_words: Optional[str] = None,
+        for_deletion: bool = False,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        after_start: bool = False,
+        before_end: bool = False,
+        select_pause_seconds: float = 0.01,
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation],]:
+        """Same as select_text, except it supports disambiguation through a generator.
+        See header comment for details.
+        """
+        if start_timestamp:
+            self.read_nearby(start_timestamp)
+        screen_contents = self.latest_screen_contents()
+        start_matches = screen_contents.find_matching_words(start_words)
+        self._write_data(screen_contents, start_words, start_matches)
+        start_locations = self._plan_cursor_locations(
+            start_matches,
+            cursor_position="after" if after_start else "before",
+            include_whitespace=for_deletion and not after_start,
+            click_offset_right=click_offset_right,
+            selection_position=self.SelectionPosition.LEFT,
+        )
+        start_location = yield from self._choose_cursor_location(
+            disambiguate=disambiguate,
+            matches=start_locations,
+            filter_location_function=None,
+        )
+        if not start_location:
+            return None
+        start_location.move_text_cursor()
+        time.sleep(select_pause_seconds)
+        if end_words:
+            if end_timestamp:
+                self.read_nearby(end_timestamp)
+            else:
+                self._read_nearby_if_gaze_moved()
+            filter_function = lambda location: self._is_valid_selection(
+                start_location.click_coordinates, location.click_coordinates
+            )
+            return (
+                yield from self.move_text_cursor_to_words_generator(
+                    end_words,
+                    disambiguate=disambiguate,
+                    cursor_position="before" if before_end else "after",
+                    filter_location_function=filter_function,
+                    include_whitespace=False,
+                    click_offset_right=click_offset_right,
+                    hold_shift=True,
+                    selection_position=self.SelectionPosition.RIGHT,
+                )
+            )
+        else:
+            # Select until the end of the start_words match.
+            end_match = start_matches[start_locations.index(start_location)]
+            end_location = self._plan_cursor_location(
+                end_match,
+                cursor_position="before" if before_end else "after",
+                include_whitespace=False,
+                click_offset_right=click_offset_right,
+                selection_position=self.SelectionPosition.RIGHT,
+            )
+            self.keyboard.shift_down()
+            try:
+                end_location.move_text_cursor()
+            finally:
+                self.keyboard.shift_up()
+            return end_location
+
+    def select_matching_text(
+        self,
+        words: str,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+    ) -> Optional[Tuple[int, int]]:
+        """Selects onscreen text that matches the beginning and/or end of the provided
+        text. Returns the start and end indices corresponding to the changed text, if
+        found. See select_text for argument details."""
+        return self._extract_result(
+            self.select_matching_text_generator(
+                words,
+                disambiguate=False,
+                start_timestamp=start_timestamp,
+                end_timestamp=end_timestamp,
+                click_offset_right=click_offset_right,
+            )
+        )
+
+    def select_matching_text_generator(
+        self,
+        words: str,
+        disambiguate: bool,
+        start_timestamp: Optional[float] = None,
+        end_timestamp: Optional[float] = None,
+        click_offset_right: int = 0,
+        select_pause_seconds: float = 0.01,
+    ) -> Generator[
+        Sequence[CursorLocation],
+        CursorLocation,
+        Optional[Tuple[int, int]],
+    ]:
+        """Same as select_matching_text, except it supports disambiguation through a
+        generator. See header comment for details."""
+        if start_timestamp:
+            self.read_nearby(start_timestamp)
+        screen_contents = self.latest_screen_contents()
+        prefix_matches, prefix_length = screen_contents.find_longest_matching_prefix(
+            words
+        )
+        before_prefix_locations = self._plan_cursor_locations(
+            prefix_matches,
+            cursor_position="before",
+            include_whitespace=False,
+            click_offset_right=click_offset_right,
+            selection_position=self.SelectionPosition.LEFT,
+        )
+        before_prefix_location = yield from self._choose_cursor_location(
+            disambiguate=disambiguate,
+            matches=before_prefix_locations,
+            filter_location_function=None,
+        )
+        if before_prefix_location:
+            before_prefix_location.move_text_cursor()
+            time.sleep(select_pause_seconds)
+        if end_timestamp:
+            self.read_nearby(end_timestamp)
+        else:
+            self._read_nearby_if_gaze_moved()
+        screen_contents = self.latest_screen_contents()
+        suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
+            words
+        )
+        after_suffix_locations = self._plan_cursor_locations(
+            suffix_matches,
+            cursor_position="after",
+            include_whitespace=False,
+            click_offset_right=click_offset_right,
+            selection_position=self.SelectionPosition.RIGHT,
+        )
+        if before_prefix_location:
+            filter_function = lambda location: self._is_valid_selection(
+                before_prefix_location.click_coordinates, location.click_coordinates
+            )
+        else:
+            filter_function = None
+        after_suffix_location = yield from self._choose_cursor_location(
+            disambiguate=disambiguate,
+            matches=after_suffix_locations,
+            filter_location_function=filter_function,
+        )
+        if before_prefix_location and after_suffix_location:
+            self.keyboard.shift_down()
+            try:
+                after_suffix_location.move_text_cursor()
+            finally:
+                self.keyboard.shift_up()
+            return (prefix_length, len(words) - suffix_length)
+        elif not before_prefix_location and not after_suffix_location:
+            return None
+        elif before_prefix_location:
+            assert not after_suffix_location
+            prefix_match = prefix_matches[
+                before_prefix_locations.index(before_prefix_location)
+            ]
+            after_prefix_location = self._plan_cursor_location(
+                prefix_match,
+                cursor_position="after",
+                include_whitespace=False,
+                click_offset_right=click_offset_right,
+                selection_position=self.SelectionPosition.RIGHT,
+            )
+            self.keyboard.shift_down()
+            try:
+                after_prefix_location.move_text_cursor()
+            finally:
+                self.keyboard.shift_up()
+            return (0, prefix_length)
+        else:
+            assert after_suffix_location and not before_prefix_location
+            suffix_match = suffix_matches[
+                after_suffix_locations.index(after_suffix_location)
+            ]
+            before_suffix_location = self._plan_cursor_location(
+                suffix_match,
+                cursor_position="before",
+                include_whitespace=False,
+                click_offset_right=click_offset_right,
+                selection_position=self.SelectionPosition.LEFT,
+            )
+            before_suffix_location.move_text_cursor()
+            time.sleep(select_pause_seconds)
+            self.keyboard.shift_down()
+            try:
+                after_suffix_location.move_text_cursor()
+            finally:
+                self.keyboard.shift_up()
+            return (len(words) - suffix_length, len(words))
+
+    def find_nearest_cursor_location(
+        self, locations: Sequence[CursorLocation]
+    ) -> Optional[CursorLocation]:
+        """Returns the cursor location nearest to the current gaze point, if
+        available."""
+        if not locations:
+            return None
+        contents = self.latest_screen_contents()
+        if not contents.screen_coordinates:
+            # "Nearest" is undefined.
+            return None
+        distance_to_words = [
+            (
+                _distance_squared(
+                    location.click_coordinates, contents.screen_coordinates
+                ),
+                location,
+            )
+            for location in locations
+        ]
+        return min(distance_to_words, key=lambda x: x[0])[1]
+
+    def move_cursor_to_word_action(self):
+        raise RuntimeError(
+            "controller.move_cursor_to_word_action no longer supported. "
+            "Use gaze_ocr.dragonfly.MoveCursorToWordAction instead."
+        )
+
+    def move_text_cursor_action(self, word, cursor_position="middle"):
+        """Return a dragonfly action for moving the text cursor nearby a word."""
+        raise RuntimeError(
+            "controller.move_text_cursor_action no longer supported. "
+            "Use gaze_ocr.dragonfly.MoveTextCursorAction instead."
+        )
+
+    def select_text_action(self, start_word, end_word=None, for_deletion=False):
+        """Return a Dragonfly action for selecting text."""
+        raise RuntimeError(
+            "controller.select_text_action no longer supported. "
+            "Use gaze_ocr.dragonfly.SelectTextAction instead."
+        )
+
+    def _read_nearby_if_gaze_moved(self):
+        current_gaze = (
+            self.eye_tracker.get_gaze_point()
+            if self.eye_tracker and self.eye_tracker.is_connected
+            else None
+        )
+        latest_screen_contents = self.latest_screen_contents()
+        previous_gaze = latest_screen_contents.screen_coordinates
+        threshold_squared = (
+            _squared(latest_screen_contents.search_radius / 2.0)
+            if latest_screen_contents.search_radius
+            else 0.0
+        )
+        if (
+            current_gaze
+            and previous_gaze
+            and _distance_squared(current_gaze, previous_gaze) > threshold_squared
+        ):
+            self.read_nearby()
 
     def _plan_cursor_locations(
         self,
@@ -714,315 +1021,11 @@ class Controller:
                 app_actions=self.app_actions,
             )
 
-    def select_text(
-        self,
-        start_words: str,
-        end_words: Optional[str] = None,
-        for_deletion: bool = False,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
-        click_offset_right: int = 0,
-        after_start: bool = False,
-        before_end: bool = False,
-    ) -> Optional[CursorLocation]:
-        """Select a range of onscreen text.
-
-        If only start_words is provided, the full word or phrase is selected. If
-        end_word is provided, a range from the start words to end words will be
-        selected.
-
-        Arguments:
-        for_deletion: If True, select adjacent whitespace for clean deletion of
-                      the selected text.
-        start_timestamp: If specified, read start nearby gaze at the provided timestamp.
-        end_timestamp: If specified, read end nearby gaze at the provided timestamp.
-        click_offset_right: Adjust the X-coordinate when clicking.
-        after_start: If true, begin selection after the start word.
-        before_end: If true, end selection before the end word.
-        """
-        return self._extract_result(
-            self.select_text_generator(
-                start_words,
-                disambiguate=False,
-                end_words=end_words,
-                for_deletion=for_deletion,
-                start_timestamp=start_timestamp,
-                end_timestamp=end_timestamp,
-                click_offset_right=click_offset_right,
-                after_start=after_start,
-                before_end=before_end,
-            )
-        )
-
-    def select_text_generator(
-        self,
-        start_words: str,
-        disambiguate: bool,
-        end_words: Optional[str] = None,
-        for_deletion: bool = False,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
-        click_offset_right: int = 0,
-        after_start: bool = False,
-        before_end: bool = False,
-        select_pause_seconds: float = 0.01,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation],]:
-        """Same as select_text, except it supports disambiguation through a generator.
-        See header comment for details.
-        """
-        if start_timestamp:
-            self.read_nearby(start_timestamp)
-        screen_contents = self.latest_screen_contents()
-        start_matches = screen_contents.find_matching_words(start_words)
-        self._write_data(screen_contents, start_words, start_matches)
-        start_locations = self._plan_cursor_locations(
-            start_matches,
-            cursor_position="after" if after_start else "before",
-            include_whitespace=for_deletion and not after_start,
-            click_offset_right=click_offset_right,
-            selection_position=self.SelectionPosition.LEFT,
-        )
-        start_location = yield from self._choose_cursor_location(
-            disambiguate=disambiguate,
-            matches=start_locations,
-            filter_location_function=None,
-        )
-        if not start_location:
-            return None
-        start_location.go()
-        time.sleep(select_pause_seconds)
-        if end_words:
-            if end_timestamp:
-                self.read_nearby(end_timestamp)
-            else:
-                self._read_nearby_if_gaze_moved()
-            filter_function = lambda location: self._is_valid_selection(
-                start_location.click_coordinates, location.click_coordinates
-            )
-            return (
-                yield from self.move_text_cursor_to_words_generator(
-                    end_words,
-                    disambiguate=disambiguate,
-                    cursor_position="before" if before_end else "after",
-                    filter_location_function=filter_function,
-                    include_whitespace=False,
-                    click_offset_right=click_offset_right,
-                    hold_shift=True,
-                    selection_position=self.SelectionPosition.RIGHT,
-                )
-            )
-        else:
-            # Select until the end of the start_words match.
-            end_match = start_matches[start_locations.index(start_location)]
-            end_location = self._plan_cursor_location(
-                end_match,
-                cursor_position="before" if before_end else "after",
-                include_whitespace=False,
-                click_offset_right=click_offset_right,
-                selection_position=self.SelectionPosition.RIGHT,
-            )
-            self.keyboard.shift_down()
-            try:
-                end_location.go()
-            finally:
-                self.keyboard.shift_up()
-            return end_location
-
-    def select_matching_text(
-        self,
-        words: str,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
-        click_offset_right: int = 0,
-    ) -> Optional[Tuple[int, int]]:
-        """Selects onscreen text that matches the beginning and/or end of the provided
-        text. Returns the start and end indices corresponding to the changed text, if
-        found. See select_text for argument details."""
-        return self._extract_result(
-            self.select_matching_text_generator(
-                words,
-                disambiguate=False,
-                start_timestamp=start_timestamp,
-                end_timestamp=end_timestamp,
-                click_offset_right=click_offset_right,
-            )
-        )
-
-    def select_matching_text_generator(
-        self,
-        words: str,
-        disambiguate: bool,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
-        click_offset_right: int = 0,
-        select_pause_seconds: float = 0.01,
-    ) -> Generator[
-        Sequence[CursorLocation],
-        CursorLocation,
-        Optional[Tuple[int, int]],
-    ]:
-        """Same as select_matching_text, except it supports disambiguation through a
-        generator. See header comment for details."""
-        if start_timestamp:
-            self.read_nearby(start_timestamp)
-        screen_contents = self.latest_screen_contents()
-        prefix_matches, prefix_length = screen_contents.find_longest_matching_prefix(
-            words
-        )
-        before_prefix_locations = self._plan_cursor_locations(
-            prefix_matches,
-            cursor_position="before",
-            include_whitespace=False,
-            click_offset_right=click_offset_right,
-            selection_position=self.SelectionPosition.LEFT,
-        )
-        before_prefix_location = yield from self._choose_cursor_location(
-            disambiguate=disambiguate,
-            matches=before_prefix_locations,
-            filter_location_function=None,
-        )
-        if before_prefix_location:
-            before_prefix_location.go()
-            time.sleep(select_pause_seconds)
-        if end_timestamp:
-            self.read_nearby(end_timestamp)
-        else:
-            self._read_nearby_if_gaze_moved()
-        screen_contents = self.latest_screen_contents()
-        suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
-            words
-        )
-        after_suffix_locations = self._plan_cursor_locations(
-            suffix_matches,
-            cursor_position="after",
-            include_whitespace=False,
-            click_offset_right=click_offset_right,
-            selection_position=self.SelectionPosition.RIGHT,
-        )
-        if before_prefix_location:
-            filter_function = lambda location: self._is_valid_selection(
-                before_prefix_location.click_coordinates, location.click_coordinates
-            )
-        else:
-            filter_function = None
-        after_suffix_location = yield from self._choose_cursor_location(
-            disambiguate=disambiguate,
-            matches=after_suffix_locations,
-            filter_location_function=filter_function,
-        )
-        if before_prefix_location and after_suffix_location:
-            self.keyboard.shift_down()
-            try:
-                after_suffix_location.go()
-            finally:
-                self.keyboard.shift_up()
-            return (prefix_length, len(words) - suffix_length)
-        elif not before_prefix_location and not after_suffix_location:
-            return None
-        elif before_prefix_location:
-            assert not after_suffix_location
-            prefix_match = prefix_matches[
-                before_prefix_locations.index(before_prefix_location)
-            ]
-            after_prefix_location = self._plan_cursor_location(
-                prefix_match,
-                cursor_position="after",
-                include_whitespace=False,
-                click_offset_right=click_offset_right,
-                selection_position=self.SelectionPosition.RIGHT,
-            )
-            self.keyboard.shift_down()
-            try:
-                after_prefix_location.go()
-            finally:
-                self.keyboard.shift_up()
-            return (0, prefix_length)
-        else:
-            assert after_suffix_location and not before_prefix_location
-            suffix_match = suffix_matches[
-                after_suffix_locations.index(after_suffix_location)
-            ]
-            before_suffix_location = self._plan_cursor_location(
-                suffix_match,
-                cursor_position="before",
-                include_whitespace=False,
-                click_offset_right=click_offset_right,
-                selection_position=self.SelectionPosition.LEFT,
-            )
-            before_suffix_location.go()
-            time.sleep(select_pause_seconds)
-            self.keyboard.shift_down()
-            try:
-                after_suffix_location.go()
-            finally:
-                self.keyboard.shift_up()
-            return (len(words) - suffix_length, len(words))
-
-    def find_nearest_cursor_location(
-        self, locations: Sequence[CursorLocation]
-    ) -> Optional[CursorLocation]:
-        if not locations:
-            return None
-        contents = self.latest_screen_contents()
-        if not contents.screen_coordinates:
-            # "Nearest" is undefined.
-            return None
-        distance_to_words = [
-            (
-                _distance_squared(
-                    location.click_coordinates, contents.screen_coordinates
-                ),
-                location,
-            )
-            for location in locations
-        ]
-        return min(distance_to_words, key=lambda x: x[0])[1]
-
-    def _read_nearby_if_gaze_moved(self):
-        current_gaze = (
-            self.eye_tracker.get_gaze_point()
-            if self.eye_tracker and self.eye_tracker.is_connected
-            else None
-        )
-        latest_screen_contents = self.latest_screen_contents()
-        previous_gaze = latest_screen_contents.screen_coordinates
-        threshold_squared = (
-            _squared(latest_screen_contents.search_radius / 2.0)
-            if latest_screen_contents.search_radius
-            else 0.0
-        )
-        if (
-            current_gaze
-            and previous_gaze
-            and _distance_squared(current_gaze, previous_gaze) > threshold_squared
-        ):
-            self.read_nearby()
-
-    def move_cursor_to_word_action(self):
-        raise RuntimeError(
-            "controller.move_cursor_to_word_action no longer supported. "
-            "Use gaze_ocr.dragonfly.MoveCursorToWordAction instead."
-        )
-
-    def move_text_cursor_action(self, word, cursor_position="middle"):
-        """Return a dragonfly action for moving the text cursor nearby a word."""
-        raise RuntimeError(
-            "controller.move_text_cursor_action no longer supported. "
-            "Use gaze_ocr.dragonfly.MoveTextCursorAction instead."
-        )
-
-    def select_text_action(self, start_word, end_word=None, for_deletion=False):
-        """Return a Dragonfly action for selecting text."""
-        raise RuntimeError(
-            "controller.select_text_action no longer supported. "
-            "Use gaze_ocr.dragonfly.SelectTextAction instead."
-        )
-
     def _choose_cursor_location(
         self,
         disambiguate: bool,
         matches: Sequence[CursorLocation],
-        filter_location_function: Optional[FilterLocationCallable],
+        filter_location_function: Optional[CursorLocationPredicate],
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation],]:
         if filter_location_function:
             matches = list(filter(filter_location_function, matches))
