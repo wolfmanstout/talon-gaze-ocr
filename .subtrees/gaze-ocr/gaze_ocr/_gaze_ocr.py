@@ -19,6 +19,7 @@ from screen_ocr import Reader, ScreenContents, WordLocation
 @dataclass
 class CursorLocation:
     click_coordinates: Tuple[int, int]
+    visual_coordinates: Tuple[int, int]
     # Move cursor to the right if True, left if False.
     move_cursor_right: bool
     move_distance: int
@@ -29,10 +30,6 @@ class CursorLocation:
     mouse: Any = field(repr=False, compare=False)
     keyboard: Any = field(repr=False, compare=False)
     app_actions: Any = field(repr=False, compare=False)
-
-    @property
-    def visual_coordinates(self) -> Tuple[int, int]:
-        return self.click_coordinates
 
     def move_mouse_cursor(self):
         self.mouse.move(self.click_coordinates)
@@ -239,11 +236,13 @@ class Controller:
                 coordinates = locations[-1].end_coordinates
             else:
                 raise ValueError(cursor_position)
+            click_coordinates = self._apply_click_offset(
+                coordinates, click_offset_right
+            )
             cursor_locations.append(
                 CursorLocation(
-                    click_coordinates=self._apply_click_offset(
-                        coordinates, click_offset_right
-                    ),
+                    click_coordinates=click_coordinates,
+                    visual_coordinates=click_coordinates,
                     move_cursor_right=False,
                     move_distance=0,
                     move_past_whitespace_left=False,
@@ -947,6 +946,7 @@ class Controller:
             )
             return CursorLocation(
                 click_coordinates=coordinates,
+                visual_coordinates=coordinates,
                 move_cursor_right=False,
                 move_distance=0,
                 move_past_whitespace_left=False,
@@ -988,6 +988,13 @@ class Controller:
         move_past_whitespace_right: bool,
         text_height: int,
     ) -> CursorLocation:
+        estimated_char_width = (end_coordinates[0] - start_coordinates[0]) / float(
+            distance_from_left + distance_from_right
+        )
+        visual_coordinates = (
+            int(start_coordinates[0] + distance_from_left * estimated_char_width),
+            int((start_coordinates[1] + end_coordinates[1]) / 2.0),
+        )
         # Determine whether to start from the left or the right.
         if not distance_from_left:
             start_from_left = True
@@ -1009,6 +1016,7 @@ class Controller:
             )
             return CursorLocation(
                 click_coordinates=coordinates,
+                visual_coordinates=visual_coordinates,
                 move_cursor_right=True,
                 move_distance=distance_from_left,
                 move_past_whitespace_left=move_past_whitespace_left,
@@ -1023,6 +1031,7 @@ class Controller:
             coordinates = self._apply_click_offset(end_coordinates, click_offset_right)
             return CursorLocation(
                 click_coordinates=coordinates,
+                visual_coordinates=visual_coordinates,
                 move_cursor_right=False,
                 move_distance=distance_from_right,
                 move_past_whitespace_left=move_past_whitespace_left,
