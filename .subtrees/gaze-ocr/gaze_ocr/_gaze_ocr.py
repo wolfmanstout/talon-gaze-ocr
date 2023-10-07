@@ -574,10 +574,7 @@ class Controller:
             whitespace_between_matches = whitespace_between_matches_list[
                 locations.index(location)
             ]
-            if (
-                whitespace_between_matches
-                and words[len(words) - suffix_length - 1] == " "
-            ):
+            if whitespace_between_matches and words[-suffix_length - 1] == " ":
                 return (prefix_length, len(words) - suffix_length - 1)
             else:
                 return (prefix_length, len(words) - suffix_length)
