@@ -75,7 +75,7 @@ class Controller:
     Provide Mouse and Keyboard from gaze_ocr.dragonfly or gaze_ocr.talon. AppActions is optional.
     """
 
-    CursorLocationPredicate = Callable[[CursorLocation], bool]
+    WordLocationsPredicate = Callable[[Sequence[WordLocation]], bool]
 
     class SelectionPosition(Enum):
         NONE = auto()
@@ -256,7 +256,6 @@ class Controller:
         location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=cursor_locations,
-            filter_location_function=None,
         )
         if not location:
             return None
@@ -269,7 +268,7 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[CursorLocationPredicate] = None,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
         include_whitespace: bool = False,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
@@ -304,7 +303,7 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[CursorLocationPredicate] = None,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
         include_whitespace: bool = False,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
@@ -318,6 +317,8 @@ class Controller:
             self.read_nearby(timestamp)
         screen_contents = self.latest_screen_contents()
         matches = screen_contents.find_matching_words(words)
+        if filter_location_function:
+            matches = list(filter(filter_location_function, matches))
         self._write_data(screen_contents, words, matches)
         if not selection_position:
             # Guess the selection position.
@@ -339,7 +340,6 @@ class Controller:
         location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=locations,
-            filter_location_function=filter_location_function,
         )
         if not location:
             return None
@@ -358,7 +358,7 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[CursorLocationPredicate] = None,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
@@ -382,7 +382,7 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[CursorLocationPredicate] = None,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
@@ -396,7 +396,9 @@ class Controller:
         if timestamp:
             self.read_nearby(timestamp)
         screen_contents = self.latest_screen_contents()
-        matches, prefix_length = screen_contents.find_longest_matching_prefix(words)
+        matches, prefix_length = screen_contents.find_longest_matching_prefix(
+            words, filter_location_function=filter_location_function
+        )
         self._write_data(screen_contents, words, matches)
         # Guess the selection position.
         selection_position = (
@@ -412,7 +414,6 @@ class Controller:
         location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=locations,
-            filter_location_function=filter_location_function,
         )
         if not location:
             return None, 0
@@ -429,7 +430,7 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[CursorLocationPredicate] = None,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
@@ -453,7 +454,7 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[CursorLocationPredicate] = None,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
         timestamp: Optional[float] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
@@ -467,7 +468,9 @@ class Controller:
         if timestamp:
             self.read_nearby(timestamp)
         screen_contents = self.latest_screen_contents()
-        matches, suffix_length = screen_contents.find_longest_matching_suffix(words)
+        matches, suffix_length = screen_contents.find_longest_matching_suffix(
+            words, filter_location_function=filter_location_function
+        )
         self._write_data(screen_contents, words, matches)
         # Guess the selection position.
         selection_position = (
@@ -483,7 +486,6 @@ class Controller:
         location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=locations,
-            filter_location_function=filter_location_function,
         )
         if not location:
             return None, 0
@@ -564,7 +566,6 @@ class Controller:
         location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=locations,
-            filter_location_function=None,
         )
         if not location:
             return None
@@ -654,7 +655,6 @@ class Controller:
         start_location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=start_locations,
-            filter_location_function=None,
         )
         if not start_location:
             return None
@@ -666,7 +666,7 @@ class Controller:
             else:
                 self._read_nearby_if_gaze_moved()
             filter_function = lambda location: self._is_valid_selection(
-                start_location.click_coordinates, location.click_coordinates
+                start_location.click_coordinates, location[-1].end_coordinates
             )
             return (
                 yield from self.move_text_cursor_to_words_generator(
@@ -748,7 +748,6 @@ class Controller:
         before_prefix_location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=before_prefix_locations,
-            filter_location_function=None,
         )
         if before_prefix_location:
             before_prefix_location.move_text_cursor()
@@ -758,8 +757,14 @@ class Controller:
         else:
             self._read_nearby_if_gaze_moved()
         screen_contents = self.latest_screen_contents()
+        if before_prefix_location:
+            filter_function = lambda location: self._is_valid_selection(
+                before_prefix_location.click_coordinates, location[-1].end_coordinates
+            )
+        else:
+            filter_function = None
         suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
-            words
+            words, filter_location_function=filter_function
         )
         after_suffix_locations = self._plan_cursor_locations(
             suffix_matches,
@@ -768,16 +773,9 @@ class Controller:
             click_offset_right=click_offset_right,
             selection_position=self.SelectionPosition.RIGHT,
         )
-        if before_prefix_location:
-            filter_function = lambda location: self._is_valid_selection(
-                before_prefix_location.click_coordinates, location.click_coordinates
-            )
-        else:
-            filter_function = None
         after_suffix_location = yield from self._choose_cursor_location(
             disambiguate=disambiguate,
             matches=after_suffix_locations,
-            filter_location_function=filter_function,
         )
         if before_prefix_location and after_suffix_location:
             self.keyboard.shift_down()
@@ -1046,10 +1044,7 @@ class Controller:
         self,
         disambiguate: bool,
         matches: Sequence[CursorLocation],
-        filter_location_function: Optional[CursorLocationPredicate],
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation],]:
-        if filter_location_function:
-            matches = list(filter(filter_location_function, matches))
         if not matches:
             return None
         if len(matches) == 1:

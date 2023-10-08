@@ -430,6 +430,8 @@ class WordLocation:
 class ScreenContents:
     """OCR'd contents of a portion of the screen."""
 
+    WordLocationsPredicate = Callable[[Sequence[WordLocation]], bool]
+
     def __init__(
         self,
         screen_coordinates: Optional[Tuple[int, int]],
@@ -579,7 +581,9 @@ class ScreenContents:
         ]
 
     def find_longest_matching_prefix(
-        self, target: str
+        self,
+        target: str,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
     ) -> Tuple[Sequence[Sequence[WordLocation]], int]:
         """Return a tuple of the locations of all longest matching prefixes of the
         provided words, and the length of the prefix.
@@ -602,6 +606,8 @@ class ScreenContents:
             word_sequences = self.find_matching_words(
                 " ".join(target_prefix_words), match_each_word=True
             )
+            if filter_location_function:
+                word_sequences = list(filter(filter_location_function, word_sequences))
             if not word_sequences:
                 break
             last_word_sequences = word_sequences
@@ -609,7 +615,9 @@ class ScreenContents:
         return last_word_sequences, last_prefix_length
 
     def find_longest_matching_suffix(
-        self, target: str
+        self,
+        target: str,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
     ) -> Tuple[Sequence[Sequence[WordLocation]], int]:
         """Return a tuple of the locations of all longest matching suffixes of the
         provided words, and the length of the suffix.
@@ -632,6 +640,8 @@ class ScreenContents:
             word_sequences = self.find_matching_words(
                 " ".join(target_suffix_words), match_each_word=True
             )
+            if filter_location_function:
+                word_sequences = list(filter(filter_location_function, word_sequences))
             if not word_sequences:
                 break
             last_word_sequences = word_sequences
