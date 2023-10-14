@@ -76,6 +76,7 @@ middle (touch | click) <user.timestamped_prose>$:
 # Examples: 
 # "select apple" to select the word "apple".
 # "select apple through banana" to select the phrase "apple pear banana".
+# "select through before apple" to select from the text cursor position to before the word "apple".
 select <user.prose_range>$:
     user.perform_ocr_action("select", "", prose_range)
 # Examples: 

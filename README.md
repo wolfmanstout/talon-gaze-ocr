@@ -44,7 +44,7 @@ working using Tesseract, but this configuration is not tested by the author.
   or their symbolic form (e.g. "2" and ".").
 - Briefly displays debugging overlay if no matches are present.
 
-## Known issues:
+## Known limitations:
 
 - Only operates on the main screen, as defined by Talon.
 - Updates (via git pull) and some settings changes require Talon restart.
@@ -57,8 +57,10 @@ working using Tesseract, but this configuration is not tested by the author.
 - Command subtitles may cause disambiguation when selecting a range of text.
 - Dragon recognition timestamps are slightly off, leading to lower accuracy
   especially during text selection. Works best with Conformer.
+- Text selection only works in apps that support shift-click to select (vs.
+  dragging), which excludes some PDF viewers. 
 - See the [issue tracker](https://github.com/wolfmanstout/talon-gaze-ocr/issues)
-  for other bugs that have been discovered.
+  for bugs that have been discovered.
 
 ## Dependencies
 
