@@ -84,6 +84,13 @@ setting_ocr_disambiguation_display_seconds = mod.setting(
     desc="Adjust how long disambiguation display is shown. Use 0 to remove timeout.",
 )
 
+setting_ocr_select_with_drag = mod.setting(
+    "ocr_select_with_drag",
+    type=bool,
+    default=False,
+    desc="If true, drag to select; otherwise use keyboard and click/Shift-click."
+)
+
 mod.mode("gaze_ocr_disambiguation")
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
 mod.list("ocr_modifiers", desc="Modifiers to perform on selected text.")
@@ -372,6 +379,7 @@ def select_text_generator(
         after_start=after_start,
         before_end=before_end,
         select_pause_seconds=setting_ocr_select_pause_seconds.get(),
+        drag=setting_ocr_select_with_drag.get(),
     )
     if not result:
         actions.user.show_ocr_overlay(
