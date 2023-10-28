@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence
 
 import numpy as np
-from talon import Context, Module, actions, app, cron, fs, screen, settings
+from talon import Context, Module, actions, app, cron, fs, screen, settings, ui
 from talon.canvas import Canvas
 from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
@@ -445,6 +445,20 @@ def perform_ocr_action_generator(
         raise RuntimeError(f"Action not supported: {ocr_action}")
 
 
+def accessibility_string(element):
+    value = element.get("AXValue")
+    if value:
+        return value
+    elif element.children():
+        return (
+            "("
+            + ", ".join([accessibility_string(child) for child in element.children()])
+            + ")"
+        )
+    else:
+        return ""
+
+
 @mod.action_class
 class GazeOcrActions:
     def connect_ocr_eye_tracker():
@@ -659,3 +673,8 @@ class GazeOcrActions:
             actions.user.homophones_show_selection()
 
         begin_generator(run())
+
+    def debug_accessibility():
+        """TODO"""
+
+        print(accessibility_string(ui.active_window().element))

@@ -97,3 +97,5 @@ phones (seen | scene) <user.timestamped_prose>$:
 
 ocr tracker on: user.connect_ocr_eye_tracker()
 ocr tracker off: user.disconnect_ocr_eye_tracker()
+
+debug accessibility: user.debug_accessibility()
