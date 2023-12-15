@@ -98,6 +98,8 @@ ctx.lists["self.ocr_actions"] = {
     "chuck": "delete_with_whitespace",
     "cap": "capitalize",
     "lower": "lowercase",
+    "no cap": "lowercase",
+    "no caps": "lowercase",
     # Note: the following are not defined by default in knausj.
     "bold": "bold",
     "italic": "italic",
