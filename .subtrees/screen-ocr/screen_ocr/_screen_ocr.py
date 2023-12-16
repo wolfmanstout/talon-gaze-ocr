@@ -417,11 +417,14 @@ class WordLocation:
         """Return True if the other word is adjacent to this word."""
         # Use pixel distance, not indices, in case these come from different OCR
         # results.
-        average_height = (self.height + other.height) / 2.0
-        maximum_y_difference = 0.5 * average_height
+        max_height = max(self.height, other.height)
+        maximum_y_difference = 0.5 * max_height
         if abs(self.middle_y - other.middle_y) > maximum_y_difference:
             return False
-        maximum_x_difference = 2 * average_height
+        # Assume overlapping words are adjacent subwords of the same OCR word.
+        if not (self.right < other.left or self.left > other.right):
+            return True
+        maximum_x_difference = 2 * max_height
         return abs(self.right - other.left) <= maximum_x_difference
 
 
