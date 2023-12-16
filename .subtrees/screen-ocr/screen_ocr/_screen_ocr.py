@@ -413,18 +413,16 @@ class WordLocation:
     def end_coordinates(self) -> Tuple[int, int]:
         return (self.right, self.middle_y)
 
-    def is_adjacent_left_of(
-        self, other: "WordLocation", allow_whitespace: bool
-    ) -> bool:
+    def is_adjacent_left_of(self, other: "WordLocation") -> bool:
         """Return True if the other word is adjacent to this word."""
-        if self.ocr_line_index != other.ocr_line_index:
+        # Use pixel distance, not indices, in case these come from different OCR
+        # results.
+        average_height = (self.height + other.height) / 2.0
+        maximum_y_difference = 0.5 * average_height
+        if abs(self.middle_y - other.middle_y) > maximum_y_difference:
             return False
-        elif self.ocr_word_index == other.ocr_word_index:
-            return self.left_char_offset + len(self.text) == other.left_char_offset
-        elif allow_whitespace and self.ocr_word_index + 1 == other.ocr_word_index:
-            return self.right_char_offset == 0 and other.left_char_offset == 0
-        else:
-            return False
+        maximum_x_difference = 2 * average_height
+        return abs(self.right - other.left) <= maximum_x_difference
 
 
 class ScreenContents:
