@@ -1,9 +1,7 @@
-import re
 from dataclasses import dataclass
 from typing import Optional
 
-from talon import Module, actions
-from talon.grammar import Phrase
+from talon import Module
 
 mod = Module()
 
