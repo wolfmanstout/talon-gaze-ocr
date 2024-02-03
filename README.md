@@ -9,7 +9,7 @@ for an overview.
 ## Installation
 
 `git clone` this repo into your Talon user scripts folder. Requires
-[knausj_talon](https://github.com/knausj85/knausj_talon) to be installed as a
+[community](https://github.com/talonhub/community) to be installed as a
 sibling in the same directory.
 
 Required permissions:
@@ -39,9 +39,10 @@ working using Tesseract, but this configuration is not tested by the author.
 - Applies fuzzy matching to one or more spoken words.
 - Works with or without an eye tracker (just expect slower processing and more
   disambiguation).
-- Matches homophones of recognized words (based on CSV in knausj). Also matches
-  numbers and punctuation in either their spoken form (e.g. "two" and "period")
-  or their symbolic form (e.g. "2" and ".").
+- Matches homophones of recognized words (based on CSV in
+- [community](https://github.com/talonhub/community)). Also
+  matches numbers and punctuation in either their spoken form (e.g. "two" and
+  "period") or their symbolic form (e.g. "2" and ".").
 - Briefly displays debugging overlay if no matches are present.
 
 ## Known limitations:
@@ -49,7 +50,8 @@ working using Tesseract, but this configuration is not tested by the author.
 - Only operates on the main screen, as defined by Talon.
 - Updates (via git pull) and some settings changes require Talon restart.
 - Numbers must be referred to by their individual digits.
-- Modifications to punctuation and digit names in knausj not leveraged.
+- Modifications to punctuation and digit names in
+  [community](https://github.com/talonhub/community) not leveraged.
 - Depends on OS-provided text recognition (OCR), which is not perfectly accurate.
 - Cursor positioning often imprecise around text with underline, strikethrough,
   or squiggly.
@@ -76,10 +78,10 @@ To contribute, changes can be pushed and pulled to all repositories using
 `gaze-ocr`, `rapidfuzz`, and `jarowinkler` are all configured as git remotes,
 and `git subtree` is available.
 
-## Running without knausj_talon
+## Running without `community`
 
 As noted in the installation instructions,
-[knausj_talon](https://github.com/knausj85/knausj_talon) is highly recommended,
+[community](https://github.com/talonhub/community) is highly recommended,
 but most functionality will still be available in degraded form without it (and
 you will see some warning logs). Missing functionality:
 
