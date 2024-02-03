@@ -94,16 +94,25 @@ replace [{user.ocr_modifiers}] [seen | scene] <user.prose_range> with <user.pros
     user.insert_adjacent_to_text(timestamped_prose, "after", prose)
 phones (seen | scene) <user.timestamped_prose>$:
     user.change_text_homophone(timestamped_prose)
+# Example: "append with apple pear" to append "pear" after the word "apple".
 append with <user.timestamped_prose>$:
     user.append_text(timestamped_prose)
+# Example: "prepend with apple pear" to prepend "apple" before the word "pear".
 prepend with <user.timestamped_prose>$:
     user.prepend_text(timestamped_prose)
+# Example: "insert with apple pear" to either append "pear" after the word "apple" or prepend
+# "apple" before the word "pear", depending on whether "apple" or "pear" is already onscreen.
 insert with <user.timestamped_prose>$:
     user.insert_text_difference(timestamped_prose)
+# Example: "revise with apple pear banana" to change "apple orange banana" to "apple pear banana".
 revise with <user.timestamped_prose>$:
     user.revise_text(timestamped_prose)
+# Example: "revise from apple pear banana" to replace all the text from "apple" to the text cursor
+# with "apple pear banana".
 (revise from <user.timestamped_prose> | revise with <user.timestamped_prose> cursor)$:
     user.revise_text_starting_with(timestamped_prose)
+# Example: "revise through apple pear banana" to replace all the text from the text cursor to
+# "banana" with "apple pear banana".
 revise through <user.timestamped_prose>$:
     user.revise_text_ending_with(timestamped_prose)
 
