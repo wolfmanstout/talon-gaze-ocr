@@ -41,43 +41,43 @@ finally:
 mod = Module()
 ctx = Context()
 
-setting_ocr_use_talon_backend = mod.setting(
+mod.setting(
     "ocr_use_talon_backend",
     type=bool,
     default=True,
     desc="If true, use Talon backend, otherwise use default fast backend from screen_ocr.",
 )
-setting_ocr_connect_tracker = mod.setting(
+mod.setting(
     "ocr_connect_tracker",
     type=bool,
     default=True,
     desc="If true, automatically connect the eye tracker at startup.",
 )
-setting_ocr_logging_dir = mod.setting(
+mod.setting(
     "ocr_logging_dir",
     type=str,
     default=None,
     desc="If specified, log OCR'ed images to this directory.",
 )
-setting_ocr_click_offset_right = mod.setting(
+mod.setting(
     "ocr_click_offset_right",
     type=int,
     default=0,
     desc="Adjust the X-coordinate when clicking around OCR text.",
 )
-setting_ocr_select_pause_seconds = mod.setting(
+mod.setting(
     "ocr_select_pause_seconds",
     type=float,
     default=0.5,
     desc="Adjust the pause between clicks when performing a selection.",
 )
-setting_ocr_debug_display_seconds = mod.setting(
+mod.setting(
     "ocr_debug_display_seconds",
     type=float,
     default=2,
     desc="Adjust how long debugging display is shown.",
 )
-setting_ocr_disambiguation_display_seconds = mod.setting(
+mod.setting(
     "ocr_disambiguation_display_seconds",
     type=float,
     default=5,
@@ -189,7 +189,7 @@ def reload_backend(name, flags):
     global tracker, ocr_reader, gaze_ocr_controller
     tracker = gaze_ocr.talon.TalonEyeTracker()
     # Note: tracker is connected automatically in the constructor.
-    if not setting_ocr_connect_tracker.get():
+    if not settings.get("user.ocr_connect_tracker"):
         tracker.disconnect()
     homophones = get_knausj_homophones()
     # TODO: Get this through an action to support customization.
@@ -217,12 +217,13 @@ def reload_backend(name, flags):
             ("ok", "okay", "0k"),
         ],
     )
-    if setting_ocr_use_talon_backend.get() and ocr:
+    setting_ocr_use_talon_backend = settings.get("user.ocr_use_talon_backend")
+    if setting_ocr_use_talon_backend and ocr:
         ocr_reader = screen_ocr.Reader.create_reader(
             backend="talon", radius=200, homophones=homophones
         )
     else:
-        if setting_ocr_use_talon_backend.get() and not ocr:
+        if setting_ocr_use_talon_backend and not ocr:
             logging.info("Talon OCR not available, will rely on external support.")
         ocr_reader = screen_ocr.Reader.create_fast_reader(
             radius=200, homophones=homophones
@@ -233,7 +234,7 @@ def reload_backend(name, flags):
         mouse=gaze_ocr.talon.Mouse(),
         keyboard=gaze_ocr.talon.Keyboard(),
         app_actions=gaze_ocr.talon.AppActions(),
-        save_data_directory=setting_ocr_logging_dir.get(),
+        save_data_directory=settings.get("user.ocr_logging_dir"),
     )
 
 
@@ -299,9 +300,12 @@ def show_disambiguation():
                 location = (location[0] + match.text_height, location[1])
             used_locations.add(location)
             c.draw_text(str(i + 1), *location)
-        if setting_ocr_disambiguation_display_seconds.get():
+        setting_ocr_disambiguation_display_seconds = settings.get(
+            "user.ocr_disambiguation_display_seconds"
+        )
+        if setting_ocr_disambiguation_display_seconds:
             cron.after(
-                f"{setting_ocr_disambiguation_display_seconds.get()}s",
+                f"{setting_ocr_disambiguation_display_seconds}s",
                 disambiguation_canvas.close,
             )
 
@@ -330,7 +334,7 @@ def move_cursor_to_word_generator(text: TimestampedText):
         text.text,
         disambiguate=True,
         timestamp=text.start,
-        click_offset_right=setting_ocr_click_offset_right.get(),
+        click_offset_right=settings.get("user.ocr_click_offset_right"),
     )
     if not result:
         actions.user.show_ocr_overlay("text", False, f"{text.text}")
@@ -347,7 +351,7 @@ def move_text_cursor_to_word_generator(
         disambiguate=True,
         cursor_position=position,
         timestamp=text.start,
-        click_offset_right=setting_ocr_click_offset_right.get(),
+        click_offset_right=settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not result:
@@ -425,10 +429,10 @@ def select_text_generator(
         for_deletion=for_deletion,
         start_timestamp=start.start,
         end_timestamp=end.start if end else start.end,
-        click_offset_right=setting_ocr_click_offset_right.get(),
+        click_offset_right=settings.get("user.ocr_click_offset_right"),
         after_start=after_start,
         before_end=before_end,
-        select_pause_seconds=setting_ocr_select_pause_seconds.get(),
+        select_pause_seconds=settings.get("user.ocr_select_pause_seconds"),
     )
     if not result:
         actions.user.show_ocr_overlay(
@@ -713,7 +717,7 @@ class GazeOcrActions:
                     else:
                         raise RuntimeError(f"Type not recognized: {type}")
             cron.after(
-                f"{setting_ocr_debug_display_seconds.get()}s", debug_canvas.close
+                f"{settings.get('user.ocr_debug_display_second')}s", debug_canvas.close
             )
 
         debug_canvas = Canvas.from_screen(screen.main())
