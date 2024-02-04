@@ -370,7 +370,7 @@ def move_text_cursor_to_longest_prefix_generator(
         disambiguate=True,
         cursor_position=position,
         timestamp=text.start,
-        click_offset_right=setting_ocr_click_offset_right.get(),
+        click_offset_right=settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not locations:
@@ -390,7 +390,7 @@ def move_text_cursor_to_longest_suffix_generator(
         disambiguate=True,
         cursor_position=position,
         timestamp=text.end,
-        click_offset_right=setting_ocr_click_offset_right.get(),
+        click_offset_right=settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not locations:
@@ -405,7 +405,7 @@ def move_text_cursor_to_difference(text: TimestampedText):
         disambiguate=True,
         start_timestamp=text.start,
         end_timestamp=text.end,
-        click_offset_right=setting_ocr_click_offset_right.get(),
+        click_offset_right=settings.get("user.ocr_click_offset_right"),
     )
     if not result:
         actions.user.show_ocr_overlay("text", False, f"{text.text}")
@@ -447,8 +447,8 @@ def select_matching_text_generator(text: TimestampedText):
         disambiguate=True,
         start_timestamp=text.start,
         end_timestamp=text.end,
-        click_offset_right=setting_ocr_click_offset_right.get(),
-        select_pause_seconds=setting_ocr_select_pause_seconds.get(),
+        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        select_pause_seconds=settings.get("user.ocr_select_pause_seconds"),
     )
     if not result:
         actions.user.show_ocr_overlay("text", False, f"{text.text}")
