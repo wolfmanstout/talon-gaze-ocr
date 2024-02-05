@@ -717,7 +717,7 @@ class GazeOcrActions:
                     else:
                         raise RuntimeError(f"Type not recognized: {type}")
             cron.after(
-                f"{settings.get('user.ocr_debug_display_second')}s", debug_canvas.close
+                f"{settings.get('user.ocr_debug_display_seconds')}s", debug_canvas.close
             )
 
         debug_canvas = Canvas.from_screen(screen.main())
