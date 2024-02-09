@@ -51,11 +51,9 @@ def timestamped_phrase_default(m) -> TimestampedText:
     """Dictated phrase appearing onscreen (default capture)."""
     item = m[0]
     if isinstance(item, Phrase):
-        text = " ".join(
-            actions.dictate.replace_words(actions.dictate.parse_words(item))
-        )
-        start = item.words[0].start
-        end = item.words[-1].end
+        text = " ".join(actions.dictate.replace_words(item))
+        start = item[0].start
+        end = item[-1].end
     else:
         text = str(item)
         start = item.start
