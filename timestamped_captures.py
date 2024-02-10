@@ -52,8 +52,15 @@ def timestamped_phrase_default(m) -> TimestampedText:
     item = m[0]
     if isinstance(item, Phrase):
         text = " ".join(actions.dictate.replace_words(item))
-        start = item[0].start
-        end = item[-1].end
+        # TODO: Remove fallbacks once Phrase changes have been pushed to stable.
+        try:
+            start = item[0].start
+        except AttributeError:
+            start = item.words[0].start
+        try:
+            end = item[-1].end
+        except AttributeError:
+            end = item.words[-1].end
     else:
         text = str(item)
         start = item.start
