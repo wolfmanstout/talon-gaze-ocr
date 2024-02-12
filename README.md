@@ -8,9 +8,12 @@ for an overview.
 
 ## Installation
 
-`git clone` this repo into your Talon user scripts folder. Requires
-[community](https://github.com/talonhub/community) to be installed as a
-sibling in the same directory.
+Prerequisite: Requires [community](https://github.com/talonhub/community) to be
+installed as a sibling in the same directory.
+
+`git clone` this repo into your Talon user scripts folder. If you are on Talon
+Beta, switch to the "beta" branch (add flag `-b beta`) to take advantage of
+beta-only features. 
 
 Required permissions:
 

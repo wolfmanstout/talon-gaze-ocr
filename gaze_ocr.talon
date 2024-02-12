@@ -118,3 +118,5 @@ revise through <user.timestamped_prose>$:
 
 ocr tracker on: user.connect_ocr_eye_tracker()
 ocr tracker off: user.disconnect_ocr_eye_tracker()
+
+# More commands are available for Talon Beta users! Simply switch to the "beta" branch.
