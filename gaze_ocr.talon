@@ -92,7 +92,7 @@ replace [{user.ocr_modifiers}] [seen | scene] <user.prose_range> with <user.pros
     user.insert_adjacent_to_text(timestamped_prose, "before", prose)
 [go] after <user.timestamped_prose> say <user.prose>$:
     user.insert_adjacent_to_text(timestamped_prose, "after", prose)
-phones (seen | scene) <user.timestamped_prose>$:
+phones [word] (seen | scene) <user.timestamped_prose>$:
     user.change_text_homophone(timestamped_prose)
 # Example: "append with apple pear" to append "pear" after the word "apple".
 append with <user.timestamped_prose>$:

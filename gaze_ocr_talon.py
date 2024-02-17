@@ -92,6 +92,7 @@ ctx.lists["self.ocr_actions"] = {
     "copy": "copy",
     "carve": "cut",
     "paste to": "paste",
+    "paste link to": "paste_link",
     "clear": "delete",
     "change": "delete",
     "delete": "delete_with_whitespace",
@@ -496,6 +497,10 @@ def perform_ocr_action_generator(
         actions.edit.cut()
     elif ocr_action == "paste":
         actions.edit.paste()
+    elif ocr_action == "paste_link":
+        actions.user.hyperlink()
+        actions.sleep("100ms")
+        actions.edit.paste()
     elif ocr_action in ("delete", "delete_with_whitespace"):
         actions.key("backspace")
     elif ocr_action == "capitalize":
@@ -806,7 +811,10 @@ class GazeOcrActions:
         """Switch the on-screen text to a different homophone."""
 
         def run():
-            yield from select_text_generator(text)
+            # Use click instead of selection because it is more reliable.
+            yield from move_cursor_to_word_generator(text)
+            actions.mouse_click(0)
+            actions.edit.select_word()
             actions.user.homophones_show_selection()
 
         begin_generator(run())
