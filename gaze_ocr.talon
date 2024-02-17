@@ -53,8 +53,9 @@ mode: user.dictation_command
     user.mouse_scroll_right(0.5)
 
 # Debugging commands.
-ocr show [text]: user.show_ocr_overlay("text", 1)
-ocr show boxes: user.show_ocr_overlay("boxes", 1)
+ocr show [text]: user.show_ocr_overlay("text")
+ocr show [text] near <user.timestamped_prose>: user.show_ocr_overlay("text", timestamped_prose)
+ocr show boxes: user.show_ocr_overlay("boxes")
 
 # Commands that operate on text nearby where you're looking.
 # Example: "hover seen apple" to hover the cursor over the word "apple".
