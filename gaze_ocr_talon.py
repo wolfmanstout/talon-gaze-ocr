@@ -83,6 +83,18 @@ mod.setting(
     default=5,
     desc="Adjust how long disambiguation display is shown. Use 0 to remove timeout.",
 )
+mod.setting(
+    "ocr_gaze_box_padding",
+    type=int,
+    default=100,
+    desc="How much padding is applied to gaze bounding box when searching for text.",
+)
+mod.setting(
+    "ocr_gaze_point_padding",
+    type=int,
+    default=200,
+    desc="How much padding is applied to gaze point when searching for text.",
+)
 
 mod.mode("gaze_ocr_disambiguation")
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
@@ -221,13 +233,15 @@ def reload_backend(name, flags):
     setting_ocr_use_talon_backend = settings.get("user.ocr_use_talon_backend")
     if setting_ocr_use_talon_backend and ocr:
         ocr_reader = screen_ocr.Reader.create_reader(
-            backend="talon", radius=200, homophones=homophones
+            backend="talon",
+            radius=settings.get("user.ocr_gaze_point_padding"),
+            homophones=homophones,
         )
     else:
         if setting_ocr_use_talon_backend and not ocr:
             logging.info("Talon OCR not available, will rely on external support.")
         ocr_reader = screen_ocr.Reader.create_fast_reader(
-            radius=200, homophones=homophones
+            radius=settings.get("user.ocr_gaze_point_padding"), homophones=homophones
         )
     gaze_ocr_controller = gaze_ocr.Controller(
         ocr_reader,
@@ -236,6 +250,7 @@ def reload_backend(name, flags):
         keyboard=gaze_ocr.talon.Keyboard(),
         app_actions=gaze_ocr.talon.AppActions(),
         save_data_directory=settings.get("user.ocr_logging_dir"),
+        gaze_box_padding=settings.get("user.ocr_gaze_box_padding"),
     )
 
 
@@ -334,11 +349,11 @@ def move_cursor_to_word_generator(text: TimestampedText):
     result = yield from gaze_ocr_controller.move_cursor_to_words_generator(
         text.text,
         disambiguate=True,
-        timestamp=text.start,
+        time_range=(text.start, text.end),
         click_offset_right=settings.get("user.ocr_click_offset_right"),
     )
     if not result:
-        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
         raise RuntimeError('Unable to find: "{}"'.format(text))
 
 
@@ -351,12 +366,12 @@ def move_text_cursor_to_word_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        timestamp=text.start,
+        time_range=(text.start, text.end),
         click_offset_right=settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not result:
-        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
         raise RuntimeError('Unable to find: "{}"'.format(text))
 
 
@@ -370,12 +385,12 @@ def move_text_cursor_to_longest_prefix_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        timestamp=text.start,
+        time_range=(text.start, text.end),
         click_offset_right=settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not locations:
-        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
         raise RuntimeError('Unable to find: "{}"'.format(text))
     return prefix_length
 
@@ -390,12 +405,12 @@ def move_text_cursor_to_longest_suffix_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        timestamp=text.end,
+        time_range=(text.start, text.end),
         click_offset_right=settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not locations:
-        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
         raise RuntimeError('Unable to find: "{}"'.format(text))
     return prefix_length
 
@@ -404,12 +419,11 @@ def move_text_cursor_to_difference(text: TimestampedText):
     result = yield from gaze_ocr_controller.move_text_cursor_to_difference_generator(
         text.text,
         disambiguate=True,
-        start_timestamp=text.start,
-        end_timestamp=text.end,
+        time_range=(text.start, text.end),
         click_offset_right=settings.get("user.ocr_click_offset_right"),
     )
     if not result:
-        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
         raise RuntimeError('Unable to find: "{}"'.format(text))
     return result
 
@@ -428,16 +442,16 @@ def select_text_generator(
         disambiguate=True,
         end_words=end_text,
         for_deletion=for_deletion,
-        start_timestamp=start.start,
-        end_timestamp=end.start if end else start.end,
+        start_time_range=(start.start, start.end),
+        end_time_range=(end.start, end.end) if end else None,
         click_offset_right=settings.get("user.ocr_click_offset_right"),
         after_start=after_start,
         before_end=before_end,
         select_pause_seconds=settings.get("user.ocr_select_pause_seconds"),
     )
     if not result:
-        actions.user.show_ocr_overlay(
-            "text", False, f"{start.text}...{end.text if end else None}"
+        actions.user.show_ocr_overlay_for_query(
+            "text", f"{start.text}...{end.text if end else None}"
         )
         raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
 
@@ -446,13 +460,12 @@ def select_matching_text_generator(text: TimestampedText):
     result = yield from gaze_ocr_controller.select_matching_text_generator(
         text.text,
         disambiguate=True,
-        start_timestamp=text.start,
-        end_timestamp=text.end,
+        time_range=(text.start, text.end),
         click_offset_right=settings.get("user.ocr_click_offset_right"),
         select_pause_seconds=settings.get("user.ocr_select_pause_seconds"),
     )
     if not result:
-        actions.user.show_ocr_overlay("text", False, f"{text.text}")
+        actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
         raise RuntimeError('Unable to find: "{}"'.format(text))
 
 
@@ -670,13 +683,21 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def show_ocr_overlay(type: str, refresh: bool, query: str = ""):
-        """Display overlay over primary screen."""
+    def show_ocr_overlay(type: str, near: Optional[TimestampedText] = None):
+        """Displays overlay over primary screen.
+
+        Reads nearby gaze when the near parameter is spoken."""
+        if near:
+            gaze_ocr_controller.read_nearby((near.start, near.end))
+        else:
+            gaze_ocr_controller.read_nearby()
+        actions.user.show_ocr_overlay_for_query(type)
+
+    def show_ocr_overlay_for_query(type: str, query: str = ""):
+        """Display overlay over primary screen, displaying the query."""
         global debug_canvas
         if debug_canvas:
             debug_canvas.close()
-        if refresh:
-            gaze_ocr_controller.read_nearby()
         contents = gaze_ocr_controller.latest_screen_contents()
 
         def on_draw(c):

@@ -69,6 +69,37 @@ class CursorLocation:
                 self.keyboard.right(1)
 
 
+class OcrCache:
+    def __init__(self, ocr_reader: Reader):
+        self.ocr_reader = ocr_reader
+        self._last_time_range = None
+        self._last_screen_contents = None
+
+    def read(
+        self,
+        time_range: Tuple[float, float],
+        bounding_box: Optional[Tuple[int, int, int, int]],
+    ):
+        if (
+            self._last_time_range
+            and time_range[0] >= self._last_time_range[0]
+            and time_range[1] <= self._last_time_range[1]
+        ):
+            # Assume that bounding box is a subset if the time range is a subset.
+            # Don't update the cache, in case multiple subsets are requested.
+            if bounding_box:
+                return self._last_screen_contents.cropped(bounding_box)
+            else:
+                return self._last_screen_contents
+        else:
+            self._last_time_range = time_range
+            if bounding_box:
+                self._last_screen_contents = self.ocr_reader.read_screen(bounding_box)
+            else:
+                self._last_screen_contents = self.ocr_reader.read_screen()
+            return self._last_screen_contents
+
+
 class Controller:
     """Mediates interaction with gaze tracking and OCR.
 
@@ -90,6 +121,7 @@ class Controller:
         keyboard,
         app_actions=None,
         save_data_directory: Optional[str] = None,
+        gaze_box_padding: int = 100,
     ):
         self.ocr_reader = ocr_reader
         self.eye_tracker = eye_tracker
@@ -97,9 +129,11 @@ class Controller:
         self.keyboard = keyboard
         self.app_actions = app_actions
         self.save_data_directory = save_data_directory
+        self.gaze_box_padding = gaze_box_padding
         self._change_radius = 10
         self._executor = futures.ThreadPoolExecutor(max_workers=1)
         self._future = None
+        self._ocr_cache = OcrCache(ocr_reader)
 
     def shutdown(self, wait=True):
         self._executor.shutdown(wait)
@@ -127,43 +161,50 @@ class Controller:
             else (lambda: self.ocr_reader.read_screen())
         )
 
-    # TODO Use timestamp range instead of a single timestamp.
-    def read_nearby(self, timestamp: Optional[float] = None) -> None:
+    def read_nearby(
+        self,
+        time_range: Optional[Tuple[float, float]] = None,
+    ) -> None:
         """Perform OCR nearby the gaze point in the current thread.
 
         Arguments:
-        timestamp: If specified, read nearby the gaze point at the provided timestamp.
+        time_range: If specified, read within the bounds of gaze during that time.
         """
-        gaze_point = (
-            self.eye_tracker.get_gaze_point_at_timestamp(timestamp)
-            if self.eye_tracker and self.eye_tracker.is_connected and timestamp
-            else self.eye_tracker.get_gaze_point()
-            if self.eye_tracker and self.eye_tracker.is_connected
-            else None
-        )
         self._future = futures.Future()
-        if not gaze_point:
-            self._future.set_result(self.ocr_reader.read_screen())
-            return
-        if not timestamp:
-            self._future.set_result(self.ocr_reader.read_nearby(gaze_point))
-            return
-        # TODO Extract constants into optional constructor params.
-        bounds = self.eye_tracker.get_gaze_bounds_during_time_range(
-            timestamp - 0.2, timestamp + 0.2
-        )
-        if not bounds:
-            self._future.set_result(self.ocr_reader.read_nearby(gaze_point))
-            return
-        max_radius = max(bounds.right - bounds.left, bounds.bottom - bounds.top) / 2.0
-
-        self._future.set_result(
-            self.ocr_reader.read_nearby(
-                gaze_point,
-                search_radius=max_radius + 100,
-                crop_radius=max_radius + 200,
+        if time_range and time_range[0] and time_range[1]:
+            start_timestamp, end_timestamp = time_range
+            # Pad the range to account for timestamp inaccuracy.
+            gaze_bounds = (
+                self.eye_tracker.get_gaze_bounds_during_time_range(
+                    start_timestamp - 0.1, end_timestamp + 0.1
+                )
+                if self.eye_tracker and self.eye_tracker.is_connected
+                else None
             )
-        )
+            if not gaze_bounds:
+                self._future.set_result(
+                    self._ocr_cache.read((start_timestamp, end_timestamp), None)
+                )
+                return
+            ocr_bounds = (
+                gaze_bounds.left - self.gaze_box_padding,
+                gaze_bounds.top - self.gaze_box_padding,
+                gaze_bounds.right + self.gaze_box_padding,
+                gaze_bounds.bottom + self.gaze_box_padding,
+            )
+            self._future.set_result(
+                self._ocr_cache.read((start_timestamp, end_timestamp), ocr_bounds)
+            )
+        else:
+            gaze_point = (
+                self.eye_tracker.get_gaze_point()
+                if self.eye_tracker and self.eye_tracker.is_connected
+                else None
+            )
+            if gaze_point:
+                self._future.set_result(self.ocr_reader.read_nearby(gaze_point))
+            else:
+                self._future.set_result(self.ocr_reader.read_screen())
 
     def latest_screen_contents(self) -> ScreenContents:
         """Return the ScreenContents of the latest call to start_reading_nearby().
@@ -180,7 +221,7 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
     ) -> Optional[Tuple[int, int]]:
         """Move the mouse cursor nearby the specified word or words.
@@ -190,7 +231,7 @@ class Controller:
         Arguments:
         words: The word or words to search for.
         cursor_position: "before", "middle", or "after" (relative to the matching word)
-        timestamp: If specified, read nearby gaze at the provided timestamp.
+        time_range: If specified, read within the bounds of gaze during that time.
         click_offset_right: Adjust the X-coordinate when clicking.
         """
         return self._extract_result(
@@ -198,7 +239,7 @@ class Controller:
                 words,
                 disambiguate=False,
                 cursor_position=cursor_position,
-                timestamp=timestamp,
+                time_range=time_range,
                 click_offset_right=click_offset_right,
             )
         )
@@ -208,18 +249,14 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
-    ) -> Generator[
-        Sequence[CursorLocation],
-        CursorLocation,
-        Optional[Tuple[int, int]],
-    ]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[Tuple[int, int]]]:
         """Same as move_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
         """
-        if timestamp:
-            self.read_nearby(timestamp)
+        if time_range:
+            self.read_nearby(time_range)
         screen_contents = self.latest_screen_contents()
         matches = screen_contents.find_matching_words(words)
         self._write_data(screen_contents, words, matches)
@@ -270,7 +307,7 @@ class Controller:
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
         include_whitespace: bool = False,
-        timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
     ) -> Optional[CursorLocation]:
         """Move the text cursor nearby the specified word or phrase.
@@ -283,7 +320,7 @@ class Controller:
         filter_location_function: Given a sequence of word locations, return whether to proceed with
                                     cursor movement.
         include_whitespace: Include whitespace adjacent to the words.
-        timestamp: Use gaze position at the provided timestamp.
+        time_range: If specified, read within the bounds of gaze during that time.
         click_offset_right: Adjust the X-coordinate when clicking.
         """
         return self._extract_result(
@@ -293,7 +330,7 @@ class Controller:
                 cursor_position=cursor_position,
                 filter_location_function=filter_location_function,
                 include_whitespace=include_whitespace,
-                timestamp=timestamp,
+                time_range=time_range,
                 click_offset_right=click_offset_right,
             )
         )
@@ -305,16 +342,16 @@ class Controller:
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
         include_whitespace: bool = False,
-        timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
         selection_position: Optional[SelectionPosition] = None,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation],]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation]]:
         """Same as move_text_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
         """
-        if timestamp:
-            self.read_nearby(timestamp)
+        if time_range:
+            self.read_nearby(time_range)
         screen_contents = self.latest_screen_contents()
         matches = screen_contents.find_matching_words(words)
         if filter_location_function:
@@ -359,7 +396,7 @@ class Controller:
         words: str,
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
-        timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
     ) -> Tuple[Optional[CursorLocation], int]:
@@ -371,7 +408,7 @@ class Controller:
                 disambiguate=False,
                 cursor_position=cursor_position,
                 filter_location_function=filter_location_function,
-                timestamp=timestamp,
+                time_range=time_range,
                 click_offset_right=click_offset_right,
                 hold_shift=hold_shift,
             )
@@ -383,18 +420,16 @@ class Controller:
         disambiguate: bool,
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
-        timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
     ) -> Generator[
-        Sequence[CursorLocation],
-        CursorLocation,
-        Tuple[Optional[CursorLocation], int],
+        Sequence[CursorLocation], CursorLocation, Tuple[Optional[CursorLocation], int]
     ]:
         """Same as move_text_cursor_to_longest_prefix, except it supports
         disambiguation through a generator. See header comment for details."""
-        if timestamp:
-            self.read_nearby(timestamp)
+        if time_range:
+            self.read_nearby(time_range)
         screen_contents = self.latest_screen_contents()
         matches, prefix_length = screen_contents.find_longest_matching_prefix(
             words, filter_location_function=filter_location_function
@@ -431,7 +466,7 @@ class Controller:
         words: str,
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
-        timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
     ) -> Tuple[Optional[CursorLocation], int]:
@@ -443,7 +478,7 @@ class Controller:
                 disambiguate=False,
                 cursor_position=cursor_position,
                 filter_location_function=filter_location_function,
-                timestamp=timestamp,
+                time_range=time_range,
                 click_offset_right=click_offset_right,
                 hold_shift=hold_shift,
             )
@@ -455,18 +490,16 @@ class Controller:
         disambiguate: bool,
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
-        timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
     ) -> Generator[
-        Sequence[CursorLocation],
-        CursorLocation,
-        Tuple[Optional[CursorLocation], int],
+        Sequence[CursorLocation], CursorLocation, Tuple[Optional[CursorLocation], int]
     ]:
         """Same as move_text_cursor_to_longest_suffix, except it supports
         disambiguation through a generator. See header comment for details."""
-        if timestamp:
-            self.read_nearby(timestamp)
+        if time_range:
+            self.read_nearby(time_range)
         screen_contents = self.latest_screen_contents()
         matches, suffix_length = screen_contents.find_longest_matching_suffix(
             words, filter_location_function=filter_location_function
@@ -502,22 +535,18 @@ class Controller:
         self,
         words: str,
         disambiguate: bool,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[Tuple[int, int]]]:
         """Finds onscreen text that matches the start and/or end of the provided words,
         and moves the text cursor to the start of where the words differ. Returns the
         start and end indices of the differing text in the provided words, if found."""
-        if start_timestamp:
-            self.read_nearby(start_timestamp)
+        if time_range:
+            self.read_nearby(time_range)
         screen_contents = self.latest_screen_contents()
         prefix_matches, prefix_length = screen_contents.find_longest_matching_prefix(
             words
         )
-        if end_timestamp:
-            self.read_nearby(end_timestamp)
-        screen_contents = self.latest_screen_contents()
         suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
             words
         )
@@ -578,8 +607,8 @@ class Controller:
         start_words: str,
         end_words: Optional[str] = None,
         for_deletion: bool = False,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
+        start_time_range: Optional[Tuple[float, float]] = None,
+        end_time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
         after_start: bool = False,
         before_end: bool = False,
@@ -593,8 +622,8 @@ class Controller:
         Arguments:
         for_deletion: If True, select adjacent whitespace for clean deletion of
                       the selected text.
-        start_timestamp: If specified, read start nearby gaze at the provided timestamp.
-        end_timestamp: If specified, read end nearby gaze at the provided timestamp.
+        start_time_range: If specified, search for start_words within the bounds of gaze during that time.
+        end_time_range: If specified, search for end_words within the bounds of gaze during that time.
         click_offset_right: Adjust the X-coordinate when clicking.
         after_start: If true, begin selection after the start word.
         before_end: If true, end selection before the end word.
@@ -605,8 +634,8 @@ class Controller:
                 disambiguate=False,
                 end_words=end_words,
                 for_deletion=for_deletion,
-                start_timestamp=start_timestamp,
-                end_timestamp=end_timestamp,
+                start_time_range=start_time_range,
+                end_time_range=end_time_range,
                 click_offset_right=click_offset_right,
                 after_start=after_start,
                 before_end=before_end,
@@ -619,18 +648,18 @@ class Controller:
         disambiguate: bool,
         end_words: Optional[str] = None,
         for_deletion: bool = False,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
+        start_time_range: Optional[Tuple[float, float]] = None,
+        end_time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
         after_start: bool = False,
         before_end: bool = False,
         select_pause_seconds: float = 0.01,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation],]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation]]:
         """Same as select_text, except it supports disambiguation through a generator.
         See header comment for details.
         """
-        if start_timestamp:
-            self.read_nearby(start_timestamp)
+        if start_time_range:
+            self.read_nearby(start_time_range)
         screen_contents = self.latest_screen_contents()
         start_matches = screen_contents.find_matching_words(start_words)
         self._write_data(screen_contents, start_words, start_matches)
@@ -650,8 +679,8 @@ class Controller:
         start_location.move_text_cursor()
         time.sleep(select_pause_seconds)
         if end_words:
-            if end_timestamp:
-                self.read_nearby(end_timestamp)
+            if end_time_range:
+                self.read_nearby(end_time_range)
             else:
                 self._read_nearby_if_gaze_moved()
             filter_function = lambda location: self._is_valid_selection(
@@ -689,8 +718,7 @@ class Controller:
     def select_matching_text(
         self,
         words: str,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
     ) -> Optional[Tuple[int, int]]:
         """Selects onscreen text that matches the beginning and/or end of the provided
@@ -700,8 +728,7 @@ class Controller:
             self.select_matching_text_generator(
                 words,
                 disambiguate=False,
-                start_timestamp=start_timestamp,
-                end_timestamp=end_timestamp,
+                time_range=time_range,
                 click_offset_right=click_offset_right,
             )
         )
@@ -710,19 +737,14 @@ class Controller:
         self,
         words: str,
         disambiguate: bool,
-        start_timestamp: Optional[float] = None,
-        end_timestamp: Optional[float] = None,
+        time_range: Optional[Tuple[float, float]] = None,
         click_offset_right: int = 0,
         select_pause_seconds: float = 0.01,
-    ) -> Generator[
-        Sequence[CursorLocation],
-        CursorLocation,
-        Optional[Tuple[int, int]],
-    ]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[Tuple[int, int]]]:
         """Same as select_matching_text, except it supports disambiguation through a
         generator. See header comment for details."""
-        if start_timestamp:
-            self.read_nearby(start_timestamp)
+        if time_range:
+            self.read_nearby(time_range)
         screen_contents = self.latest_screen_contents()
         prefix_matches, prefix_length = screen_contents.find_longest_matching_prefix(
             words
@@ -741,11 +763,9 @@ class Controller:
         if before_prefix_location:
             before_prefix_location.move_text_cursor()
             time.sleep(select_pause_seconds)
-        if end_timestamp:
-            self.read_nearby(end_timestamp)
-        else:
+        if not time_range:
             self._read_nearby_if_gaze_moved()
-        screen_contents = self.latest_screen_contents()
+            screen_contents = self.latest_screen_contents()
         if before_prefix_location:
             filter_function = lambda location: self._is_valid_selection(
                 before_prefix_location.click_coordinates, location[-1].end_coordinates
@@ -1033,7 +1053,7 @@ class Controller:
         self,
         disambiguate: bool,
         matches: Sequence[CursorLocation],
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation],]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation]]:
         if not matches:
             return None
         if len(matches) == 1:

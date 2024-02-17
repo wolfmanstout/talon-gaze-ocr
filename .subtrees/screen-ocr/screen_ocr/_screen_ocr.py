@@ -56,6 +56,9 @@ try:
 except ImportError:
     screen = rect = actions = None
 
+# Represented as [left, top, right, bottom] pixel coordinates
+BoundingBox = Tuple[int, int, int, int]
+
 
 class Reader:
     """Reads on-screen text using OCR."""
@@ -190,9 +193,6 @@ class Reader:
             if homophones
             else default_homophones()
         )
-
-    # Represented as [left, top, right, bottom] pixel coordinates
-    BoundingBox = Tuple[int, int, int, int]
 
     def read_nearby(
         self,
@@ -464,6 +464,33 @@ class ScreenContents:
                 words.append(word.text)
             lines.append(" ".join(words) + "\n")
         return "".join(lines)
+
+    def cropped(self, bounding_box: BoundingBox) -> "ScreenContents":
+        """Return a new ScreenContents cropped to the provided bounding box."""
+        left, top, right, bottom = bounding_box
+        lines = []
+        for line in self.result.lines:
+            words = []
+            for word in line.words:
+                if (
+                    word.left > right
+                    or word.left + word.width < left
+                    or word.top > bottom
+                    or word.top + word.height < top
+                ):
+                    continue
+                words.append(word)
+            lines.append(_base.OcrLine(words))
+        result = _base.OcrResult(lines)
+        return ScreenContents(
+            screen_coordinates=self.screen_coordinates,
+            screen_offset=bounding_box[0:2],
+            screenshot=self.screenshot,  # TODO crop screenshot
+            result=result,
+            confidence_threshold=self.confidence_threshold,
+            homophones=self.homophones,
+            search_radius=self.search_radius,
+        )
 
     def find_nearest_word_coordinates(
         self, target_word: str, cursor_position: str
