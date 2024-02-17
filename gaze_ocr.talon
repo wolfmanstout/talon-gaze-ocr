@@ -63,6 +63,9 @@ ocr show boxes: user.show_ocr_overlay("boxes")
 # Example: "touch apple" to click the word "apple".
 [left] (touch | click) <user.timestamped_prose>$:
     user.click_text(timestamped_prose)
+# The following command is mostly for testing/debugging the onscreen_text capture.
+screen [left] (touch | click) <user.onscreen_text>$:
+    user.click_text(onscreen_text)
 [left] double (touch | click) <user.timestamped_prose>$:
     user.double_click_text(timestamped_prose)
 right (touch | click) <user.timestamped_prose>$:

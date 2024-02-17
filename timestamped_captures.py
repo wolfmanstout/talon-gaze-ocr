@@ -28,9 +28,23 @@ class TextPosition:
 
 
 @mod.capture(rule="<user.prose>")
-def timestamped_prose(m) -> TimestampedText:
-    """Dictated text appearing onscreen."""
+def timestamped_prose_only(m) -> TimestampedText:
+    """user.prose with timestamps."""
     return TimestampedText(text=m.prose, start=m.prose_start, end=m.prose_end)
+
+
+@mod.capture(rule="{user.onscreen_ocr_text}")
+def onscreen_text(m) -> TimestampedText:
+    """Timestamped text appearing onscreen."""
+    return TimestampedText(
+        text=m[0], start=m.onscreen_ocr_text_start, end=m.onscreen_ocr_text_end
+    )
+
+
+@mod.capture(rule="<self.timestamped_prose_only> | <self.onscreen_text>")
+def timestamped_prose(m) -> TimestampedText:
+    """Timestamped prose or onscreen text."""
+    return m[0]
 
 
 @mod.capture(rule="[before | after] <self.timestamped_prose>")

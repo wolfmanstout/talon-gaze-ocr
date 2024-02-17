@@ -3,7 +3,7 @@ import logging
 import sys
 from math import floor
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence, Union
 
 import numpy as np
 from talon import Context, Module, actions, app, cron, fs, screen, settings
@@ -99,6 +99,7 @@ mod.setting(
 mod.mode("gaze_ocr_disambiguation")
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
 mod.list("ocr_modifiers", desc="Modifiers to perform on selected text.")
+mod.list("onscreen_ocr_text", desc="Selection list for onscreen text.")
 ctx.lists["self.ocr_actions"] = {
     "take": "select",
     "copy": "copy",
@@ -124,6 +125,14 @@ ctx.lists["self.ocr_actions"] = {
 ctx.lists["self.ocr_modifiers"] = {
     "all": "selectAll",
 }
+
+
+@ctx.dynamic_list("user.onscreen_ocr_text")
+def onscreen_ocr_text(phrase) -> Union[str, list[str], dict[str, str]]:
+    global gaze_ocr_controller
+    gaze_ocr_controller.read_nearby((phrase[0].start, phrase[-1].end))
+    contents = gaze_ocr_controller.latest_screen_contents()
+    return contents.as_string()
 
 
 def add_homophones(
