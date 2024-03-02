@@ -129,10 +129,10 @@ ctx.lists["self.ocr_modifiers"] = {
 
 @ctx.dynamic_list("user.onscreen_ocr_text")
 def onscreen_ocr_text(phrase) -> Union[str, list[str], dict[str, str]]:
-    global gaze_ocr_controller
+    global gaze_ocr_controller, punctuation_table
     gaze_ocr_controller.read_nearby((phrase[0].start, phrase[-1].end))
     contents = gaze_ocr_controller.latest_screen_contents()
-    return contents.as_string()
+    return contents.as_string().translate(punctuation_table)
 
 
 def add_homophones(
@@ -151,7 +151,8 @@ def add_homophones(
 digits = "zero one two three four five six seven eight nine".split()
 default_digits_map = {n: i for i, n in enumerate(digits)}
 
-# Inline punctuation words in case people are using vanilla knausj, where these are not exposed.
+# Inline punctuation words in case people are using vanilla knausj, where these are not
+# exposed. Listed in order of preference.
 default_punctuation_words = {
     "back tick": "`",
     "grave": "`",
@@ -208,7 +209,7 @@ def get_knausj_homophones():
 
 def reload_backend(name, flags):
     # Initialize eye tracking and OCR.
-    global tracker, ocr_reader, gaze_ocr_controller
+    global tracker, ocr_reader, gaze_ocr_controller, punctuation_table
     tracker = gaze_ocr.talon.TalonEyeTracker()
     # Note: tracker is connected automatically in the constructor.
     if not settings.get("user.ocr_connect_tracker"):
@@ -227,9 +228,8 @@ def reload_backend(name, flags):
     add_homophones(
         homophones,
         [
-            (punctuation, spoken)
+            (punctuation, spoken.replace(" ", ""))
             for spoken, punctuation in punctuation_words.items()
-            if " " not in spoken
         ],
     )
     add_homophones(
@@ -239,6 +239,14 @@ def reload_backend(name, flags):
             ("ok", "okay", "0k"),
         ],
     )
+    punctuation_table = str.maketrans(
+        {
+            punctuation: f" {spoken.replace(' ', '')} "
+            for spoken, punctuation in reversed(default_punctuation_words.items())
+            if len(punctuation) == 1
+        }
+    )
+    # print(f"punctuation_table: {punctuation_table}")
     setting_ocr_use_talon_backend = settings.get("user.ocr_use_talon_backend")
     if setting_ocr_use_talon_backend and ocr:
         ocr_reader = screen_ocr.Reader.create_reader(
