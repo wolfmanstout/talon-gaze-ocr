@@ -110,9 +110,10 @@ ctx.lists["self.ocr_actions"] = {
     "delete": "delete_with_whitespace",
     "chuck": "delete_with_whitespace",
     "cap": "capitalize",
+    "no cap": "uncapitalize",
+    "no caps": "uncapitalize",
     "lower": "lowercase",
-    "no cap": "lowercase",
-    "no caps": "lowercase",
+    "upper": "uppercase",
     # Note: the following are not defined by default in knausj.
     "bold": "bold",
     "italic": "italic",
@@ -519,9 +520,15 @@ def perform_ocr_action_generator(
     elif ocr_action == "capitalize":
         text = actions.edit.selected_text()
         actions.insert(text[0].capitalize() + text[1:] if text else "")
+    elif ocr_action == "uncapitalize":
+        text = actions.edit.selected_text()
+        actions.insert(text[0].lower() + text[1:] if text else "")
     elif ocr_action == "lowercase":
         text = actions.edit.selected_text()
         actions.insert(text.lower())
+    elif ocr_action == "uppercase":
+        text = actions.edit.selected_text()
+        actions.insert(text.upper())
     elif ocr_action == "bold":
         actions.user.bold()
     elif ocr_action == "italic":
