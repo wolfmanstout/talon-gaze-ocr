@@ -166,6 +166,8 @@ default_punctuation_words = {
     # Currencies
     "dollar sign": "$",
     "pound sign": "£",
+    "hyphen": "-",
+    "underscore": "_",
 }
 
 
