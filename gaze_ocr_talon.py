@@ -176,6 +176,8 @@ default_punctuation_words = {
     # Currencies
     "dollar sign": "$",
     "pound sign": "£",
+    "hyphen": "-",
+    "underscore": "_",
 }
 
 
@@ -247,7 +249,6 @@ def reload_backend(name, flags):
             if len(punctuation) == 1
         }
     )
-    # print(f"punctuation_table: {punctuation_table}")
     setting_ocr_use_talon_backend = settings.get("user.ocr_use_talon_backend")
     if setting_ocr_use_talon_backend and ocr:
         ocr_reader = screen_ocr.Reader.create_reader(
