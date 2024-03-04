@@ -99,6 +99,11 @@ def one_ended_prose_range(m) -> TextRange:
     # As a convenience, allow dropping "through" if position is provided.
     if has_through or m.prose_position.position:
         if not m.prose_position.position:
+            actions.app.notify(
+                'Try "[through] before <phrase>" or "[through] after <phrase>" instead'
+                ' of "through <phrase>". The cursor position is unknown to '
+                "talon-gaze-ocr."
+            )
             raise ValueError(
                 'Text range "through <phrase>" not supported because cursor position is unknown.'
             )
