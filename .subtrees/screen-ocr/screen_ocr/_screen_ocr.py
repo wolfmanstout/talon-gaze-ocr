@@ -416,7 +416,8 @@ class WordLocation:
     def is_adjacent_left_of(
         self, other: "WordLocation", allow_whitespace: bool
     ) -> bool:
-        """Return True if the other word is adjacent to this word."""
+        """Return True if the other word is adjacent to this word. Only valid if both
+        WordLocations are from the same ScreenContents."""
         if self.ocr_line_index != other.ocr_line_index:
             return False
         elif self.ocr_word_index == other.ocr_word_index:
