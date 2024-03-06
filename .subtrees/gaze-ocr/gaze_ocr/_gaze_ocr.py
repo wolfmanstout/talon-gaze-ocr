@@ -555,10 +555,18 @@ class Controller:
         # Find any pairs of matches that are adjacent onscreen. Track whether there is
         # whitespace between the pairs.
         adjacent_prefix_matches = []
+        whitespace_between_matches_list = []
         for prefix_match in prefix_matches:
             for suffix_match in suffix_matches:
-                if prefix_match[-1].is_adjacent_left_of(suffix_match[0]):
+                if prefix_match[-1].is_adjacent_left_of(
+                    suffix_match[0], allow_whitespace=True
+                ):
                     adjacent_prefix_matches.append(prefix_match)
+                    whitespace_between_matches_list.append(
+                        not prefix_match[-1].is_adjacent_left_of(
+                            suffix_match[0], allow_whitespace=False
+                        )
+                    )
 
         if adjacent_prefix_matches:
             locations = self._plan_cursor_locations(
@@ -592,7 +600,10 @@ class Controller:
             return None
         location.move_text_cursor()
         if adjacent_prefix_matches:
-            if words[-suffix_length - 1] == " ":
+            whitespace_between_matches = whitespace_between_matches_list[
+                locations.index(location)
+            ]
+            if whitespace_between_matches and words[-suffix_length - 1] == " ":
                 return (prefix_length, len(words) - suffix_length - 1)
             else:
                 return (prefix_length, len(words) - suffix_length)
