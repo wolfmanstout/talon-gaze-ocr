@@ -1,5 +1,6 @@
 import glob
 import logging
+import re
 import sys
 from math import floor
 from pathlib import Path
@@ -132,8 +133,12 @@ ctx.lists["self.ocr_modifiers"] = {
 def onscreen_ocr_text(phrase) -> Union[str, list[str], dict[str, str]]:
     global gaze_ocr_controller, punctuation_table
     gaze_ocr_controller.read_nearby((phrase[0].start, phrase[-1].end))
-    contents = gaze_ocr_controller.latest_screen_contents()
-    return contents.as_string().translate(punctuation_table)
+    selection_list = gaze_ocr_controller.latest_screen_contents().as_string()
+    # Split camel-casing.
+    selection_list = re.sub(r"([a-z])([A-Z])", r"\1 \2", selection_list)
+    # Make punctuation speakable.
+    selection_list = selection_list.translate(punctuation_table)
+    return selection_list
 
 
 def add_homophones(
