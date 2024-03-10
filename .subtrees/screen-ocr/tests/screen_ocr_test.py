@@ -13,7 +13,7 @@ def test_find_longest_matching_suffix():
     ocr_result = _base.OcrResult(lines=[line])
     contents = screen_ocr.ScreenContents(
         screen_coordinates=None,
-        screen_offset=(0, 0),
+        bounding_box=(0, 0, 100, 100),
         screenshot=None,
         result=ocr_result,
         confidence_threshold=1,
