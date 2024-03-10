@@ -31,6 +31,8 @@ def test_find_longest_matching_suffix():
                 top=0,
                 width=10,
                 height=10,
+                ocr_word_index=1,
+                ocr_line_index=0,
             )
         ]
     ]
@@ -46,6 +48,8 @@ def test_find_longest_matching_suffix():
                 top=0,
                 width=10,
                 height=10,
+                ocr_word_index=1,
+                ocr_line_index=0,
             )
         ]
     ]
@@ -62,7 +66,7 @@ def test_generate_candidates_from_line():
             _base.OcrWord(text="doesn't", left=48, top=0, width=10, height=10),
         ]
     )
-    candidates = list(screen_ocr.ScreenContents._generate_candidates_from_line(line))
+    candidates = list(screen_ocr.ScreenContents._generate_candidates_from_line(line, 0))
     assert candidates == [
         screen_ocr.WordLocation(
             text="snake",
@@ -72,6 +76,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=0,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="_",
@@ -81,6 +87,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=0,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="case",
@@ -90,6 +98,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=0,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text=":",
@@ -99,6 +109,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=0,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="=",
@@ -108,6 +120,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=0,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="[",
@@ -117,6 +131,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=1,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="Test",
@@ -126,6 +142,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=1,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="Class",
@@ -135,6 +153,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=1,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="]",
@@ -144,6 +164,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=1,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="camel",
@@ -153,6 +175,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=2,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="Case",
@@ -162,6 +186,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=2,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="ALLCAPS",
@@ -171,6 +197,8 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=3,
+            ocr_line_index=0,
         ),
         screen_ocr.WordLocation(
             text="doesn't",
@@ -180,5 +208,7 @@ def test_generate_candidates_from_line():
             top=0,
             width=10,
             height=10,
+            ocr_word_index=4,
+            ocr_line_index=0,
         ),
     ]
