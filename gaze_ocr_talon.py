@@ -734,6 +734,18 @@ class GazeOcrActions:
             debug_color = (
                 "000000" if has_light_background(contents.screenshot) else "ffffff"
             )
+            # Show bounding box. Note that because screenshot isn't cropped when using
+            # cached results, this may be inaccurate in some cases.
+            c.paint.style = c.paint.Style.STROKE
+            c.paint.color = debug_color
+            c.draw_rect(
+                rect.Rect(
+                    x=contents.screen_offset[0],
+                    y=contents.screen_offset[1],
+                    width=contents.screenshot.width,
+                    height=contents.screenshot.height,
+                )
+            )
             if contents.screen_coordinates:
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.color = debug_color
