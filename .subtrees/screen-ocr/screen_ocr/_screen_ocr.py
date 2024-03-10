@@ -212,7 +212,7 @@ class Reader:
         screenshot, bounding_box = self._clean_screenshot(bounding_box)
         return self.read_image(
             screenshot,
-            offset=bounding_box[0:2],
+            bounding_box=bounding_box,
             screen_coordinates=screen_coordinates,
             search_radius=search_radius,
         )
@@ -222,7 +222,7 @@ class Reader:
         screenshot, bounding_box = self._clean_screenshot(bounding_box)
         return self.read_image(
             screenshot,
-            offset=bounding_box[0:2],
+            bounding_box=bounding_box,
             screen_coordinates=None,
             search_radius=None,
         )
@@ -230,18 +230,19 @@ class Reader:
     def read_image(
         self,
         image,
-        offset: Tuple[int, int] = (0, 0),
+        bounding_box: Optional[BoundingBox] = None,
         screen_coordinates: Optional[Tuple[int, int]] = None,
         search_radius: Optional[int] = None,
     ):
         """Return ScreenContents of the provided image."""
+        bounding_box = bounding_box or (0, 0, image.width, image.height)
         search_radius = search_radius or self.search_radius
         preprocessed_image = self._preprocess(image)
         result = self._backend.run_ocr(preprocessed_image)
-        result = self._adjust_result(result, offset)
+        result = self._adjust_result(result, bounding_box[0:2])
         return ScreenContents(
             screen_coordinates=screen_coordinates,
-            screen_offset=offset,
+            bounding_box=bounding_box,
             screenshot=image,
             result=result,
             confidence_threshold=self.confidence_threshold,
@@ -436,7 +437,7 @@ class ScreenContents:
     def __init__(
         self,
         screen_coordinates: Optional[Tuple[int, int]],
-        screen_offset: Tuple[int, int],
+        bounding_box: BoundingBox,
         screenshot,
         result: _base.OcrResult,
         confidence_threshold: float,
@@ -444,7 +445,7 @@ class ScreenContents:
         search_radius: Optional[int],
     ):
         self.screen_coordinates = screen_coordinates
-        self.screen_offset = screen_offset
+        self.bounding_box = bounding_box
         self.screenshot = screenshot
         self.result = result
         self.confidence_threshold = confidence_threshold
@@ -484,7 +485,7 @@ class ScreenContents:
         result = _base.OcrResult(lines)
         return ScreenContents(
             screen_coordinates=self.screen_coordinates,
-            screen_offset=bounding_box[0:2],
+            bounding_box=bounding_box,
             screenshot=self.screenshot,  # TODO crop screenshot
             result=result,
             confidence_threshold=self.confidence_threshold,
