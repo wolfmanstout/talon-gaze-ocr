@@ -132,6 +132,7 @@ ctx.lists["self.ocr_modifiers"] = {
 @ctx.dynamic_list("user.onscreen_ocr_text")
 def onscreen_ocr_text(phrase) -> Union[str, list[str], dict[str, str]]:
     global gaze_ocr_controller, punctuation_table
+    reset_disambiguation()
     gaze_ocr_controller.read_nearby((phrase[0].start, phrase[-1].end))
     selection_list = gaze_ocr_controller.latest_screen_contents().as_string()
     # Split camel-casing.
