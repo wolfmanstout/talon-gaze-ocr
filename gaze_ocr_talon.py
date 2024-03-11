@@ -305,12 +305,16 @@ def reset_disambiguation():
     global ambiguous_matches, disambiguation_generator, disambiguation_canvas, debug_canvas
     ambiguous_matches = None
     disambiguation_generator = None
+    hide_canvas = disambiguation_canvas or debug_canvas
     if disambiguation_canvas:
         disambiguation_canvas.close()
     disambiguation_canvas = None
     if debug_canvas:
         debug_canvas.close()
     debug_canvas = None
+    if hide_canvas:
+        # Ensure that the canvas doesn't interfere with subsequent screenshots.
+        actions.sleep("10ms")
 
 
 def show_disambiguation():
