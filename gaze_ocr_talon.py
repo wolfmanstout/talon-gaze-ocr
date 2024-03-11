@@ -717,6 +717,7 @@ class GazeOcrActions:
         """Displays overlay over primary screen.
 
         Reads nearby gaze when the near parameter is spoken."""
+        reset_disambiguation()
         if near:
             gaze_ocr_controller.read_nearby((near.start, near.end))
         else:
