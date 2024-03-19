@@ -76,10 +76,8 @@ The .subtrees directory contains dependency packages needed by talon-gaze-ocr:
 - rapidfuzz was cloned from https://github.com/maxbachmann/RapidFuzz
 - jarowinkler was cloned from https://github.com/maxbachmann/JaroWinkler
 
-To contribute, changes can be pushed and pulled to all repositories using
-`push_all.sh` and `pull_all.sh`, provided that `origin`, `screen-ocr`,
-`gaze-ocr`, `rapidfuzz`, and `jarowinkler` are all configured as git remotes,
-and `git subtree` is available.
+Changes in this repository are automatically pushed out to `gaze-ocr` and
+`screen-ocr` via a GitHub Action that uses `git subtree`.
 
 ## Running without `community`
 
