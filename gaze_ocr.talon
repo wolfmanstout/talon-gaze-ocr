@@ -98,6 +98,10 @@ replace [{user.ocr_modifiers}] [seen | scene] <user.prose_range> with <user.pros
     user.insert_adjacent_to_text(timestamped_prose, "after", prose)
 phones [word] (seen | scene) <user.timestamped_prose>$:
     user.change_text_homophone(timestamped_prose)
+
+# Beta-only commands that offer intuitive text editing. See
+# https://handsfreecoding.org/2024/03/15/making-writing-and-editing-with-your-voice-feel-natural/
+# for detailed documentation.
 # Example: "append with apple pear" to append "pear" after the word "apple".
 append with <user.timestamped_prose>$:
     user.append_text(timestamped_prose)
