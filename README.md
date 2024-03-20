@@ -43,16 +43,22 @@ working using Tesseract, but this configuration is not tested by the author.
 - Works with or without an eye tracker (just expect slower processing and more
   disambiguation).
 - Matches homophones of recognized words (based on CSV in
-- [community](https://github.com/talonhub/community)). Also
-  matches numbers and punctuation in either their spoken form (e.g. "two" and
+  [community](https://github.com/talonhub/community)). Also
+  matches digits and punctuation in either their spoken form (e.g. "two" and
   "period") or their symbolic form (e.g. "2" and ".").
 - Briefly displays debugging overlay if no matches are present.
+- Beta-only: match on any `<user.prose>`, including numbers.
+- Beta-only: match on any onscreen words, even outside of your vocabulary.
+- Beta-only: [intuitive editing
+  commands](https://handsfreecoding.org/2024/03/15/making-writing-and-editing-with-your-voice-feel-natural/)
+  including "revise" and "insert".
 
 ## Known limitations:
 
 - Only operates on the main screen, as defined by Talon.
 - Updates (via git pull) and some settings changes require Talon restart.
-- Numbers must be referred to by their individual digits.
+- Numbers must be referred to by their individual digits (except in Beta where
+  you can say `numb <number>`).
 - Modifications to punctuation and digit names in
   [community](https://github.com/talonhub/community) not leveraged.
 - Depends on OS-provided text recognition (OCR), which is not perfectly accurate.
