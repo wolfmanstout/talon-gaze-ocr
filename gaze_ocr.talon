@@ -103,26 +103,26 @@ phones [word] (seen | scene) <user.timestamped_prose>$:
 # https://handsfreecoding.org/2024/03/15/making-writing-and-editing-with-your-voice-feel-natural/
 # for detailed documentation.
 # Example: "append with apple pear" to append "pear" after the word "apple".
-append with <user.timestamped_prose>$:
-    user.append_text(timestamped_prose)
+append with <user.timestamped_prose_only>$:
+    user.append_text(timestamped_prose_only)
 # Example: "prepend with apple pear" to prepend "apple" before the word "pear".
-prepend with <user.timestamped_prose>$:
-    user.prepend_text(timestamped_prose)
+prepend with <user.timestamped_prose_only>$:
+    user.prepend_text(timestamped_prose_only)
 # Example: "insert with apple pear" to either append "pear" after the word "apple" or prepend
 # "apple" before the word "pear", depending on whether "apple" or "pear" is already onscreen.
-insert with <user.timestamped_prose>$:
-    user.insert_text_difference(timestamped_prose)
+insert with <user.timestamped_prose_only>$:
+    user.insert_text_difference(timestamped_prose_only)
 # Example: "revise with apple pear banana" to change "apple orange banana" to "apple pear banana".
-revise with <user.timestamped_prose>$:
-    user.revise_text(timestamped_prose)
+revise with <user.timestamped_prose_only>$:
+    user.revise_text(timestamped_prose_only)
 # Example: "revise from apple pear banana" to replace all the text from "apple" to the text cursor
 # with "apple pear banana".
-(revise from <user.timestamped_prose> | revise with <user.timestamped_prose> cursor)$:
-    user.revise_text_starting_with(timestamped_prose)
+(revise from <user.timestamped_prose_only> | revise with <user.timestamped_prose_only> cursor)$:
+    user.revise_text_starting_with(timestamped_prose_only)
 # Example: "revise through apple pear banana" to replace all the text from the text cursor to
 # "banana" with "apple pear banana".
-revise through <user.timestamped_prose>$:
-    user.revise_text_ending_with(timestamped_prose)
+revise through <user.timestamped_prose_only>$:
+    user.revise_text_ending_with(timestamped_prose_only)
 
 ocr tracker on: user.connect_ocr_eye_tracker()
 ocr tracker off: user.disconnect_ocr_eye_tracker()
