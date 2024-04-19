@@ -573,6 +573,14 @@ def perform_ocr_action_generator(
         raise RuntimeError(f"Action not supported: {ocr_action}")
 
 
+def context_sensitive_insert(text: str):
+    if settings.get("user.context_sensitive_dictation"):
+        actions.user.dictation_insert(text)
+    else:
+        # Use the default insert because the dictation context is likely wrong.
+        actions.insert(text)
+
+
 @mod.action_class
 class GazeOcrActions:
     def connect_ocr_eye_tracker():
@@ -618,7 +626,7 @@ class GazeOcrActions:
                 text_range,
                 for_deletion=settings.get("user.context_sensitive_dictation"),
             )
-            actions.user.dictation_insert(replacement)
+            context_sensitive_insert(replacement)
 
         begin_generator(run())
 
@@ -632,7 +640,7 @@ class GazeOcrActions:
                 find_text,
                 position,
             )
-            actions.user.dictation_insert(insertion_text)
+            context_sensitive_insert(insertion_text)
 
         begin_generator(run())
 
@@ -645,7 +653,7 @@ class GazeOcrActions:
                 text, "after"
             )
             insertion_text = text.text[prefix_length:]
-            actions.user.dictation_insert(insertion_text)
+            context_sensitive_insert(insertion_text)
 
         begin_generator(run())
 
@@ -658,7 +666,7 @@ class GazeOcrActions:
                 text, "before"
             )
             insertion_text = text.text[:-suffix_length]
-            actions.user.dictation_insert(insertion_text)
+            context_sensitive_insert(insertion_text)
 
         begin_generator(run())
 
@@ -669,7 +677,7 @@ class GazeOcrActions:
         def run():
             start, end = yield from move_text_cursor_to_difference(text)
             insertion_text = text.text[start:end]
-            actions.user.dictation_insert(insertion_text)
+            context_sensitive_insert(insertion_text)
 
         begin_generator(run())
 
@@ -680,7 +688,7 @@ class GazeOcrActions:
         def run():
             yield from select_matching_text_generator(text)
             insertion_text = text.text
-            actions.user.dictation_insert(insertion_text)
+            context_sensitive_insert(insertion_text)
 
         begin_generator(run())
 
@@ -697,7 +705,7 @@ class GazeOcrActions:
                 # Keep going so the user doesn't lose the dictated text.
                 print(e)
             insertion_text = text.text
-            actions.user.dictation_insert(insertion_text)
+            context_sensitive_insert(insertion_text)
 
         begin_generator(run())
 
@@ -714,7 +722,7 @@ class GazeOcrActions:
                 # Keep going so the user doesn't lose the dictated text.
                 print(e)
             insertion_text = text.text
-            actions.user.dictation_insert(insertion_text)
+            context_sensitive_insert(insertion_text)
 
         begin_generator(run())
 
