@@ -95,6 +95,18 @@ mod.setting(
     default=200,
     desc="How much padding is applied to gaze point when searching for text.",
 )
+mod.setting(
+    "ocr_light_background_debug_color",
+    type=str,
+    default="000000",
+    desc="Debug color to use on a light background",
+)
+mod.setting(
+    "ocr_dark_background_debug_color",
+    type=str,
+    default="FFFFFF",
+    desc="Debug color to use on a dark background",
+)
 
 mod.mode("gaze_ocr_disambiguation")
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
@@ -273,6 +285,14 @@ def has_light_background(screenshot):
     return np.mean(grayscale) > 128
 
 
+def get_debug_color(has_light_background: bool):
+    return (
+        settings.get("user.ocr_light_background_debug_color")
+        if has_light_background
+        else settings.get("user.ocr_dark_background_debug_color")
+    )
+
+
 disambiguation_canvas = None
 debug_canvas = None
 ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
@@ -301,9 +321,7 @@ def show_disambiguation():
     def on_draw(c):
         assert ambiguous_matches
         contents = gaze_ocr_controller.latest_screen_contents()
-        debug_color = (
-            "000000" if has_light_background(contents.screenshot) else "ffffff"
-        )
+        debug_color = get_debug_color(has_light_background(contents.screenshot))
         nearest = gaze_ocr_controller.find_nearest_cursor_location(ambiguous_matches)
         used_locations = set()
         for i, match in enumerate(ambiguous_matches):
@@ -723,9 +741,7 @@ class GazeOcrActions:
         contents = gaze_ocr_controller.latest_screen_contents()
 
         def on_draw(c):
-            debug_color = (
-                "000000" if has_light_background(contents.screenshot) else "ffffff"
-            )
+            debug_color = get_debug_color(has_light_background(contents.screenshot))
             # Show bounding box.
             c.paint.style = c.paint.Style.STROKE
             c.paint.color = debug_color
