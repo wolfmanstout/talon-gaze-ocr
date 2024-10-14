@@ -70,10 +70,11 @@ class CursorLocation:
 
 
 class OcrCache:
-    def __init__(self, ocr_reader: Reader):
+    def __init__(self, ocr_reader: Reader, fallback_when_no_eye_tracker: str = "main_screen"):
         self.ocr_reader = ocr_reader
         self._last_time_range = None
         self._last_screen_contents = None
+        self.fallback_when_no_eye_tracker = fallback_when_no_eye_tracker
 
     def read(
         self,
@@ -96,7 +97,10 @@ class OcrCache:
             if bounding_box:
                 self._last_screen_contents = self.ocr_reader.read_screen(bounding_box)
             else:
-                self._last_screen_contents = self.ocr_reader.read_screen()
+                if self.fallback_when_no_eye_tracker == "active_window":
+                    self._last_screen_contents = self.ocr_reader.read_current_window()
+                else:
+                    self._last_screen_contents = self.ocr_reader.read_screen()
             return self._last_screen_contents
 
 
@@ -122,6 +126,7 @@ class Controller:
         app_actions=None,
         save_data_directory: Optional[str] = None,
         gaze_box_padding: int = 100,
+        fallback_when_no_eye_tracker: str = "main_screen"
     ):
         self.ocr_reader = ocr_reader
         self.eye_tracker = eye_tracker
@@ -133,7 +138,8 @@ class Controller:
         self._change_radius = 10
         self._executor = futures.ThreadPoolExecutor(max_workers=1)
         self._future = None
-        self._ocr_cache = OcrCache(ocr_reader)
+        self._ocr_cache = OcrCache(ocr_reader, fallback_when_no_eye_tracker=fallback_when_no_eye_tracker)
+        self.fallback_when_no_eye_tracker = fallback_when_no_eye_tracker
 
     def shutdown(self, wait=True):
         self._executor.shutdown(wait)
@@ -204,7 +210,10 @@ class Controller:
             if gaze_point:
                 self._future.set_result(self.ocr_reader.read_nearby(gaze_point))
             else:
-                self._future.set_result(self.ocr_reader.read_screen())
+                if self.fallback_when_no_eye_tracker == "active_window":
+                    self._future.set_result(self.ocr_reader.read_current_window())
+                else:
+                    self._future.set_result(self.ocr_reader.read_screen())
 
     def latest_screen_contents(self) -> ScreenContents:
         """Return the ScreenContents of the latest call to start_reading_nearby().

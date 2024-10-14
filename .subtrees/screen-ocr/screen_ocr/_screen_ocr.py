@@ -45,19 +45,36 @@ try:
 except (ImportError, SyntaxError):
     _winrt = None
 
+# Represented as [left, top, right, bottom] pixel coordinates
+BoundingBox = Tuple[int, int, int, int]
+
 # Optional packages needed for certain backends.
 try:
     from PIL import Image, ImageGrab, ImageOps
 except ImportError:
     Image = ImageGrab = ImageOps = None
 try:
-    from talon import actions, screen
+    from talon import actions, screen, ui
     from talon.types import rect
-except ImportError:
-    screen = rect = actions = None
 
-# Represented as [left, top, right, bottom] pixel coordinates
-BoundingBox = Tuple[int, int, int, int]
+    def to_rect(bounding_box: BoundingBox) -> rect.Rect:
+        return rect.Rect(
+            x=bounding_box[0],
+            y=bounding_box[1],
+            width=bounding_box[2] - bounding_box[0],
+            height=bounding_box[3] - bounding_box[1],
+        )
+    
+    def to_bounding_box(rect_talon: rect.Rect)->BoundingBox:  
+        return (
+            rect_talon.x,
+            rect_talon.y,
+            rect_talon.x + rect_talon.width,
+            rect_talon.y + rect_talon.height
+        )
+
+except ImportError:
+    ui = screen = rect = actions = None
 
 
 class Reader:
@@ -175,6 +192,7 @@ class Reader:
         radius: int = 200,  # screenshot "radius"
         search_radius: int = 125,
         homophones: Optional[Mapping[str, Iterable[str]]] = None,
+        clamp_to_main_screen: bool = True
     ):
         self._backend = backend
         self.margin = margin
@@ -193,6 +211,7 @@ class Reader:
             if homophones
             else default_homophones()
         )
+        self.clamp_to_main_screen = clamp_to_main_screen
 
     def read_nearby(
         self,
@@ -226,6 +245,17 @@ class Reader:
             screen_coordinates=None,
             search_radius=None,
         )
+    
+    def read_current_window(self):
+        if self._is_talon_backend():
+            assert ui
+            win = ui.active_window()
+            bounding_box = to_bounding_box(win.rect)
+            screenshot, bounding_box = self._clean_screenshot(bounding_box)
+            return self.read_image(
+                screenshot,
+                bounding_box=bounding_box,
+            )
 
     def read_image(
         self,
@@ -280,14 +310,14 @@ class Reader:
             assert screen
             assert rect
             screen_box = screen.main().rect
-            if bounding_box:
+            if bounding_box and self.clamp_to_main_screen:
                 bounding_box = (
                     max(0, bounding_box[0]),
                     max(0, bounding_box[1]),
                     min(screen_box.width, bounding_box[2]),
                     min(screen_box.height, bounding_box[3]),
                 )
-            else:
+            elif not bounding_box:
                 bounding_box = (0, 0, screen_box.width, screen_box.height)
             screenshot = screen.capture_rect(
                 rect.Rect(
