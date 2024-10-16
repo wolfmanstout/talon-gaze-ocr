@@ -69,8 +69,17 @@ class CursorLocation:
                 self.keyboard.right(1)
 
 
+class EyeTrackerFallback(Enum):
+    MAIN_SCREEN = auto()
+    ACTIVE_WINDOW = auto()
+
+
 class OcrCache:
-    def __init__(self, ocr_reader: Reader, fallback_when_no_eye_tracker: str = "main_screen"):
+    def __init__(
+        self,
+        ocr_reader: Reader,
+        fallback_when_no_eye_tracker: EyeTrackerFallback = EyeTrackerFallback.MAIN_SCREEN,
+    ):
         self.ocr_reader = ocr_reader
         self._last_time_range = None
         self._last_screen_contents = None
@@ -97,7 +106,10 @@ class OcrCache:
             if bounding_box:
                 self._last_screen_contents = self.ocr_reader.read_screen(bounding_box)
             else:
-                if self.fallback_when_no_eye_tracker == "active_window":
+                if (
+                    self.fallback_when_no_eye_tracker
+                    == EyeTrackerFallback.ACTIVE_WINDOW
+                ):
                     self._last_screen_contents = self.ocr_reader.read_current_window()
                 else:
                     self._last_screen_contents = self.ocr_reader.read_screen()
@@ -126,7 +138,7 @@ class Controller:
         app_actions=None,
         save_data_directory: Optional[str] = None,
         gaze_box_padding: int = 100,
-        fallback_when_no_eye_tracker: str = "main_screen"
+        fallback_when_no_eye_tracker: EyeTrackerFallback = EyeTrackerFallback.MAIN_SCREEN,
     ):
         self.ocr_reader = ocr_reader
         self.eye_tracker = eye_tracker
@@ -138,7 +150,9 @@ class Controller:
         self._change_radius = 10
         self._executor = futures.ThreadPoolExecutor(max_workers=1)
         self._future = None
-        self._ocr_cache = OcrCache(ocr_reader, fallback_when_no_eye_tracker=fallback_when_no_eye_tracker)
+        self._ocr_cache = OcrCache(
+            ocr_reader, fallback_when_no_eye_tracker=fallback_when_no_eye_tracker
+        )
         self.fallback_when_no_eye_tracker = fallback_when_no_eye_tracker
 
     def shutdown(self, wait=True):
@@ -210,7 +224,10 @@ class Controller:
             if gaze_point:
                 self._future.set_result(self.ocr_reader.read_nearby(gaze_point))
             else:
-                if self.fallback_when_no_eye_tracker == "active_window":
+                if (
+                    self.fallback_when_no_eye_tracker
+                    == EyeTrackerFallback.ACTIVE_WINDOW
+                ):
                     self._future.set_result(self.ocr_reader.read_current_window())
                 else:
                     self._future.set_result(self.ocr_reader.read_screen())

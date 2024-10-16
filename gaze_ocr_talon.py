@@ -109,9 +109,9 @@ mod.setting(
 )
 mod.setting(
     "ocr_behavior_when_no_eye_tracker",
-    type=str,
-    default="active_window",
-    desc="Behavior when no data from the eye tracker, 'active_window' or 'main_screen'",
+    type=gaze_ocr.EyeTrackerFallback,
+    default=gaze_ocr.EyeTrackerFallback.MAIN_SCREEN,
+    desc="Behavior when no data from the eye tracker",
 )
 
 mod.setting(
@@ -264,7 +264,7 @@ def reload_backend(name, flags):
             backend="talon",
             radius=settings.get("user.ocr_gaze_point_padding"),
             homophones=homophones,
-            clamp_to_main_screen=settings.get("user.ocr_clamp_to_main_screen")
+            clamp_to_main_screen=settings.get("user.ocr_clamp_to_main_screen"),
         )
     else:
         if setting_ocr_use_talon_backend and not ocr:
@@ -282,7 +282,9 @@ def reload_backend(name, flags):
         app_actions=gaze_ocr.talon.AppActions(),
         save_data_directory=settings.get("user.ocr_logging_dir"),
         gaze_box_padding=settings.get("user.ocr_gaze_box_padding"),
-        fallback_when_no_eye_tracker=settings.get("user.ocr_behavior_when_no_eye_tracker")
+        fallback_when_no_eye_tracker=settings.get(
+            "user.ocr_behavior_when_no_eye_tracker"
+        ),
     )
 
 
@@ -765,9 +767,7 @@ class GazeOcrActions:
             # Show bounding box.
             c.paint.style = c.paint.Style.STROKE
             c.paint.color = debug_color
-            c.draw_rect(
-                contents_rect
-            )
+            c.draw_rect(contents_rect)
             if contents.screen_coordinates:
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.color = debug_color
@@ -816,7 +816,7 @@ class GazeOcrActions:
         canvas_rect.height += 100
         canvas_rect.width += 100
         canvas_rect.center = center
-      
+
         debug_canvas = Canvas.from_rect(canvas_rect)
         debug_canvas.register("draw", on_draw)
         debug_canvas.freeze()
