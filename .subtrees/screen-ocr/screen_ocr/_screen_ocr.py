@@ -194,7 +194,6 @@ class Reader:
         radius: int = 200,  # screenshot "radius"
         search_radius: int = 125,
         homophones: Optional[Mapping[str, Iterable[str]]] = None,
-        clamp_to_main_screen: bool = True,
     ):
         self._backend = backend
         self.margin = margin
@@ -213,7 +212,6 @@ class Reader:
             if homophones
             else default_homophones()
         )
-        self.clamp_to_main_screen = clamp_to_main_screen
 
     def read_nearby(
         self,
@@ -253,7 +251,9 @@ class Reader:
             assert ui
             win = ui.active_window()
             bounding_box = to_bounding_box(win.rect)
-            screenshot, bounding_box = self._clean_screenshot(bounding_box)
+            screenshot, bounding_box = self._clean_screenshot(
+                bounding_box, clamp_to_main_screen=False
+            )
             return self.read_image(
                 screenshot,
                 bounding_box=bounding_box,
@@ -289,17 +289,17 @@ class Reader:
         return _talon and isinstance(self._backend, _talon.TalonBackend)
 
     def _clean_screenshot(
-        self, bounding_box: Optional[BoundingBox]
+        self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
     ) -> Tuple[Any, BoundingBox]:
         if not actions:
-            return self._screenshot(bounding_box)
+            return self._screenshot(bounding_box, clamp_to_main_screen)
         # Attempt to turn off HUD if talon_hud is installed.
         try:
             actions.user.hud_set_visibility(False, pause_seconds=0.02)
         except:
             pass
         try:
-            return self._screenshot(bounding_box)
+            return self._screenshot(bounding_box, clamp_to_main_screen)
         finally:
             # Attempt to turn on HUD if talon_hud is installed.
             try:
@@ -308,13 +308,13 @@ class Reader:
                 pass
 
     def _screenshot(
-        self, bounding_box: Optional[BoundingBox]
+        self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
     ) -> Tuple[Any, BoundingBox]:
         if self._is_talon_backend():
             assert screen
             assert to_rect
             screen_box = screen.main().rect
-            if bounding_box and self.clamp_to_main_screen:
+            if bounding_box and clamp_to_main_screen:
                 bounding_box = (
                     max(0, bounding_box[0]),
                     max(0, bounding_box[1]),
