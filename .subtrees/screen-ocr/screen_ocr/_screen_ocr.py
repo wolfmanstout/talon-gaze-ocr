@@ -45,8 +45,6 @@ try:
 except (ImportError, SyntaxError):
     _winrt = None
 
-# Represented as [left, top, right, bottom] pixel coordinates
-BoundingBox = Tuple[int, int, int, int]
 
 # Optional packages needed for certain backends.
 try:
@@ -55,26 +53,30 @@ except ImportError:
     Image = ImageGrab = ImageOps = None
 try:
     from talon import actions, screen, ui
-    from talon.types import rect
+    from talon.types.rect import Rect
+except ImportError:
+    ui = screen = Rect = actions = None
 
-    def to_rect(bounding_box: BoundingBox) -> rect.Rect:
-        return rect.Rect(
+# Represented as [left, top, right, bottom] pixel coordinates
+BoundingBox = Tuple[int, int, int, int]
+
+if Rect:
+
+    def to_rect(bounding_box: BoundingBox) -> Rect:
+        return Rect(
             x=bounding_box[0],
             y=bounding_box[1],
             width=bounding_box[2] - bounding_box[0],
             height=bounding_box[3] - bounding_box[1],
         )
-    
-    def to_bounding_box(rect_talon: rect.Rect)->BoundingBox:  
+
+    def to_bounding_box(rect_talon: Rect) -> BoundingBox:
         return (
             rect_talon.x,
             rect_talon.y,
             rect_talon.x + rect_talon.width,
-            rect_talon.y + rect_talon.height
+            rect_talon.y + rect_talon.height,
         )
-
-except ImportError:
-    ui = screen = rect = actions = None
 
 
 class Reader:
@@ -192,7 +194,7 @@ class Reader:
         radius: int = 200,  # screenshot "radius"
         search_radius: int = 125,
         homophones: Optional[Mapping[str, Iterable[str]]] = None,
-        clamp_to_main_screen: bool = True
+        clamp_to_main_screen: bool = True,
     ):
         self._backend = backend
         self.margin = margin
@@ -245,7 +247,7 @@ class Reader:
             screen_coordinates=None,
             search_radius=None,
         )
-    
+
     def read_current_window(self):
         if self._is_talon_backend():
             assert ui
@@ -256,6 +258,8 @@ class Reader:
                 screenshot,
                 bounding_box=bounding_box,
             )
+        else:
+            raise NotImplementedError
 
     def read_image(
         self,
@@ -308,7 +312,7 @@ class Reader:
     ) -> Tuple[Any, BoundingBox]:
         if self._is_talon_backend():
             assert screen
-            assert rect
+            assert to_rect
             screen_box = screen.main().rect
             if bounding_box and self.clamp_to_main_screen:
                 bounding_box = (
@@ -317,15 +321,10 @@ class Reader:
                     min(screen_box.width, bounding_box[2]),
                     min(screen_box.height, bounding_box[3]),
                 )
-            elif not bounding_box:
+            if not bounding_box:
                 bounding_box = (0, 0, screen_box.width, screen_box.height)
             screenshot = screen.capture_rect(
-                rect.Rect(
-                    bounding_box[0],
-                    bounding_box[1],
-                    bounding_box[2] - bounding_box[0],
-                    bounding_box[3] - bounding_box[1],
-                ),
+                to_rect(bounding_box),
                 retina=False,
             )
         else:
