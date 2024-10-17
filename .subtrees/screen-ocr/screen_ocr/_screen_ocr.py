@@ -45,19 +45,38 @@ try:
 except (ImportError, SyntaxError):
     _winrt = None
 
+
 # Optional packages needed for certain backends.
 try:
     from PIL import Image, ImageGrab, ImageOps
 except ImportError:
     Image = ImageGrab = ImageOps = None
 try:
-    from talon import actions, screen
-    from talon.types import rect
+    from talon import actions, screen, ui
+    from talon.types.rect import Rect
 except ImportError:
-    screen = rect = actions = None
+    ui = screen = Rect = actions = None
 
 # Represented as [left, top, right, bottom] pixel coordinates
 BoundingBox = Tuple[int, int, int, int]
+
+if Rect:
+
+    def to_rect(bounding_box: BoundingBox) -> Rect:
+        return Rect(
+            x=bounding_box[0],
+            y=bounding_box[1],
+            width=bounding_box[2] - bounding_box[0],
+            height=bounding_box[3] - bounding_box[1],
+        )
+
+    def to_bounding_box(rect_talon: Rect) -> BoundingBox:
+        return (
+            rect_talon.x,
+            rect_talon.y,
+            rect_talon.x + rect_talon.width,
+            rect_talon.y + rect_talon.height,
+        )
 
 
 class Reader:
@@ -227,6 +246,20 @@ class Reader:
             search_radius=None,
         )
 
+    def read_current_window(self):
+        if not self._is_talon_backend():
+            raise NotImplementedError
+        assert ui
+        win = ui.active_window()
+        bounding_box = to_bounding_box(win.rect)
+        screenshot, bounding_box = self._clean_screenshot(
+            bounding_box, clamp_to_main_screen=False
+        )
+        return self.read_image(
+            screenshot,
+            bounding_box=bounding_box,
+        )
+
     def read_image(
         self,
         image,
@@ -255,17 +288,17 @@ class Reader:
         return _talon and isinstance(self._backend, _talon.TalonBackend)
 
     def _clean_screenshot(
-        self, bounding_box: Optional[BoundingBox]
+        self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
     ) -> Tuple[Any, BoundingBox]:
         if not actions:
-            return self._screenshot(bounding_box)
+            return self._screenshot(bounding_box, clamp_to_main_screen)
         # Attempt to turn off HUD if talon_hud is installed.
         try:
             actions.user.hud_set_visibility(False, pause_seconds=0.02)
         except:
             pass
         try:
-            return self._screenshot(bounding_box)
+            return self._screenshot(bounding_box, clamp_to_main_screen)
         finally:
             # Attempt to turn on HUD if talon_hud is installed.
             try:
@@ -274,28 +307,23 @@ class Reader:
                 pass
 
     def _screenshot(
-        self, bounding_box: Optional[BoundingBox]
+        self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
     ) -> Tuple[Any, BoundingBox]:
         if self._is_talon_backend():
             assert screen
-            assert rect
+            assert to_rect
             screen_box = screen.main().rect
-            if bounding_box:
+            if bounding_box and clamp_to_main_screen:
                 bounding_box = (
                     max(0, bounding_box[0]),
                     max(0, bounding_box[1]),
                     min(screen_box.width, bounding_box[2]),
                     min(screen_box.height, bounding_box[3]),
                 )
-            else:
+            if not bounding_box:
                 bounding_box = (0, 0, screen_box.width, screen_box.height)
             screenshot = screen.capture_rect(
-                rect.Rect(
-                    bounding_box[0],
-                    bounding_box[1],
-                    bounding_box[2] - bounding_box[0],
-                    bounding_box[3] - bounding_box[1],
-                ),
+                to_rect(bounding_box),
                 retina=False,
             )
         else:

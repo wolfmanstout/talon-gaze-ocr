@@ -3,7 +3,7 @@ import logging
 import sys
 from math import floor
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Iterable, Literal, Optional, Sequence
 
 import numpy as np
 from talon import Context, Module, actions, app, cron, fs, screen, settings
@@ -106,6 +106,12 @@ mod.setting(
     type=str,
     default="FFFFFF",
     desc="Debug color to use on a dark background",
+)
+mod.setting(
+    "ocr_behavior_when_no_eye_tracker",
+    type=Literal["MAIN_SCREEN", "ACTIVE_WINDOW"],
+    default="MAIN_SCREEN",
+    desc="Region to OCR when no data from the eye tracker",
 )
 
 mod.mode("gaze_ocr_disambiguation")
@@ -256,7 +262,8 @@ def reload_backend(name, flags):
         if setting_ocr_use_talon_backend and not ocr:
             logging.info("Talon OCR not available, will rely on external support.")
         ocr_reader = screen_ocr.Reader.create_fast_reader(
-            radius=settings.get("user.ocr_gaze_point_padding"), homophones=homophones
+            radius=settings.get("user.ocr_gaze_point_padding"),
+            homophones=homophones,
         )
     gaze_ocr_controller = gaze_ocr.Controller(
         ocr_reader,
@@ -266,6 +273,9 @@ def reload_backend(name, flags):
         app_actions=gaze_ocr.talon.AppActions(),
         save_data_directory=settings.get("user.ocr_logging_dir"),
         gaze_box_padding=settings.get("user.ocr_gaze_box_padding"),
+        fallback_when_no_eye_tracker=gaze_ocr.EyeTrackerFallback[
+            settings.get("user.ocr_behavior_when_no_eye_tracker").upper()
+        ],
     )
 
 
@@ -318,9 +328,10 @@ def reset_disambiguation():
 def show_disambiguation():
     global ambiguous_matches, disambiguation_canvas
 
+    contents = gaze_ocr_controller.latest_screen_contents()
+
     def on_draw(c):
         assert ambiguous_matches
-        contents = gaze_ocr_controller.latest_screen_contents()
         debug_color = get_debug_color(has_light_background(contents.screenshot))
         nearest = gaze_ocr_controller.find_nearest_cursor_location(ambiguous_matches)
         used_locations = set()
@@ -353,7 +364,7 @@ def show_disambiguation():
     actions.mode.enable("user.gaze_ocr_disambiguation")
     if disambiguation_canvas:
         disambiguation_canvas.close()
-    disambiguation_canvas = Canvas.from_screen(screen.main())
+    disambiguation_canvas = Canvas.from_rect(screen_ocr.to_rect(contents.bounding_box))
     disambiguation_canvas.register("draw", on_draw)
     disambiguation_canvas.freeze()
 
@@ -740,19 +751,14 @@ class GazeOcrActions:
             debug_canvas.close()
         contents = gaze_ocr_controller.latest_screen_contents()
 
+        contents_rect = screen_ocr.to_rect(contents.bounding_box)
+
         def on_draw(c):
             debug_color = get_debug_color(has_light_background(contents.screenshot))
             # Show bounding box.
             c.paint.style = c.paint.Style.STROKE
             c.paint.color = debug_color
-            c.draw_rect(
-                rect.Rect(
-                    x=contents.bounding_box[0],
-                    y=contents.bounding_box[1],
-                    width=contents.bounding_box[2] - contents.bounding_box[0],
-                    height=contents.bounding_box[3] - contents.bounding_box[1],
-                )
-            )
+            c.draw_rect(contents_rect)
             if contents.screen_coordinates:
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.color = debug_color
@@ -795,7 +801,14 @@ class GazeOcrActions:
                 f"{settings.get('user.ocr_debug_display_seconds')}s", debug_canvas.close
             )
 
-        debug_canvas = Canvas.from_screen(screen.main())
+        # Increased size slightly for canvas to ensure everything will be inside canvas
+        canvas_rect = contents_rect.copy()
+        center = canvas_rect.center
+        canvas_rect.height += 100
+        canvas_rect.width += 100
+        canvas_rect.center = center
+
+        debug_canvas = Canvas.from_rect(canvas_rect)
         debug_canvas.register("draw", on_draw)
         debug_canvas.freeze()
 
