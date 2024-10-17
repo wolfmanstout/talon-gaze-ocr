@@ -247,19 +247,18 @@ class Reader:
         )
 
     def read_current_window(self):
-        if self._is_talon_backend():
-            assert ui
-            win = ui.active_window()
-            bounding_box = to_bounding_box(win.rect)
-            screenshot, bounding_box = self._clean_screenshot(
-                bounding_box, clamp_to_main_screen=False
-            )
-            return self.read_image(
-                screenshot,
-                bounding_box=bounding_box,
-            )
-        else:
+        if not self._is_talon_backend():
             raise NotImplementedError
+        assert ui
+        win = ui.active_window()
+        bounding_box = to_bounding_box(win.rect)
+        screenshot, bounding_box = self._clean_screenshot(
+            bounding_box, clamp_to_main_screen=False
+        )
+        return self.read_image(
+            screenshot,
+            bounding_box=bounding_box,
+        )
 
     def read_image(
         self,
