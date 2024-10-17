@@ -111,7 +111,7 @@ mod.setting(
     "ocr_behavior_when_no_eye_tracker",
     type=Literal["MAIN_SCREEN", "ACTIVE_WINDOW"],
     default="MAIN_SCREEN",
-    desc="Behavior when no data from the eye tracker",
+    desc="Region to OCR when no data from the eye tracker",
 )
 
 mod.mode("gaze_ocr_disambiguation")
@@ -274,7 +274,7 @@ def reload_backend(name, flags):
         save_data_directory=settings.get("user.ocr_logging_dir"),
         gaze_box_padding=settings.get("user.ocr_gaze_box_padding"),
         fallback_when_no_eye_tracker=gaze_ocr.EyeTrackerFallback[
-            settings.get("user.ocr_behavior_when_no_eye_tracker")
+            settings.get("user.ocr_behavior_when_no_eye_tracker").upper()
         ],
     )
 
