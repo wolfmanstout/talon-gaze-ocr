@@ -121,7 +121,7 @@ class TesseractBackend(_base.OcrBackend):
         if self.debug_image_callback:
             self.debug_image_callback(
                 "debug_background_{}".format(channel_index),
-                Image.fromarray(background_colors == True),
+                Image.fromarray(background_colors == True),  # noqa: E712
             )
         # Make the background consistently white (True).
         data = data == background_colors
