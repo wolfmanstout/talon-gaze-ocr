@@ -198,7 +198,7 @@ for path in glob.glob(str(user_dir / "**/homophones.csv"), recursive=True):
 if homophones_file:
     logging.info(f"Found homophones file: {homophones_file}")
 else:
-    logging.warning(f"Could not find homophones.csv. Is knausj_talon installed?")
+    logging.warning("Could not find homophones.csv. Is knausj_talon installed?")
 
 
 def get_knausj_homophones():
@@ -310,7 +310,11 @@ disambiguation_generator = None
 
 
 def reset_disambiguation():
-    global ambiguous_matches, disambiguation_generator, disambiguation_canvas, debug_canvas
+    global \
+        ambiguous_matches, \
+        disambiguation_generator, \
+        disambiguation_canvas, \
+        debug_canvas
     ambiguous_matches = None
     disambiguation_generator = None
     hide_canvas = disambiguation_canvas or debug_canvas
