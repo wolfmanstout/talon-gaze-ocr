@@ -1,6 +1,7 @@
 import functools
 import operator
 import re
+import sys
 
 import numpy as np
 from talon.experimental import ocr
@@ -47,6 +48,11 @@ class TalonBackend(_base.OcrBackend):
         top = rect.y - y_offset
         width = rect.width
         height = rect.height
+
+        # No need to tighten boxes on Windows
+        if sys.platform == "win32":
+            return left, top, width, height
+
         # Add left and right padding to ensure some whitespace is included
         # before we tighten. It's okay if an adjacent character is partially
         # included as well.

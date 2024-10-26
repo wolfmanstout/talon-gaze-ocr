@@ -45,16 +45,38 @@ try:
 except (ImportError, SyntaxError):
     _winrt = None
 
+
 # Optional packages needed for certain backends.
 try:
     from PIL import Image, ImageGrab, ImageOps
 except ImportError:
     Image = ImageGrab = ImageOps = None
 try:
-    from talon import actions, screen
-    from talon.types import rect
+    from talon import actions, screen, ui
+    from talon.types.rect import Rect
 except ImportError:
-    screen = rect = actions = None
+    ui = screen = Rect = actions = None
+
+# Represented as [left, top, right, bottom] pixel coordinates
+BoundingBox = Tuple[int, int, int, int]
+
+if Rect:
+
+    def to_rect(bounding_box: BoundingBox) -> Rect:
+        return Rect(
+            x=bounding_box[0],
+            y=bounding_box[1],
+            width=bounding_box[2] - bounding_box[0],
+            height=bounding_box[3] - bounding_box[1],
+        )
+
+    def to_bounding_box(rect_talon: Rect) -> BoundingBox:
+        return (
+            rect_talon.x,
+            rect_talon.y,
+            rect_talon.x + rect_talon.width,
+            rect_talon.y + rect_talon.height,
+        )
 
 
 class Reader:
@@ -191,9 +213,6 @@ class Reader:
             else default_homophones()
         )
 
-    # Represented as [left, top, right, bottom] pixel coordinates
-    BoundingBox = Tuple[int, int, int, int]
-
     def read_nearby(
         self,
         screen_coordinates: Tuple[int, int],
@@ -212,7 +231,7 @@ class Reader:
         screenshot, bounding_box = self._clean_screenshot(bounding_box)
         return self.read_image(
             screenshot,
-            offset=bounding_box[0:2],
+            bounding_box=bounding_box,
             screen_coordinates=screen_coordinates,
             search_radius=search_radius,
         )
@@ -222,26 +241,41 @@ class Reader:
         screenshot, bounding_box = self._clean_screenshot(bounding_box)
         return self.read_image(
             screenshot,
-            offset=bounding_box[0:2],
+            bounding_box=bounding_box,
             screen_coordinates=None,
             search_radius=None,
+        )
+
+    def read_current_window(self):
+        if not self._is_talon_backend():
+            raise NotImplementedError
+        assert ui
+        win = ui.active_window()
+        bounding_box = to_bounding_box(win.rect)
+        screenshot, bounding_box = self._clean_screenshot(
+            bounding_box, clamp_to_main_screen=False
+        )
+        return self.read_image(
+            screenshot,
+            bounding_box=bounding_box,
         )
 
     def read_image(
         self,
         image,
-        offset: Tuple[int, int] = (0, 0),
+        bounding_box: Optional[BoundingBox] = None,
         screen_coordinates: Optional[Tuple[int, int]] = None,
         search_radius: Optional[int] = None,
     ):
         """Return ScreenContents of the provided image."""
+        bounding_box = bounding_box or (0, 0, image.width, image.height)
         search_radius = search_radius or self.search_radius
         preprocessed_image = self._preprocess(image)
         result = self._backend.run_ocr(preprocessed_image)
-        result = self._adjust_result(result, offset)
+        result = self._adjust_result(result, bounding_box[0:2])
         return ScreenContents(
             screen_coordinates=screen_coordinates,
-            screen_offset=offset,
+            bounding_box=bounding_box,
             screenshot=image,
             result=result,
             confidence_threshold=self.confidence_threshold,
@@ -254,47 +288,42 @@ class Reader:
         return _talon and isinstance(self._backend, _talon.TalonBackend)
 
     def _clean_screenshot(
-        self, bounding_box: Optional[BoundingBox]
+        self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
     ) -> Tuple[Any, BoundingBox]:
         if not actions:
-            return self._screenshot(bounding_box)
+            return self._screenshot(bounding_box, clamp_to_main_screen)
         # Attempt to turn off HUD if talon_hud is installed.
         try:
-            actions.user.hud_set_visibility(False, pause_seconds=0.01)
-        except:
+            actions.user.hud_set_visibility(False, pause_seconds=0.02)
+        except Exception:
             pass
         try:
-            return self._screenshot(bounding_box)
+            return self._screenshot(bounding_box, clamp_to_main_screen)
         finally:
             # Attempt to turn on HUD if talon_hud is installed.
             try:
                 actions.user.hud_set_visibility(True, pause_seconds=0.001)
-            except:
+            except Exception:
                 pass
 
     def _screenshot(
-        self, bounding_box: Optional[BoundingBox]
+        self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
     ) -> Tuple[Any, BoundingBox]:
         if self._is_talon_backend():
             assert screen
-            assert rect
+            assert to_rect
             screen_box = screen.main().rect
-            if bounding_box:
+            if bounding_box and clamp_to_main_screen:
                 bounding_box = (
                     max(0, bounding_box[0]),
                     max(0, bounding_box[1]),
                     min(screen_box.width, bounding_box[2]),
                     min(screen_box.height, bounding_box[3]),
                 )
-            else:
+            if not bounding_box:
                 bounding_box = (0, 0, screen_box.width, screen_box.height)
             screenshot = screen.capture_rect(
-                rect.Rect(
-                    bounding_box[0],
-                    bounding_box[1],
-                    bounding_box[2] - bounding_box[0],
-                    bounding_box[3] - bounding_box[1],
-                ),
+                to_rect(bounding_box),
                 retina=False,
             )
         else:
@@ -382,6 +411,8 @@ class WordLocation:
     left_char_offset: int
     right_char_offset: int
     text: str
+    ocr_word_index: int
+    ocr_line_index: int
 
     @property
     def right(self) -> int:
@@ -411,14 +442,30 @@ class WordLocation:
     def end_coordinates(self) -> Tuple[int, int]:
         return (self.right, self.middle_y)
 
+    def is_adjacent_left_of(
+        self, other: "WordLocation", allow_whitespace: bool
+    ) -> bool:
+        """Return True if the other word is adjacent to this word. Only valid if both
+        WordLocations are from the same ScreenContents."""
+        if self.ocr_line_index != other.ocr_line_index:
+            return False
+        elif self.ocr_word_index == other.ocr_word_index:
+            return self.left_char_offset + len(self.text) == other.left_char_offset
+        elif allow_whitespace and self.ocr_word_index + 1 == other.ocr_word_index:
+            return self.right_char_offset == 0 and other.left_char_offset == 0
+        else:
+            return False
+
 
 class ScreenContents:
     """OCR'd contents of a portion of the screen."""
 
+    WordLocationsPredicate = Callable[[Sequence[WordLocation]], bool]
+
     def __init__(
         self,
         screen_coordinates: Optional[Tuple[int, int]],
-        screen_offset: Tuple[int, int],
+        bounding_box: BoundingBox,
         screenshot,
         result: _base.OcrResult,
         confidence_threshold: float,
@@ -426,7 +473,7 @@ class ScreenContents:
         search_radius: Optional[int],
     ):
         self.screen_coordinates = screen_coordinates
-        self.screen_offset = screen_offset
+        self.bounding_box = bounding_box
         self.screenshot = screenshot
         self.result = result
         self.confidence_threshold = confidence_threshold
@@ -446,6 +493,33 @@ class ScreenContents:
                 words.append(word.text)
             lines.append(" ".join(words) + "\n")
         return "".join(lines)
+
+    def cropped(self, bounding_box: BoundingBox) -> "ScreenContents":
+        """Return a new ScreenContents cropped to the provided bounding box."""
+        left, top, right, bottom = bounding_box
+        lines = []
+        for line in self.result.lines:
+            words = []
+            for word in line.words:
+                if (
+                    word.left > right
+                    or word.left + word.width < left
+                    or word.top > bottom
+                    or word.top + word.height < top
+                ):
+                    continue
+                words.append(word)
+            lines.append(_base.OcrLine(words))
+        result = _base.OcrResult(lines)
+        return ScreenContents(
+            screen_coordinates=self.screen_coordinates,
+            bounding_box=bounding_box,
+            screenshot=self.screenshot,  # TODO crop screenshot
+            result=result,
+            confidence_threshold=self.confidence_threshold,
+            homophones=self.homophones,
+            search_radius=self.search_radius,
+        )
 
     def find_nearest_word_coordinates(
         self, target_word: str, cursor_position: str
@@ -483,20 +557,20 @@ class ScreenContents:
         target: str,
         filter_function: Optional[Callable[[Sequence[WordLocation]], bool]] = None,
     ) -> Optional[Sequence[WordLocation]]:
-        """Return the location of the nearest sequence of the provided words.
+        """Return the locations of the nearest sequence of the provided words.
 
         Uses fuzzy matching.
         """
         sequences = self.find_matching_words(target)
         if filter_function:
             sequences = list(filter(filter_function, sequences))
-        if not sequences:
-            return None
         return self.find_nearest_words_within_matches(sequences)
 
     def find_nearest_words_within_matches(
         self, sequences: Sequence[Sequence[WordLocation]]
     ) -> Optional[Sequence[WordLocation]]:
+        if not sequences:
+            return None
         if not self.screen_coordinates:
             # "Nearest" is undefined.
             return None
@@ -514,29 +588,35 @@ class ScreenContents:
         return min(distance_to_words, key=lambda x: x[0])[1]
 
     # Special-case "0k" which frequently shows up instead of the correct "OK".
-    _SUBWORD_REGEX = re.compile(r"(\b0[Kk]\b|[A-Z][A-Z]+|[A-Za-z'][a-z']*|.)")
+    _SUBWORD_REGEX = re.compile(r"\b0[Kk]\b|[A-Z][A-Z]+|[A-Za-z'][a-z']*|\S")
 
-    def find_matching_words(self, target: str) -> Sequence[Sequence[WordLocation]]:
+    def find_matching_words(
+        self, target: str, match_each_word: bool = False
+    ) -> Sequence[Sequence[WordLocation]]:
         """Return the locations of all sequences of the provided words.
 
         Uses fuzzy matching.
         """
         if not target:
             raise ValueError("target is empty")
-        target_words = list(
-            map(
-                self._normalize,
-                (
-                    subword
-                    for word in target.split()
-                    for subword in re.findall(self._SUBWORD_REGEX, word)
-                ),
-            )
-        )
+        target_words = [
+            self._normalize(subword)
+            for subword in re.findall(self._SUBWORD_REGEX, target)
+        ]
+
         # First, find all matches tied for highest score.
         scored_words = [
-            (self._score_words(candidates, target_words), candidates)
-            for candidates in self._generate_candidates(self.result, len(target_words))
+            (
+                self._score_words(
+                    candidates, target_words, match_each_word=match_each_word
+                ),
+                candidates,
+            )
+            for candidates in self._generate_candidates(
+                self.result,
+                len(target_words),
+                include_compound_words=not match_each_word,
+            )
         ]
         # print("\n".join(map(str, scored_words)))
         scored_words = [words for words in scored_words if words[0]]
@@ -557,24 +637,96 @@ class ScreenContents:
             <= self._search_radius_squared
         ]
 
+    def find_longest_matching_prefix(
+        self,
+        target: str,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
+    ) -> Tuple[Sequence[Sequence[WordLocation]], int]:
+        """Return a tuple of the locations of all longest matching prefixes of the
+        provided words, and the length of the prefix.
+
+        Uses fuzzy matching.
+        """
+        if not target:
+            raise ValueError("target is empty")
+        target_words_and_prefix_lengths = [
+            (self._normalize(match.group()), match.end())
+            for match in re.finditer(self._SUBWORD_REGEX, target)
+        ]
+        target_words, prefix_lengths = zip(*target_words_and_prefix_lengths)
+
+        last_word_sequences = []
+        last_prefix_length = 0
+        for prefix_num_words in range(1, len(target_words) + 1):
+            target_prefix_words = target_words[:prefix_num_words]
+            prefix_length = prefix_lengths[prefix_num_words - 1]
+            word_sequences = self.find_matching_words(
+                " ".join(target_prefix_words), match_each_word=True
+            )
+            if filter_location_function:
+                word_sequences = list(filter(filter_location_function, word_sequences))
+            if not word_sequences:
+                break
+            last_word_sequences = word_sequences
+            last_prefix_length = prefix_length
+        return last_word_sequences, last_prefix_length
+
+    def find_longest_matching_suffix(
+        self,
+        target: str,
+        filter_location_function: Optional[WordLocationsPredicate] = None,
+    ) -> Tuple[Sequence[Sequence[WordLocation]], int]:
+        """Return a tuple of the locations of all longest matching suffixes of the
+        provided words, and the length of the suffix.
+
+        Uses fuzzy matching.
+        """
+        if not target:
+            raise ValueError("target is empty")
+        target_words_and_suffix_lengths = [
+            (self._normalize(match.group()), len(target) - match.start())
+            for match in re.finditer(self._SUBWORD_REGEX, target)
+        ]
+        target_words, suffix_lengths = zip(*target_words_and_suffix_lengths)
+
+        last_word_sequences = []
+        last_suffix_length = 0
+        for suffix_num_words in range(1, len(target_words) + 1):
+            target_suffix_words = target_words[-suffix_num_words:]
+            suffix_length = suffix_lengths[-suffix_num_words]
+            word_sequences = self.find_matching_words(
+                " ".join(target_suffix_words), match_each_word=True
+            )
+            if filter_location_function:
+                word_sequences = list(filter(filter_location_function, word_sequences))
+            if not word_sequences:
+                break
+            last_word_sequences = word_sequences
+            last_suffix_length = suffix_length
+        return last_word_sequences, last_suffix_length
+
     @staticmethod
     def _generate_candidates(
-        result: _base.OcrResult, length: int
+        result: _base.OcrResult, length: int, include_compound_words: bool
     ) -> Iterator[Sequence[WordLocation]]:
-        for line in result.lines:
-            candidates = list(ScreenContents._generate_candidates_from_line(line))
-            for candidate in candidates:
-                # Always include the word by itself in case the target words are smashed together.
-                yield [candidate]
+        for line_index, line in enumerate(result.lines):
+            candidates = list(
+                ScreenContents._generate_candidates_from_line(line, line_index)
+            )
+            if include_compound_words or length == 1:
+                for candidate in candidates:
+                    yield [candidate]
             if length > 1:
                 yield from ScreenContents._sliding_window(candidates, length)
 
     @staticmethod
-    def _generate_candidates_from_line(line: _base.OcrLine) -> Iterator[WordLocation]:
-        for word in line.words:
+    def _generate_candidates_from_line(
+        line: _base.OcrLine, line_index: int
+    ) -> Iterator[WordLocation]:
+        for word_index, word in enumerate(line.words):
             left_offset = 0
             for match in re.finditer(ScreenContents._SUBWORD_REGEX, word.text):
-                subword = match.group(0)
+                subword = match.group()
                 right_offset = len(word.text) - (left_offset + len(subword))
                 yield WordLocation(
                     left=int(word.left),
@@ -584,6 +736,8 @@ class ScreenContents:
                     left_char_offset=left_offset,
                     right_char_offset=right_offset,
                     text=subword,
+                    ocr_word_index=word_index,
+                    ocr_line_index=line_index,
                 )
                 left_offset += len(subword)
 
@@ -594,7 +748,7 @@ class ScreenContents:
 
     @staticmethod
     def _normalize_homophones(
-        old_homophones: Mapping[str, Iterable[str]]
+        old_homophones: Mapping[str, Iterable[str]],
     ) -> Mapping[str, Iterable[str]]:
         new_homophones = {}
         for k, v in old_homophones.items():
@@ -604,16 +758,23 @@ class ScreenContents:
         return new_homophones
 
     def _score_words(
-        self, candidates: Sequence[WordLocation], normalized_targets: Sequence[str]
+        self,
+        candidates: Sequence[WordLocation],
+        normalized_targets: Sequence[str],
+        match_each_word: bool,
     ) -> float:
         if len(candidates) == 1:
             # Handle the case where the target words are smashed together.
             score = self._score_word(candidates[0], "".join(normalized_targets))
             return score if score >= self.confidence_threshold else 0
         scores = list(map(self._score_word, candidates, normalized_targets))
-        score = sum(
-            score * len(word) for score, word in zip(scores, normalized_targets)
-        ) / sum(map(len, normalized_targets))
+        if match_each_word:
+            score = min(scores)
+        else:
+            # Weighted average of scores based on word lengths.
+            score = sum(
+                score * len(word) for score, word in zip(scores, normalized_targets)
+            ) / sum(map(len, normalized_targets))
         return score if score >= self.confidence_threshold else 0
 
     def _score_word(self, candidate: WordLocation, normalized_target: str) -> float:
