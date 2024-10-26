@@ -42,7 +42,7 @@ for image_file in glob.glob("logs/*.png"):
     color_hashes.add(color_hash)
 
     text_file = image_file[:-3] + "txt"
-    if not text_file in text_files:
+    if text_file not in text_files:
         continue
     base_name = os.path.basename(text_file)
     if base_name.startswith("success"):
