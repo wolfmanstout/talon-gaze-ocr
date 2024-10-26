@@ -5,7 +5,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
-from talon import actions, app, tracking_system, ui
+from talon import actions, tracking_system, ui
 from talon.track import tobii
 from talon.types import Point2d
 
@@ -52,15 +52,6 @@ class Keyboard:
         return self._shift
 
     def left(self, n=1):
-        # HACK: When adjusting selected text, Mac does not perform the
-        # adjustments wherever the cursor was last placed. Instead, it bases
-        # this on the first move of the cursor. We start with shift-right to
-        # make it possible to shrink the selection from the right. This works in
-        # most cases, except when the text has nothing to the right.
-        if self._shift:
-            if app.platform == "mac":
-                actions.key("shift-right")
-                actions.key("shift-left")
         for _ in range(n):
             if self._shift:
                 actions.key("shift-left")
@@ -78,7 +69,7 @@ class Keyboard:
 class AppActions:
     def peek_left(self) -> Optional[str]:
         try:
-            return actions.user.dictation_peek(True, False)
+            return actions.user.dictation_peek(True, False)[0]
         except KeyError:
             try:
                 return actions.user.dictation_peek_left()
@@ -89,7 +80,7 @@ class AppActions:
 
     def peek_right(self) -> Optional[str]:
         try:
-            return actions.user.dictation_peek(False, True)
+            return actions.user.dictation_peek(False, True)[1]
         except KeyError:
             try:
                 return actions.user.dictation_peek_right()
@@ -111,19 +102,29 @@ class TalonEyeTracker:
     STALE_GAZE_THRESHOLD_SECONDS = 0.1
 
     def __init__(self):
-        # !!! Using unstable private API that may break at any time !!!
-        tracking_system.register("gaze", self._on_gaze)
-        self.is_connected = True
         # Keep approximately 10 seconds of frames on Tobii 5
         self._queue = deque(maxlen=1000)
-        # TODO: Remove once Talon is upgraded to Python 3.10 and bisect supports key arg.
-        self._ts_queue = deque(maxlen=1000)
+        self.is_connected = False
+        self.connect()
 
     def _on_gaze(self, frame: tobii.GazeFrame):
         if not frame or not frame.gaze:
             return
         self._queue.append(frame)
-        self._ts_queue.append(frame.ts)
+
+    def connect(self):
+        if self.is_connected:
+            return
+        # !!! Using unstable private API that may break at any time !!!
+        tracking_system.register("gaze", self._on_gaze)
+        self.is_connected = True
+
+    def disconnect(self):
+        if not self.is_connected:
+            return
+        # !!! Using unstable private API that may break at any time !!!
+        tracking_system.unregister("gaze", self._on_gaze)
+        self.is_connected = False
 
     def has_gaze_point(self):
         if not self._queue:
@@ -144,14 +145,14 @@ class TalonEyeTracker:
         if not self._queue:
             print("No gaze history available")
             return None
-        frame_index = bisect.bisect_left(self._ts_queue, timestamp)
+        frame_index = bisect.bisect_left(self._queue, timestamp, key=lambda f: f.ts)
         if frame_index == len(self._queue):
             frame_index -= 1
         frame = self._queue[frame_index]
         if abs(frame.ts - timestamp) > self.STALE_GAZE_THRESHOLD_SECONDS:
             print(
                 "No gaze history available at that time: {}. Range: [{}, {}]".format(
-                    timestamp, self._ts_queue[0], self._ts_queue[-1]
+                    timestamp, self._queue[0].ts, self._queue[-1].ts
                 )
             )
             return None
@@ -161,10 +162,12 @@ class TalonEyeTracker:
         if not self._queue:
             print("No gaze history available")
             return None
-        start_index = bisect.bisect_left(self._ts_queue, start_timestamp)
+        start_index = bisect.bisect_left(
+            self._queue, start_timestamp, key=lambda f: f.ts
+        )
         if start_index == len(self._queue):
             start_index -= 1
-        end_index = bisect.bisect_left(self._ts_queue, end_timestamp)
+        end_index = bisect.bisect_left(self._queue, end_timestamp, key=lambda f: f.ts)
         if end_index == len(self._queue):
             end_index -= 1
         left = right = top = bottom = None

@@ -43,7 +43,7 @@ class EyeTracker:
             from Tobii.Interaction.Framework import GazeTracking
 
             self.is_mock = False
-        except:
+        except Exception:
             print("Eye tracking libraries are unavailable.")
             self.is_mock = True
         self._host = None
