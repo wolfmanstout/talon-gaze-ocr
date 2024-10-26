@@ -295,7 +295,7 @@ class Reader:
         # Attempt to turn off HUD if talon_hud is installed.
         try:
             actions.user.hud_set_visibility(False, pause_seconds=0.02)
-        except:
+        except Exception:
             pass
         try:
             return self._screenshot(bounding_box, clamp_to_main_screen)
@@ -303,7 +303,7 @@ class Reader:
             # Attempt to turn on HUD if talon_hud is installed.
             try:
                 actions.user.hud_set_visibility(True, pause_seconds=0.001)
-            except:
+            except Exception:
                 pass
 
     def _screenshot(
@@ -748,7 +748,7 @@ class ScreenContents:
 
     @staticmethod
     def _normalize_homophones(
-        old_homophones: Mapping[str, Iterable[str]]
+        old_homophones: Mapping[str, Iterable[str]],
     ) -> Mapping[str, Iterable[str]]:
         new_homophones = {}
         for k, v in old_homophones.items():

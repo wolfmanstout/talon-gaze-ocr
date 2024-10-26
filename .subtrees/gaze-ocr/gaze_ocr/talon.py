@@ -5,7 +5,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
-from talon import actions, app, tracking_system, ui
+from talon import actions, tracking_system, ui
 from talon.track import tobii
 from talon.types import Point2d
 
