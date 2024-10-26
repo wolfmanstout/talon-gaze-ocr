@@ -720,9 +720,12 @@ class Controller:
                 self.read_nearby(end_time_range)
             else:
                 self._read_nearby_if_gaze_moved()
-            filter_function = lambda location: self._is_valid_selection(
-                start_location.click_coordinates, location[-1].end_coordinates
-            )
+
+            def filter_function(location):
+                return self._is_valid_selection(
+                    start_location.click_coordinates, location[-1].end_coordinates
+                )
+
             return (
                 yield from self.move_text_cursor_to_words_generator(
                     end_words,
@@ -804,9 +807,12 @@ class Controller:
             self._read_nearby_if_gaze_moved()
             screen_contents = self.latest_screen_contents()
         if before_prefix_location:
-            filter_function = lambda location: self._is_valid_selection(
-                before_prefix_location.click_coordinates, location[-1].end_coordinates
-            )
+
+            def filter_function(location):
+                return self._is_valid_selection(
+                    before_prefix_location.click_coordinates,
+                    location[-1].end_coordinates,
+                )
         else:
             filter_function = None
         suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
@@ -1098,7 +1104,6 @@ class Controller:
         if disambiguate:
             return (yield matches)
         else:
-            screen_contents = self.latest_screen_contents()
             return self.find_nearest_cursor_location(matches)
 
     @staticmethod
