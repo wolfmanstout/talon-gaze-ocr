@@ -52,10 +52,10 @@ try:
 except ImportError:
     Image = ImageGrab = ImageOps = None
 try:
-    from talon import actions, screen, ui
+    from talon import screen, ui
     from talon.types.rect import Rect
 except ImportError:
-    ui = screen = Rect = actions = None
+    ui = screen = Rect = None
 
 # Represented as [left, top, right, bottom] pixel coordinates
 BoundingBox = Tuple[int, int, int, int]
