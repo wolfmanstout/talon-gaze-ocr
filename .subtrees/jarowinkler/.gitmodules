@@ -1,3 +1,0 @@
-[submodule "extern/jarowinkler-cpp"]
-	path = extern/jarowinkler-cpp
-	url = https://github.com/maxbachmann/jarowinkler-cpp.git

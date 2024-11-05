@@ -84,7 +84,6 @@ The .subtrees directory contains dependency packages needed by talon-gaze-ocr:
 - gaze-ocr was cloned from https://github.com/wolfmanstout/gaze-ocr
 - screen-ocr was cloned from https://github.com/wolfmanstout/screen-ocr
 - rapidfuzz was cloned from https://github.com/maxbachmann/RapidFuzz
-- jarowinkler was cloned from https://github.com/maxbachmann/JaroWinkler
 
 Changes in this repository are automatically pushed out to `gaze-ocr` and
 `screen-ocr` via a GitHub Action that uses `git subtree`.
