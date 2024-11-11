@@ -1,7 +1,6 @@
 """Base classes used by backend implementations."""
 
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass
@@ -15,12 +14,12 @@ class OcrWord:
 
 @dataclass
 class OcrLine:
-    words: List[OcrWord]
+    words: list[OcrWord]
 
 
 @dataclass
 class OcrResult:
-    lines: List[OcrLine]
+    lines: list[OcrLine]
 
 
 class OcrBackend:

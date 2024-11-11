@@ -3,17 +3,12 @@
 import os
 import re
 from collections import deque
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import islice
 from typing import (
     Any,
-    Callable,
-    Iterable,
-    Iterator,
-    Mapping,
     Optional,
-    Sequence,
-    Tuple,
     Union,
 )
 
@@ -58,7 +53,7 @@ except ImportError:
     ui = screen = Rect = actions = None
 
 # Represented as [left, top, right, bottom] pixel coordinates
-BoundingBox = Tuple[int, int, int, int]
+BoundingBox = tuple[int, int, int, int]
 
 if Rect:
 
@@ -165,10 +160,10 @@ class Reader:
                 )
             try:
                 backend = _winrt.WinRtBackend(language_tag)
-            except ImportError:
+            except ImportError as e:
                 raise ValueError(
                     "WinRT backend unavailable. To install, run pip install screen-ocr[winrt]."
-                )
+                ) from e
             return cls(
                 backend,
                 debug_image_callback=debug_image_callback,
@@ -215,7 +210,7 @@ class Reader:
 
     def read_nearby(
         self,
-        screen_coordinates: Tuple[int, int],
+        screen_coordinates: tuple[int, int],
         search_radius: Optional[int] = None,
         crop_radius: Optional[int] = None,
     ):
@@ -264,7 +259,7 @@ class Reader:
         self,
         image,
         bounding_box: Optional[BoundingBox] = None,
-        screen_coordinates: Optional[Tuple[int, int]] = None,
+        screen_coordinates: Optional[tuple[int, int]] = None,
         search_radius: Optional[int] = None,
     ):
         """Return ScreenContents of the provided image."""
@@ -289,7 +284,7 @@ class Reader:
 
     def _clean_screenshot(
         self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
-    ) -> Tuple[Any, BoundingBox]:
+    ) -> tuple[Any, BoundingBox]:
         if not actions:
             return self._screenshot(bounding_box, clamp_to_main_screen)
         # Attempt to turn off HUD if talon_hud is installed.
@@ -308,7 +303,7 @@ class Reader:
 
     def _screenshot(
         self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
-    ) -> Tuple[Any, BoundingBox]:
+    ) -> tuple[Any, BoundingBox]:
         if self._is_talon_backend():
             assert screen
             assert to_rect
@@ -344,7 +339,7 @@ class Reader:
         return screenshot, bounding_box
 
     def _adjust_result(
-        self, result: _base.OcrResult, offset: Tuple[int, int]
+        self, result: _base.OcrResult, offset: tuple[int, int]
     ) -> _base.OcrResult:
         lines = []
         for line in result.lines:
@@ -431,15 +426,15 @@ class WordLocation:
         return int(self.top + self.height / 2)
 
     @property
-    def start_coordinates(self) -> Tuple[int, int]:
+    def start_coordinates(self) -> tuple[int, int]:
         return (self.left, self.middle_y)
 
     @property
-    def middle_coordinates(self) -> Tuple[int, int]:
+    def middle_coordinates(self) -> tuple[int, int]:
         return (self.middle_x, self.middle_y)
 
     @property
-    def end_coordinates(self) -> Tuple[int, int]:
+    def end_coordinates(self) -> tuple[int, int]:
         return (self.right, self.middle_y)
 
     def is_adjacent_left_of(
@@ -464,7 +459,7 @@ class ScreenContents:
 
     def __init__(
         self,
-        screen_coordinates: Optional[Tuple[int, int]],
+        screen_coordinates: Optional[tuple[int, int]],
         bounding_box: BoundingBox,
         screenshot,
         result: _base.OcrResult,
@@ -523,7 +518,7 @@ class ScreenContents:
 
     def find_nearest_word_coordinates(
         self, target_word: str, cursor_position: str
-    ) -> Optional[Tuple[int, int]]:
+    ) -> Optional[tuple[int, int]]:
         """Return the coordinates of the nearest instance of the provided word.
 
         Uses fuzzy matching.
@@ -641,7 +636,7 @@ class ScreenContents:
         self,
         target: str,
         filter_location_function: Optional[WordLocationsPredicate] = None,
-    ) -> Tuple[Sequence[Sequence[WordLocation]], int]:
+    ) -> tuple[Sequence[Sequence[WordLocation]], int]:
         """Return a tuple of the locations of all longest matching prefixes of the
         provided words, and the length of the prefix.
 
@@ -653,7 +648,9 @@ class ScreenContents:
             (self._normalize(match.group()), match.end())
             for match in re.finditer(self._SUBWORD_REGEX, target)
         ]
-        target_words, prefix_lengths = zip(*target_words_and_prefix_lengths)
+        target_words, prefix_lengths = zip(
+            *target_words_and_prefix_lengths, strict=True
+        )
 
         last_word_sequences = []
         last_prefix_length = 0
@@ -675,7 +672,7 @@ class ScreenContents:
         self,
         target: str,
         filter_location_function: Optional[WordLocationsPredicate] = None,
-    ) -> Tuple[Sequence[Sequence[WordLocation]], int]:
+    ) -> tuple[Sequence[Sequence[WordLocation]], int]:
         """Return a tuple of the locations of all longest matching suffixes of the
         provided words, and the length of the suffix.
 
@@ -687,7 +684,9 @@ class ScreenContents:
             (self._normalize(match.group()), len(target) - match.start())
             for match in re.finditer(self._SUBWORD_REGEX, target)
         ]
-        target_words, suffix_lengths = zip(*target_words_and_suffix_lengths)
+        target_words, suffix_lengths = zip(
+            *target_words_and_suffix_lengths, strict=True
+        )
 
         last_word_sequences = []
         last_suffix_length = 0
@@ -773,7 +772,8 @@ class ScreenContents:
         else:
             # Weighted average of scores based on word lengths.
             score = sum(
-                score * len(word) for score, word in zip(scores, normalized_targets)
+                score * len(word)
+                for score, word in zip(scores, normalized_targets, strict=True)
             ) / sum(map(len, normalized_targets))
         return score if score >= self.confidence_threshold else 0
 

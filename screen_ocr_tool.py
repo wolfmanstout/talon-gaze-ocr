@@ -50,7 +50,7 @@ for image_file in glob.glob("logs/*.png"):
     elif base_name.startswith("failure"):
         failure_data.append((image_file, text_file))
     else:
-        raise AssertionError("Unexpected file name: {}".format(base_name))
+        raise AssertionError(f"Unexpected file name: {base_name}")
 
 random.shuffle(success_data)
 random.shuffle(failure_data)
@@ -62,14 +62,14 @@ X = []
 y = []
 for image_file, text_file in labeled_data:
     X.append(Image.open(image_file).convert("RGB"))
-    with open(text_file, "r") as f:
+    with open(text_file) as f:
         y.append(f.read())
 
 
 if args.verbose:
 
     def debug_image_callback(name, image):
-        print("{}:".format(name))
+        print(f"{name}:")
         display(image)
 
 else:
@@ -102,14 +102,14 @@ if args.mode == "debug":
     ]
     indices = range(len(X)) if args.all else debug_indices
     for index in indices:
-        print("Processing: {}".format(labeled_data[index][0]))
+        print(f"Processing: {labeled_data[index][0]}")
         image = X[index]
         gt_string = y[index]
         print("Unprocessed:")
         display(image)
 
         # Run OCR.
-        print("Ground truth: {}".format(gt_string))
+        print(f"Ground truth: {gt_string}")
         print("------------------")
         ocr_text = None
         ocr_time = timeit.timeit(
@@ -118,9 +118,7 @@ if args.mode == "debug":
             number=1,
         )
         ocr_cost = test_utils.cost(ocr_text, gt_string)
-        print(
-            "time: {:.2f}\tcost: {:.2f}\ntext: {}".format(ocr_time, ocr_cost, ocr_text)
-        )
+        print(f"time: {ocr_time:.2f}\tcost: {ocr_cost:.2f}\ntext: {ocr_text}")
 elif args.mode == "grid_search":
     grid_search = model_selection.GridSearchCV(
         test_utils.OcrEstimator(),
