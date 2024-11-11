@@ -1,9 +1,10 @@
 import glob
 import logging
 import sys
+from collections.abc import Iterable, Sequence
 from math import floor
 from pathlib import Path
-from typing import Dict, Iterable, Literal, Optional, Sequence
+from typing import Literal, Optional
 
 import numpy as np
 from talon import Context, Module, actions, app, cron, fs, screen, settings
@@ -146,7 +147,7 @@ ctx.lists["self.ocr_modifiers"] = {
 
 
 def add_homophones(
-    homophones: Dict[str, Sequence[str]], to_add: Iterable[Iterable[str]]
+    homophones: dict[str, Sequence[str]], to_add: Iterable[Iterable[str]]
 ):
     for words in to_add:
         merged_words = set(words)
@@ -394,7 +395,7 @@ def move_cursor_to_word_generator(text: TimestampedText):
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
-        raise RuntimeError('Unable to find: "{}"'.format(text))
+        raise RuntimeError(f'Unable to find: "{text}"')
 
 
 def move_text_cursor_to_word_generator(
@@ -412,7 +413,7 @@ def move_text_cursor_to_word_generator(
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
-        raise RuntimeError('Unable to find: "{}"'.format(text))
+        raise RuntimeError(f'Unable to find: "{text}"')
 
 
 def move_text_cursor_to_longest_prefix_generator(
@@ -431,7 +432,7 @@ def move_text_cursor_to_longest_prefix_generator(
     )
     if not locations:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
-        raise RuntimeError('Unable to find: "{}"'.format(text))
+        raise RuntimeError(f'Unable to find: "{text}"')
     return prefix_length
 
 
@@ -451,7 +452,7 @@ def move_text_cursor_to_longest_suffix_generator(
     )
     if not locations:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
-        raise RuntimeError('Unable to find: "{}"'.format(text))
+        raise RuntimeError(f'Unable to find: "{text}"')
     return prefix_length
 
 
@@ -464,7 +465,7 @@ def move_text_cursor_to_difference(text: TimestampedText):
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
-        raise RuntimeError('Unable to find: "{}"'.format(text))
+        raise RuntimeError(f'Unable to find: "{text}"')
     return result
 
 
@@ -493,7 +494,7 @@ def select_text_generator(
         actions.user.show_ocr_overlay_for_query(
             "text", f"{start.text}...{end.text if end else None}"
         )
-        raise RuntimeError('Unable to select "{}" to "{}"'.format(start, end))
+        raise RuntimeError(f'Unable to select "{start}" to "{end}"')
 
 
 def select_matching_text_generator(text: TimestampedText):
@@ -506,7 +507,7 @@ def select_matching_text_generator(text: TimestampedText):
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
-        raise RuntimeError('Unable to find: "{}"'.format(text))
+        raise RuntimeError(f'Unable to find: "{text}"')
 
 
 def perform_ocr_action_generator(
