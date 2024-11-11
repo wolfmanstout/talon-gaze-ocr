@@ -58,7 +58,7 @@ class OcrEstimator(BaseEstimator):
         elif self.threshold_type is None:
             threshold_function = None
         else:
-            raise ValueError("Unknown threshold type: {}".format(self.threshold_type))
+            raise ValueError(f"Unknown threshold type: {self.threshold_type}")
         self.ocr_reader_ = screen_ocr.Reader.create_reader(
             backend=self.backend,
             threshold_function=threshold_function,
@@ -74,7 +74,7 @@ class OcrEstimator(BaseEstimator):
 
     def score(self, X, y):
         error = 0
-        for image, gt_text in zip(X, y):
+        for image, gt_text in zip(X, y, strict=True):
             result = self.ocr_reader_.read_image(image).as_string()
             error += cost(result, gt_text)
         return -error
