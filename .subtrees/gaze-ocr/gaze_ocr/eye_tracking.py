@@ -142,7 +142,7 @@ class EyeTracker:
         if not self.has_gaze_point():
             print("No valid gaze point.")
             return
-        print("Gaze point: (%f, %f)" % self._gaze_point[:2])
+        print(f"Gaze point: ({self._gaze_point[0]:f}, {self._gaze_point[1]:f})")
 
     def move_to_gaze_point(self, offset=(0, 0)):
         gaze = self.get_gaze_point_or_default()

@@ -15,10 +15,10 @@ class Mouse:
         dragonfly.Mouse("left:up").execute()
 
     def scroll_down(self, n=1):
-        dragonfly.Mouse("wheeldown:{}".format(n)).execute()
+        dragonfly.Mouse(f"wheeldown:{n}").execute()
 
     def scroll_up(self, n=1):
-        dragonfly.Mouse("wheelup:{}".format(n)).execute()
+        dragonfly.Mouse(f"wheelup:{n}").execute()
 
 
 class Keyboard:
@@ -40,10 +40,10 @@ class Keyboard:
         return self._shift
 
     def left(self, n=1):
-        dragonfly.Key("left:{}".format(n)).execute()
+        dragonfly.Key(f"left:{n}").execute()
 
     def right(self, n=1):
-        dragonfly.Key("right:{}".format(n)).execute()
+        dragonfly.Key(f"right:{n}").execute()
 
 
 class Windows:
