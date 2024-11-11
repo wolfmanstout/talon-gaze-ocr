@@ -40,7 +40,7 @@ class TesseractBackend(_base.OcrBackend):
 
     def run_ocr(self, image):
         image = self._preprocess(image)
-        tessdata_dir_config = r'--tessdata-dir "{}"'.format(self.tesseract_data_path)
+        tessdata_dir_config = rf'--tessdata-dir "{self.tesseract_data_path}"'
         pytesseract.pytesseract.tesseract_cmd = self.tesseract_command
         results = pytesseract.image_to_data(
             image, config=tessdata_dir_config, output_type=pytesseract.Output.DATAFRAME
@@ -96,7 +96,7 @@ class TesseractBackend(_base.OcrBackend):
     def _binarize_channel(self, data, channel_index):
         if self.debug_image_callback:
             self.debug_image_callback(
-                "debug_before_{}".format(channel_index), Image.fromarray(data)
+                f"debug_before_{channel_index}", Image.fromarray(data)
             )
         # Necessary to avoid ValueError from Otsu threshold.
         if data.min() == data.max():
@@ -106,12 +106,12 @@ class TesseractBackend(_base.OcrBackend):
         if self.debug_image_callback:
             if threshold.ndim == 2:
                 self.debug_image_callback(
-                    "debug_threshold_{}".format(channel_index),
+                    f"debug_threshold_{channel_index}",
                     Image.fromarray(threshold.astype(np.uint8)),
                 )
             else:
                 self.debug_image_callback(
-                    "debug_threshold_{}".format(channel_index),
+                    f"debug_threshold_{channel_index}",
                     Image.fromarray(np.ones_like(data) * threshold),
                 )
         data = data > threshold
@@ -120,14 +120,14 @@ class TesseractBackend(_base.OcrBackend):
         background_colors = white_sums > black_sums
         if self.debug_image_callback:
             self.debug_image_callback(
-                "debug_background_{}".format(channel_index),
+                f"debug_background_{channel_index}",
                 Image.fromarray(background_colors == True),  # noqa: E712
             )
         # Make the background consistently white (True).
         data = data == background_colors
         if self.debug_image_callback:
             self.debug_image_callback(
-                "debug_after_{}".format(channel_index), Image.fromarray(data)
+                f"debug_after_{channel_index}", Image.fromarray(data)
             )
         return data
 
