@@ -3,7 +3,7 @@ name = "gaze-ocr"
 version = "0.4.0"
 description = "Library for applying OCR to where the user is looking."
 readme = "README.md"
-authors = [{ name = "James Stout", email = "james.wolf.stout@gmail.com" }]
+authors = [{ name = "James Stout" }]
 requires-python = ">=3.11"
 dependencies = ["screen-ocr"]
 classifiers = [
