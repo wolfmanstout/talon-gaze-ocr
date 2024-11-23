@@ -16,7 +16,7 @@ Beta, switch to the "beta" branch (add flag `-b beta`) to take advantage of
 beta-only features. 
 
 If you use [Talon HUD](https://github.com/chaosparrot/talon_hud), consider
-setting `user.talon_hud_allows_capture = 0` to make the HUD invisible to OCR
+setting `user.talon_hud_allows_capture = false` to make the HUD invisible to OCR
 (only supported on Talon Beta).
 
 Required permissions:
