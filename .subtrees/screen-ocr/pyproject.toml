@@ -3,7 +3,7 @@ name = "screen-ocr"
 version = "0.5.0"
 description = "Library for processing screen contents using OCR"
 readme = "README.md"
-authors = [{ name = "James Stout", email = "james.wolf.stout@gmail.com" }]
+authors = [{ name = "James Stout" }]
 requires-python = ">=3.11"
 dependencies = ["pillow>=9.0", "rapidfuzz"]
 classifiers = [
