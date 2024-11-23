@@ -1,73 +1,16 @@
-import unittest
+from __future__ import annotations
 
-from rapidfuzz.distance import Indel_cpp, Indel_py
-
-
-def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
-    return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+from rapidfuzz import utils_cpp, utils_py
+from tests.distance.common import Indel
 
 
-class Indel:
-    @staticmethod
-    def distance(*args, **kwargs):
-        dist1 = Indel_cpp.distance(*args, **kwargs)
-        dist2 = Indel_py.distance(*args, **kwargs)
-        assert dist1 == dist2
-        return dist1
-
-    @staticmethod
-    def similarity(*args, **kwargs):
-        dist1 = Indel_cpp.similarity(*args, **kwargs)
-        dist2 = Indel_py.similarity(*args, **kwargs)
-        assert dist1 == dist2
-        return dist1
-
-    @staticmethod
-    def normalized_distance(*args, **kwargs):
-        dist1 = Indel_cpp.normalized_distance(*args, **kwargs)
-        dist2 = Indel_py.normalized_distance(*args, **kwargs)
-        assert isclose(dist1, dist2)
-        return dist1
-
-    @staticmethod
-    def normalized_similarity(*args, **kwargs):
-        dist1 = Indel_cpp.normalized_similarity(*args, **kwargs)
-        dist2 = Indel_py.normalized_similarity(*args, **kwargs)
-        assert isclose(dist1, dist2)
-        return dist1
-
-
-def test_empty_string():
-    """
-    when both strings are empty this is a perfect match
-    """
+def test_basic():
     assert Indel.distance("", "") == 0
-    assert Indel.similarity("", "") == 0
-    assert Indel.normalized_distance("", "") == 0.0
-    assert Indel.normalized_similarity("", "") == 1.0
-
-
-def test_similar_strings():
-    """
-    Test similar strings
-    """
     assert Indel.distance("test", "test") == 0
-    assert Indel.similarity("test", "test") == 8
-    assert Indel.normalized_distance("test", "test") == 0
-    assert Indel.normalized_similarity("test", "test") == 1.0
-
-
-def test_different_strings():
-    """
-    Test completly different strings
-    """
     assert Indel.distance("aaaa", "bbbb") == 8
-    assert Indel.similarity("aaaa", "bbbb") == 0
-    assert Indel.normalized_distance("aaaa", "bbbb") == 1.0
-    assert Indel.normalized_similarity("aaaa", "bbbb") == 0.0
 
 
-def testIssue196():
+def test_issue_196():
     """
     Indel distance did not work correctly for score_cutoff=1
     """
@@ -79,5 +22,40 @@ def testIssue196():
     assert Indel.distance("South Korea", "North Korea", score_cutoff=0) == 1
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_Editops():
+    """
+    basic test for Indel.editops
+    """
+    assert Indel.editops("0", "").as_list() == [("delete", 0, 0)]
+    assert Indel.editops("", "0").as_list() == [("insert", 0, 0)]
+
+    assert Indel.editops("00", "0").as_list() == [("delete", 1, 1)]
+    assert Indel.editops("0", "00").as_list() == [("insert", 1, 1)]
+
+    assert Indel.editops("qabxcd", "abycdf").as_list() == [
+        ("delete", 0, 0),
+        ("insert", 3, 2),
+        ("delete", 3, 3),
+        ("insert", 6, 5),
+    ]
+    assert Indel.editops("Lorem ipsum.", "XYZLorem ABC iPsum").as_list() == [
+        ("insert", 0, 0),
+        ("insert", 0, 1),
+        ("insert", 0, 2),
+        ("insert", 6, 9),
+        ("insert", 6, 10),
+        ("insert", 6, 11),
+        ("insert", 6, 12),
+        ("insert", 7, 14),
+        ("delete", 7, 15),
+        ("delete", 11, 18),
+    ]
+
+    ops = Indel.editops("aaabaaa", "abbaaabba")
+    assert ops.src_len == 7
+    assert ops.dest_len == 9
+
+
+def testCaseInsensitive():
+    assert Indel.distance("new york mets", "new YORK mets", processor=utils_cpp.default_process) == 0
+    assert Indel.distance("new york mets", "new YORK mets", processor=utils_py.default_process) == 0

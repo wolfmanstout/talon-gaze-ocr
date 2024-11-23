@@ -1,31 +1,28 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+from __future__ import annotations
 
-import unittest
-import pytest
 from array import array
 
-from rapidfuzz import fuzz_py, fuzz_cpp, utils
+import pytest
+
+from rapidfuzz import fuzz_cpp, fuzz_py, utils_cpp, utils_py
 from rapidfuzz.distance import ScoreAlignment
 
-
-def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
-    return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+from .common import symmetric_scorer_tester
 
 
 class fuzz:
     @staticmethod
     def ratio(*args, **kwargs):
-        dist1 = fuzz_cpp.ratio(*args, **kwargs)
-        dist2 = fuzz_py.ratio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.ratio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.ratio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
     def partial_ratio(*args, **kwargs):
-        dist1 = fuzz_cpp.partial_ratio(*args, **kwargs)
-        dist2 = fuzz_py.partial_ratio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.partial_ratio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.partial_ratio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
@@ -35,64 +32,64 @@ class fuzz:
         if dist1 is None or dist2 is None:
             assert dist1 == dist2
         else:
-            assert isclose(dist1[0], dist2[0])
+            assert pytest.approx(dist1[0]) == dist2[0]
             assert list(dist1)[1:] == list(dist2)[1:]
         return dist1
 
     @staticmethod
     def token_sort_ratio(*args, **kwargs):
-        dist1 = fuzz_cpp.token_sort_ratio(*args, **kwargs)
-        dist2 = fuzz_py.token_sort_ratio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.token_sort_ratio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.token_sort_ratio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
     def token_set_ratio(*args, **kwargs):
-        dist1 = fuzz_cpp.token_set_ratio(*args, **kwargs)
-        dist2 = fuzz_py.token_set_ratio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.token_set_ratio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.token_set_ratio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
     def token_ratio(*args, **kwargs):
-        dist1 = fuzz_cpp.token_ratio(*args, **kwargs)
-        dist2 = fuzz_py.token_ratio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.token_ratio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.token_ratio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
     def partial_token_sort_ratio(*args, **kwargs):
-        dist1 = fuzz_cpp.partial_token_sort_ratio(*args, **kwargs)
-        dist2 = fuzz_py.partial_token_sort_ratio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.partial_token_sort_ratio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.partial_token_sort_ratio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
     def partial_token_set_ratio(*args, **kwargs):
-        dist1 = fuzz_cpp.partial_token_set_ratio(*args, **kwargs)
-        dist2 = fuzz_py.partial_token_set_ratio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.partial_token_set_ratio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.partial_token_set_ratio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
     def partial_token_ratio(*args, **kwargs):
-        dist1 = fuzz_cpp.partial_token_ratio(*args, **kwargs)
-        dist2 = fuzz_py.partial_token_ratio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.partial_token_ratio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.partial_token_ratio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
     def WRatio(*args, **kwargs):
-        dist1 = fuzz_cpp.WRatio(*args, **kwargs)
-        dist2 = fuzz_py.WRatio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.WRatio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.WRatio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
     @staticmethod
     def QRatio(*args, **kwargs):
-        dist1 = fuzz_cpp.QRatio(*args, **kwargs)
-        dist2 = fuzz_py.QRatio(*args, **kwargs)
-        assert isclose(dist1, dist2)
+        dist1 = symmetric_scorer_tester(fuzz_cpp.QRatio, *args, **kwargs)
+        dist2 = symmetric_scorer_tester(fuzz_py.QRatio, *args, **kwargs)
+        assert pytest.approx(dist1) == dist2
         return dist1
 
 
@@ -109,141 +106,126 @@ scorers = [
     fuzz.QRatio,
 ]
 
-cpp_scorers = [
-    fuzz_cpp.ratio,
-    fuzz_cpp.partial_ratio,
-    fuzz_cpp.token_sort_ratio,
-    fuzz_cpp.token_set_ratio,
-    fuzz_cpp.token_ratio,
-    fuzz_cpp.partial_token_sort_ratio,
-    fuzz_cpp.partial_token_set_ratio,
-    fuzz_cpp.partial_token_ratio,
-    fuzz_cpp.WRatio,
-    fuzz_cpp.QRatio,
-]
+
+def test_no_processor():
+    assert fuzz.ratio("new york mets", "new york mets") == 100
+    assert fuzz.ratio("new york mets", "new YORK mets") != 100
 
 
-class RatioTest(unittest.TestCase):
-    s1 = "new york mets"
-    s1a = "new york mets"
-    s2 = "new YORK mets"
-    s3 = "the wonderful new york mets"
-    s4 = "new york mets vs atlanta braves"
-    s5 = "atlanta braves vs new york mets"
-    s6 = "new york mets - atlanta braves"
+def test_partial_ratio():
+    assert fuzz.partial_ratio("new york mets", "the wonderful new york mets") == 100
 
-    def testNoProcessor(self):
-        self.assertEqual(fuzz.ratio(self.s1, self.s1a), 100)
-        self.assertNotEqual(fuzz.ratio(self.s1, self.s2), 100)
 
-    def testPartialRatio(self):
-        self.assertEqual(fuzz.partial_ratio(self.s1, self.s3), 100)
+def test_token_sort_ratio():
+    assert fuzz.token_sort_ratio("new york mets", "new york mets") == 100
 
-    def testTokenSortRatio(self):
-        self.assertEqual(fuzz.token_sort_ratio(self.s1, self.s1a), 100)
 
-    def testPartialTokenSortRatio(self):
-        self.assertEqual(fuzz.partial_token_sort_ratio(self.s1, self.s1a), 100)
-        self.assertEqual(fuzz.partial_token_sort_ratio(self.s4, self.s5), 100)
+def testPartialTokenSortRatio():
+    assert fuzz.partial_token_sort_ratio("new york mets", "new york mets") == 100
+    assert fuzz.partial_token_sort_ratio("new york mets vs atlanta braves", "atlanta braves vs new york mets") == 100
 
-    def testTokenSetRatio(self):
-        self.assertEqual(fuzz.token_set_ratio(self.s4, self.s5), 100)
 
-    def testPartialTokenSetRatio(self):
-        self.assertEqual(fuzz.partial_token_set_ratio(self.s4, self.s5), 100)
+def testTokenSetRatio():
+    assert fuzz.token_set_ratio("new york mets vs atlanta braves", "atlanta braves vs new york mets") == 100
+    assert fuzz.token_set_ratio("js", "vue js") == 100
 
-    def testQuickRatioEqual(self):
-        self.assertEqual(fuzz.QRatio(self.s1, self.s1a), 100)
 
-    def testQuickRatioCaseInsensitive(self):
-        self.assertEqual(fuzz.QRatio(self.s1, self.s2), 100)
+def testPartialTokenSetRatio():
+    assert fuzz.partial_token_set_ratio("new york mets vs atlanta braves", "atlanta braves vs new york mets") == 100
 
-    def testQuickRatioNotEqual(self):
-        self.assertNotEqual(fuzz.QRatio(self.s1, self.s3), 100)
 
-    def testWRatioEqual(self):
-        self.assertEqual(fuzz.WRatio(self.s1, self.s1a), 100)
+def testQuickRatioEqual():
+    assert fuzz.QRatio("new york mets", "new york mets", processor=utils_cpp.default_process) == 100
+    assert fuzz.QRatio("new york mets", "new york mets", processor=utils_py.default_process) == 100
 
-    def testWRatioCaseInsensitive(self):
-        self.assertEqual(fuzz.WRatio(self.s1, self.s2), 100)
 
-    def testWRatioPartialMatch(self):
-        # a partial match is scaled by .9
-        self.assertEqual(fuzz.WRatio(self.s1, self.s3), 90)
+def testQuickRatioCaseInsensitive():
+    assert fuzz.QRatio("new york mets", "new YORK mets", processor=utils_cpp.default_process) == 100
+    assert fuzz.QRatio("new york mets", "new YORK mets", processor=utils_py.default_process) == 100
 
-    def testWRatioMisorderedMatch(self):
-        # misordered full matches are scaled by .95
-        self.assertEqual(fuzz.WRatio(self.s4, self.s5), 95)
 
-    def testWRatioUnicode(self):
-        self.assertEqual(fuzz.WRatio(self.s1, self.s1a), 100)
+def testQuickRatioNotEqual():
+    assert fuzz.QRatio("new york mets", "the wonderful new york mets") != 100
 
-    def testQRatioUnicode(self):
-        self.assertEqual(fuzz.WRatio(self.s1, self.s1a), 100)
 
-    def testIssue76(self):
-        self.assertAlmostEqual(
-            fuzz.partial_ratio("physics 2 vid", "study physics physics 2"),
-            81.81818,
-            places=4,
-        )
-        self.assertEqual(
-            fuzz.partial_ratio("physics 2 vid", "study physics physics 2 video"), 100
-        )
+def testWRatioEqual():
+    assert fuzz.WRatio("new york mets", "new york mets", processor=utils_cpp.default_process) == 100
+    assert fuzz.WRatio("new york mets", "new york mets", processor=utils_py.default_process) == 100
 
-    def testIssue90(self):
-        self.assertAlmostEqual(
-            fuzz_cpp.partial_ratio("ax b", "a b a c b"), 85.71428, places=4
-        )
 
-    def testIssue138(self):
-        str1 = "a" * 65
-        str2 = "a" + chr(256) + "a" * 63
-        self.assertAlmostEqual(fuzz.partial_ratio(str1, str2), 98.46153, places=4)
+def testWRatioCaseInsensitive():
+    assert fuzz.WRatio("new york mets", "new YORK mets", processor=utils_cpp.default_process) == 100
+    assert fuzz.WRatio("new york mets", "new YORK mets", processor=utils_py.default_process) == 100
 
-    def testPartialRatioAlignment(self):
-        a = "a certain string"
-        s = "certain"
-        self.assertEqual(
-            fuzz.partial_ratio_alignment(s, a),
-            ScoreAlignment(100, 0, len(s), 2, 2 + len(s)),
-        )
-        self.assertEqual(
-            fuzz.partial_ratio_alignment(a, s),
-            ScoreAlignment(100, 2, 2 + len(s), 0, len(s)),
-        )
-        self.assertEqual(fuzz.partial_ratio_alignment(None, "test"), None)
-        self.assertEqual(fuzz.partial_ratio_alignment("test", None), None)
 
-        self.assertEqual(
-            fuzz.partial_ratio_alignment("test", "tesx", score_cutoff=90), None
-        )
+def testWRatioPartialMatch():
+    # a partial match is scaled by .9
+    assert fuzz.WRatio("new york mets", "the wonderful new york mets") == 90
 
-    def testIssue196(self):
-        """
-        fuzz.WRatio did not work correctly with score_cutoffs
-        """
-        self.assertAlmostEqual(
-            fuzz.WRatio("South Korea", "North Korea"), 81.81818, places=4
-        )
-        assert fuzz.WRatio("South Korea", "North Korea", score_cutoff=85.4) == 0.0
-        assert fuzz.WRatio("South Korea", "North Korea", score_cutoff=85.5) == 0.0
 
-    def testIssue231(self):
-        str1 = "er merkantilismus förderte handel und verkehr mit teils marktkonformen, teils dirigistischen maßnahmen."
-        str2 = "ils marktkonformen, teils dirigistischen maßnahmen. an der schwelle zum 19. jahrhundert entstand ein neu"
+def testWRatioMisorderedMatch():
+    # misordered full matches are scaled by .95
+    assert fuzz.WRatio("new york mets vs atlanta braves", "atlanta braves vs new york mets") == 95
 
-        alignment = fuzz.partial_ratio_alignment(str1, str2)
-        self.assertEqual(alignment.src_start, 0)
-        self.assertEqual(alignment.src_end, 103)
-        self.assertEqual(alignment.dest_start, 0)
-        self.assertEqual(alignment.dest_end, 103)
+
+def testWRatioUnicode():
+    assert fuzz.WRatio("new york mets", "new york mets") == 100
+
+
+def testQRatioUnicode():
+    assert fuzz.WRatio("new york mets", "new york mets") == 100
+
+
+def test_issue76():
+    assert pytest.approx(fuzz.partial_ratio("physics 2 vid", "study physics physics 2")) == 81.81818
+    assert fuzz.partial_ratio("physics 2 vid", "study physics physics 2 video") == 100
+
+
+def test_issue90():
+    assert pytest.approx(fuzz.partial_ratio("ax b", "a b a c b")) == 85.71428
+
+
+def test_issue138():
+    str1 = "a" * 65
+    str2 = "a" + chr(256) + "a" * 63
+    assert pytest.approx(fuzz.partial_ratio(str1, str2)) == 99.22481
+
+
+def test_partial_ratio_alignment():
+    a = "a certain string"
+    s = "certain"
+    assert fuzz.partial_ratio_alignment(s, a) == ScoreAlignment(100, 0, len(s), 2, 2 + len(s))
+    assert fuzz.partial_ratio_alignment(a, s) == ScoreAlignment(100, 2, 2 + len(s), 0, len(s))
+    assert fuzz.partial_ratio_alignment(None, "test") is None
+    assert fuzz.partial_ratio_alignment("test", None) is None
+
+    assert fuzz.partial_ratio_alignment("test", "tesx", score_cutoff=90) is None
+
+
+def test_issue196():
+    """
+    fuzz.WRatio did not work correctly with score_cutoffs
+    """
+    assert pytest.approx(fuzz.WRatio("South Korea", "North Korea")) == 81.81818
+    assert fuzz.WRatio("South Korea", "North Korea", score_cutoff=85.4) == 0.0
+    assert fuzz.WRatio("South Korea", "North Korea", score_cutoff=85.5) == 0.0
+
+
+def test_issue231():
+    str1 = "er merkantilismus förderte handle und verkehr mit teils marktkonformen, teils dirigistischen maßnahmen."
+    str2 = "ils marktkonformen, teils dirigistischen maßnahmen. an der schwelle zum 19. jahrhundert entstand ein neu"
+
+    alignment = fuzz.partial_ratio_alignment(str1, str2)
+    assert alignment.src_start == 0
+    assert alignment.src_end == 103
+    assert alignment.dest_start == 0
+    assert alignment.dest_end == 51
 
 
 def test_empty_string():
     """
     when both strings are empty this is either a perfect match or no match
-    See https://github.com/maxbachmann/RapidFuzz/issues/110
+    See https://github.com/rapidfuzz/RapidFuzz/issues/110
     """
     # perfect match
     assert fuzz.ratio("", "") == 100
@@ -270,18 +252,31 @@ def test_invalid_input(scorer):
     when invalid types are passed to a scorer an exception should be thrown
     """
     with pytest.raises(TypeError):
-        scorer(1, 1)
+        scorer(1, 1, catch_exceptions=True)
 
 
-@pytest.mark.parametrize("scorer", cpp_scorers)
+@pytest.mark.parametrize("scorer", scorers)
 def test_array(scorer):
     """
     arrays should be supported and treated in a compatible way to strings
     """
     # todo add support in pure python implementation
-    assert scorer(array("u", RatioTest.s3), array("u", RatioTest.s3))
-    assert scorer(RatioTest.s3, array("u", RatioTest.s3))
-    assert scorer(array("u", RatioTest.s3), RatioTest.s3)
+    assert scorer(
+        array("u", "the wonderful new york mets"),
+        array("u", "the wonderful new york mets"),
+    )
+    assert scorer("the wonderful new york mets", array("u", "the wonderful new york mets"))
+    assert scorer(array("u", "the wonderful new york mets"), "the wonderful new york mets")
+
+
+@pytest.mark.parametrize("scorer", scorers)
+def test_bytes(scorer):
+    """
+    bytes should be supported and treated in a compatible way to strings
+    """
+    assert scorer(b"the wonderful new york mets", b"the wonderful new york mets") == 100
+    assert scorer("the wonderful new york mets", b"the wonderful new york mets") == 100
+    assert scorer(b"the wonderful new york mets", "the wonderful new york mets") == 100
 
 
 @pytest.mark.parametrize("scorer", scorers)
@@ -291,6 +286,15 @@ def test_none_string(scorer):
     """
     assert scorer("test", None) == 0
     assert scorer(None, "test") == 0
+
+
+@pytest.mark.parametrize("scorer", scorers)
+def test_nan_string(scorer):
+    """
+    when float("nan") is passed to a scorer the result should always be 0
+    """
+    assert scorer("test", float("nan")) == 0
+    assert scorer(float("nan"), "test") == 0
 
 
 @pytest.mark.parametrize("scorer", scorers)
@@ -306,19 +310,25 @@ def test_simple_unicode_tests(scorer):
 
 
 @pytest.mark.parametrize(
-    "processor", [True, utils.default_process, lambda s: utils.default_process(s)]
+    "processor",
+    [
+        utils_cpp.default_process,
+        lambda s: utils_cpp.default_process(s),
+        utils_py.default_process,
+        lambda s: utils_py.default_process(s),
+    ],
 )
 @pytest.mark.parametrize("scorer", scorers)
 def test_scorer_case_insensitive(processor, scorer):
     """
     each scorer should be able to preprocess strings properly
     """
-    assert scorer(RatioTest.s1, RatioTest.s2, processor=processor) == 100
+    assert scorer("new york mets", "new YORK mets", processor=processor) == 100
 
 
-@pytest.mark.parametrize("processor", [False, None, lambda s: s])
+@pytest.mark.parametrize("processor", [None, lambda s: s])
 def test_ratio_case_censitive(processor):
-    assert fuzz.ratio(RatioTest.s1, RatioTest.s2, processor=processor) != 100
+    assert fuzz.ratio("new york mets", "new YORK mets", processor=processor) != 100
 
 
 @pytest.mark.parametrize("scorer", scorers)
@@ -348,10 +358,15 @@ def testIssue206(scorer):
 def test_help(scorer):
     """
     test that all help texts can be printed without throwing an exception,
-    since they are implemented in C++ aswell
+    since they are implemented in C++ as well
     """
     help(scorer)
 
 
-if __name__ == "__main__":
-    unittest.main()
+def testIssue257():
+    s1 = "aaaaaaaaaaaaaaaaaaaaaaaabacaaaaaaaabaaabaaaaaaaababbbbbbbbbbabbcb"
+    s2 = "aaaaaaaaaaaaaaaaaaaaaaaababaaaaaaaabaaabaaaaaaaababbbbbbbbbbabbcb"
+    score = fuzz.partial_ratio(s1, s2)
+    assert pytest.approx(score) == 98.46153846153847
+    score = fuzz.partial_ratio(s2, s1)
+    assert pytest.approx(score) == 98.46153846153847

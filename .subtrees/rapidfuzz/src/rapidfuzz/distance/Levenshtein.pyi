@@ -1,45 +1,130 @@
-from typing import Callable, Hashable, Sequence, Optional, TypeVar, Tuple
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2022 Max Bachmann
+"""
+The Levenshtein (edit) distance is a string metric to measure the
+difference between two strings/sequences s1 and s2.
+It's defined as the minimum number of insertions, deletions or
+substitutions required to transform s1 into s2.
+"""
+
+from __future__ import annotations
+
+from typing import Callable, Hashable, Sequence, TypeVar, overload
+
 from rapidfuzz.distance import Editops, Opcodes
 
-_StringType = Sequence[Hashable]
-_S1 = TypeVar("_S1")
-_S2 = TypeVar("_S2")
+_UnprocessedType1 = TypeVar("_UnprocessedType1")
+_UnprocessedType2 = TypeVar("_UnprocessedType2")
 
+@overload
 def distance(
-    s1: _S1,
-    s2: _S2,
+    s1: Sequence[Hashable],
+    s2: Sequence[Hashable],
     *,
-    weights: Optional[Tuple[int, int, int]] = (1, 1, 1),
-    processor: Optional[Callable[..., _StringType]] = None,
-    score_cutoff: Optional[int] = None
+    weights: tuple[int, int, int] | None = (1, 1, 1),
+    processor: None = None,
+    score_cutoff: int | None = None,
+    score_hint: int | None = None,
 ) -> int: ...
+@overload
+def distance(
+    s1: _UnprocessedType1,
+    s2: _UnprocessedType2,
+    *,
+    weights: tuple[int, int, int] | None = (1, 1, 1),
+    processor: Callable[[_UnprocessedType1 | _UnprocessedType2], Sequence[Hashable]],
+    score_cutoff: int | None = None,
+    score_hint: int | None = None,
+) -> int: ...
+@overload
 def normalized_distance(
-    s1: _S1,
-    s2: _S2,
+    s1: Sequence[Hashable],
+    s2: Sequence[Hashable],
     *,
-    weights: Optional[Tuple[int, int, int]] = (1, 1, 1),
-    processor: Optional[Callable[..., _StringType]] = None,
-    score_cutoff: Optional[float] = 0
+    weights: tuple[int, int, int] | None = (1, 1, 1),
+    processor: None = None,
+    score_cutoff: float | None = 0,
+    score_hint: float | None = 0,
 ) -> float: ...
+@overload
+def normalized_distance(
+    s1: _UnprocessedType1,
+    s2: _UnprocessedType2,
+    *,
+    weights: tuple[int, int, int] | None = (1, 1, 1),
+    processor: Callable[[_UnprocessedType1 | _UnprocessedType2], Sequence[Hashable]],
+    score_cutoff: float | None = 0,
+    score_hint: float | None = 0,
+) -> float: ...
+@overload
 def similarity(
-    s1: _S1,
-    s2: _S2,
+    s1: Sequence[Hashable],
+    s2: Sequence[Hashable],
     *,
-    weights: Optional[Tuple[int, int, int]] = (1, 1, 1),
-    processor: Optional[Callable[..., _StringType]] = None,
-    score_cutoff: Optional[int] = None
+    weights: tuple[int, int, int] | None = (1, 1, 1),
+    processor: None = None,
+    score_cutoff: int | None = None,
+    score_hint: int | None = None,
 ) -> int: ...
-def normalized_similarity(
-    s1: _S1,
-    s2: _S2,
+@overload
+def similarity(
+    s1: _UnprocessedType1,
+    s2: _UnprocessedType2,
     *,
-    weights: Optional[Tuple[int, int, int]] = (1, 1, 1),
-    processor: Optional[Callable[..., _StringType]] = None,
-    score_cutoff: Optional[float] = 0
+    weights: tuple[int, int, int] | None = (1, 1, 1),
+    processor: Callable[[_UnprocessedType1 | _UnprocessedType2], Sequence[Hashable]],
+    score_cutoff: int | None = None,
+    score_hint: int | None = None,
+) -> int: ...
+@overload
+def normalized_similarity(
+    s1: Sequence[Hashable],
+    s2: Sequence[Hashable],
+    *,
+    weights: tuple[int, int, int] | None = (1, 1, 1),
+    processor: None = None,
+    score_cutoff: float | None = 0,
+    score_hint: float | None = 0,
 ) -> float: ...
+@overload
+def normalized_similarity(
+    s1: _UnprocessedType1,
+    s2: _UnprocessedType2,
+    *,
+    weights: tuple[int, int, int] | None = (1, 1, 1),
+    processor: Callable[[_UnprocessedType1 | _UnprocessedType2], Sequence[Hashable]],
+    score_cutoff: float | None = 0,
+    score_hint: float | None = 0,
+) -> float: ...
+@overload
 def editops(
-    s1: _S1, s2: _S2, *, processor: Optional[Callable[..., _StringType]] = None
+    s1: Sequence[Hashable],
+    s2: Sequence[Hashable],
+    *,
+    processor: None = None,
+    score_hint: int | None = None,
 ) -> Editops: ...
+@overload
+def editops(
+    s1: _UnprocessedType1,
+    s2: _UnprocessedType2,
+    *,
+    processor: Callable[[_UnprocessedType1 | _UnprocessedType2], Sequence[Hashable]],
+    score_hint: int | None = None,
+) -> Editops: ...
+@overload
 def opcodes(
-    s1: _S1, s2: _S2, *, processor: Optional[Callable[..., _StringType]] = None
+    s1: Sequence[Hashable],
+    s2: Sequence[Hashable],
+    *,
+    processor: None = None,
+    score_hint: int | None = None,
+) -> Opcodes: ...
+@overload
+def opcodes(
+    s1: _UnprocessedType1,
+    s2: _UnprocessedType2,
+    *,
+    processor: Callable[[_UnprocessedType1 | _UnprocessedType2], Sequence[Hashable]],
+    score_hint: int | None = None,
 ) -> Opcodes: ...

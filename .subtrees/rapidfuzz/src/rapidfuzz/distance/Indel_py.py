@@ -1,13 +1,22 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2022 Max Bachmann
+from __future__ import annotations
 
-from .LCSseq_py import (
-    similarity as lcs_seq_similarity,
-    _block_similarity as lcs_seq_block_similarity,
-)
+from rapidfuzz._common_py import conv_sequences
+from rapidfuzz._utils import is_none, setupPandas
+from rapidfuzz.distance.LCSseq_py import _block_similarity as lcs_seq_block_similarity
+from rapidfuzz.distance.LCSseq_py import editops as lcs_seq_editops
+from rapidfuzz.distance.LCSseq_py import opcodes as lcs_seq_opcodes
+from rapidfuzz.distance.LCSseq_py import similarity as lcs_seq_similarity
 
 
-def distance(s1, s2, *, processor=None, score_cutoff=None):
+def distance(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_cutoff=None,
+):
     """
     Calculates the minimum number of insertions and deletions
     required to change one sequence into the other. This is equivalent to the
@@ -52,20 +61,32 @@ def distance(s1, s2, *, processor=None, score_cutoff=None):
         s1 = processor(s1)
         s2 = processor(s2)
 
+    s1, s2 = conv_sequences(s1, s2)
     maximum = len(s1) + len(s2)
     lcs_sim = lcs_seq_similarity(s1, s2)
     dist = maximum - 2 * lcs_sim
     return dist if (score_cutoff is None or dist <= score_cutoff) else score_cutoff + 1
 
 
-def _block_distance(block, s1, s2, score_cutoff=None):
+def _block_distance(
+    block,
+    s1,
+    s2,
+    score_cutoff=None,
+):
     maximum = len(s1) + len(s2)
     lcs_sim = lcs_seq_block_similarity(block, s1, s2)
     dist = maximum - 2 * lcs_sim
     return dist if (score_cutoff is None or dist <= score_cutoff) else score_cutoff + 1
 
 
-def similarity(s1, s2, *, processor=None, score_cutoff=None):
+def similarity(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_cutoff=None,
+):
     """
     Calculates the Indel similarity in the range [max, 0].
 
@@ -95,13 +116,20 @@ def similarity(s1, s2, *, processor=None, score_cutoff=None):
         s1 = processor(s1)
         s2 = processor(s2)
 
+    s1, s2 = conv_sequences(s1, s2)
     maximum = len(s1) + len(s2)
     dist = distance(s1, s2)
     sim = maximum - dist
     return sim if (score_cutoff is None or sim >= score_cutoff) else 0
 
 
-def normalized_distance(s1, s2, *, processor=None, score_cutoff=None):
+def normalized_distance(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_cutoff=None,
+):
     """
     Calculates a normalized levenshtein similarity in the range [1, 0].
 
@@ -126,24 +154,40 @@ def normalized_distance(s1, s2, *, processor=None, score_cutoff=None):
     norm_dist : float
         normalized distance between s1 and s2 as a float between 0 and 1.0
     """
+    setupPandas()
+    if is_none(s1) or is_none(s2):
+        return 1.0
+
     if processor is not None:
         s1 = processor(s1)
         s2 = processor(s2)
 
+    s1, s2 = conv_sequences(s1, s2)
     maximum = len(s1) + len(s2)
     dist = distance(s1, s2)
     norm_dist = dist / maximum if maximum else 0
     return norm_dist if (score_cutoff is None or norm_dist <= score_cutoff) else 1
 
 
-def _block_normalized_distance(block, s1, s2, score_cutoff=None):
+def _block_normalized_distance(
+    block,
+    s1,
+    s2,
+    score_cutoff=None,
+):
     maximum = len(s1) + len(s2)
     dist = _block_distance(block, s1, s2)
     norm_dist = dist / maximum if maximum else 0
     return norm_dist if (score_cutoff is None or norm_dist <= score_cutoff) else 1
 
 
-def normalized_similarity(s1, s2, *, processor=None, score_cutoff=None):
+def normalized_similarity(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_cutoff=None,
+):
     """
     Calculates a normalized indel similarity in the range [0, 1].
 
@@ -187,22 +231,37 @@ def normalized_similarity(s1, s2, *, processor=None, score_cutoff=None):
     >>> Indel.normalized_similarity(["lewenstein"], ["levenshtein"], processor=lambda s: s[0])
     0.8571428571428572
     """
+    setupPandas()
+    if is_none(s1) or is_none(s2):
+        return 0.0
+
     if processor is not None:
         s1 = processor(s1)
         s2 = processor(s2)
 
+    s1, s2 = conv_sequences(s1, s2)
     norm_dist = normalized_distance(s1, s2)
     norm_sim = 1.0 - norm_dist
     return norm_sim if (score_cutoff is None or norm_sim >= score_cutoff) else 0
 
 
-def _block_normalized_similarity(block, s1, s2, score_cutoff=None):
+def _block_normalized_similarity(
+    block,
+    s1,
+    s2,
+    score_cutoff=None,
+):
     norm_dist = _block_normalized_distance(block, s1, s2)
     norm_sim = 1.0 - norm_dist
     return norm_sim if (score_cutoff is None or norm_sim >= score_cutoff) else 0
 
 
-def editops(s1, s2, *, processor=None):
+def editops(
+    s1,
+    s2,
+    *,
+    processor=None,
+):
     """
     Return Editops describing how to turn s1 into s2.
 
@@ -241,10 +300,15 @@ def editops(s1, s2, *, processor=None):
      insert s1[4] s2[2]
      insert s1[6] s2[5]
     """
-    raise NotImplementedError
+    return lcs_seq_editops(s1, s2, processor=processor)
 
 
-def opcodes(s1, s2, *, processor=None):
+def opcodes(
+    s1,
+    s2,
+    *,
+    processor=None,
+):
     """
     Return Opcodes describing how to turn s1 into s2.
 
@@ -289,33 +353,4 @@ def opcodes(s1, s2, *, processor=None):
       equal a[4:6] (cd) b[3:5] (cd)
      insert a[6:6] () b[5:6] (f)
     """
-    raise NotImplementedError
-
-
-def _GetScorerFlagsDistance(**kwargs):
-    return {"optimal_score": 0, "worst_score": 2**63 - 1, "flags": (1 << 6)}
-
-
-def _GetScorerFlagsSimilarity(**kwargs):
-    return {"optimal_score": 2**63 - 1, "worst_score": 0, "flags": (1 << 6)}
-
-
-def _GetScorerFlagsNormalizedDistance(**kwargs):
-    return {"optimal_score": 0, "worst_score": 1, "flags": (1 << 5)}
-
-
-def _GetScorerFlagsNormalizedSimilarity(**kwargs):
-    return {"optimal_score": 1, "worst_score": 0, "flags": (1 << 5)}
-
-
-distance._RF_ScorerPy = {"get_scorer_flags": _GetScorerFlagsDistance}
-
-similarity._RF_ScorerPy = {"get_scorer_flags": _GetScorerFlagsSimilarity}
-
-normalized_distance._RF_ScorerPy = {
-    "get_scorer_flags": _GetScorerFlagsNormalizedDistance
-}
-
-normalized_similarity._RF_ScorerPy = {
-    "get_scorer_flags": _GetScorerFlagsNormalizedSimilarity
-}
+    return lcs_seq_opcodes(s1, s2, processor=processor)

@@ -5,7 +5,7 @@ Levenshtein
 
 This implementation supports the usage of different weights for
 Insertion/Deletion/Substitution. The uniform Levenshtein distance refers to ``weights=(1,1,1)``
-and the Indel distance refers to ``weights=(1,1,2)``. All other weights are refered to
+and the Indel distance refers to ``weights=(1,1,2)``. All other weights are referred to
 as generic Levenshtein distance.
 
 Functions
@@ -77,7 +77,7 @@ Uniform
 The implementation for the uniform Levenshtein distance has a worst-case
 performance of ``O([N/64]M)``. It uses the following optimized implementations:
 
-- if score_cutoff is 0 the similarity can be calculated using a direct comparision,
+- if score_cutoff is 0 the similarity can be calculated using a direct comparison,
   since no difference between the strings is allowed.  The time complexity of
   this algorithm is ``O(N)``.
 
@@ -87,7 +87,7 @@ performance of ``O([N/64]M)``. It uses the following optimized implementations:
 
 - If score_cutoff is ≤ 3 the mbleven algorithm is used. This algorithm
   checks all possible edit operations that are possible under
-  the threshold `score_cutoff`. The time complexity of this algorithm is ``O(N)``.
+  the threshold ``score_cutoff``. The time complexity of this algorithm is ``O(N)``.
 
 - If the length of the shorter string is ≤ 64 after removing the common affix
   Hyyrös' algorithm is used, which calculates the Levenshtein distance in
@@ -112,4 +112,3 @@ Generic
 The implementation for other weights is based on Wagner-Fischer.
 It has a performance of ``O(N * M)`` and has a memory usage of ``O(N)``.
 Further details can be found in :cite:t:`1974:WagFisch`.
-

@@ -1,7 +1,22 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2021 Max Bachmann
+from __future__ import annotations
 
-from rapidfuzz.utils import _fallback_import
+from rapidfuzz._utils import fallback_import as _fallback_import
+
+__all__ = [
+    "ratio",
+    "partial_ratio",
+    "partial_ratio_alignment",
+    "token_sort_ratio",
+    "token_set_ratio",
+    "token_ratio",
+    "partial_token_sort_ratio",
+    "partial_token_set_ratio",
+    "partial_token_ratio",
+    "WRatio",
+    "QRatio",
+]
 
 _mod = "rapidfuzz.fuzz"
 ratio = _fallback_import(_mod, "ratio")

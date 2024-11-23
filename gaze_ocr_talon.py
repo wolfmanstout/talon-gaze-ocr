@@ -28,7 +28,6 @@ package_paths = [
     str(subtree_dir / "gaze-ocr"),
     str(subtree_dir / "screen-ocr"),
     str(subtree_dir / "rapidfuzz/src"),
-    str(subtree_dir / "jarowinkler/src"),
 ]
 saved_path = sys.path.copy()
 try:

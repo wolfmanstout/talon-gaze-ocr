@@ -1,71 +1,49 @@
-import unittest
+from __future__ import annotations
 
-from rapidfuzz.distance import LCSseq_cpp, LCSseq_py
-
-
-def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
-    return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+from rapidfuzz import utils_cpp, utils_py
+from tests.distance.common import LCSseq
 
 
-class LCSseq:
-    @staticmethod
-    def distance(*args, **kwargs):
-        dist1 = LCSseq_cpp.distance(*args, **kwargs)
-        dist2 = LCSseq_py.distance(*args, **kwargs)
-        assert dist1 == dist2
-        return dist1
-
-    @staticmethod
-    def similarity(*args, **kwargs):
-        dist1 = LCSseq_cpp.similarity(*args, **kwargs)
-        dist2 = LCSseq_py.similarity(*args, **kwargs)
-        assert dist1 == dist2
-        return dist1
-
-    @staticmethod
-    def normalized_distance(*args, **kwargs):
-        dist1 = LCSseq_cpp.normalized_distance(*args, **kwargs)
-        dist2 = LCSseq_py.normalized_distance(*args, **kwargs)
-        assert isclose(dist1, dist2)
-        return dist1
-
-    @staticmethod
-    def normalized_similarity(*args, **kwargs):
-        dist1 = LCSseq_cpp.normalized_similarity(*args, **kwargs)
-        dist2 = LCSseq_py.normalized_similarity(*args, **kwargs)
-        assert isclose(dist1, dist2)
-        return dist1
-
-
-def test_empty_string():
-    """
-    when both strings are empty this is a perfect match
-    """
+def test_basic():
     assert LCSseq.distance("", "") == 0
-    assert LCSseq.similarity("", "") == 0
-    assert LCSseq.normalized_distance("", "") == 0
-    assert LCSseq.normalized_similarity("", "") == 1.0
-
-
-def test_similar_strings():
-    """
-    Test similar strings
-    """
     assert LCSseq.distance("test", "test") == 0
-    assert LCSseq.similarity("test", "test") == 4
-    assert LCSseq.normalized_distance("test", "test") == 0
-    assert LCSseq.normalized_similarity("test", "test") == 1.0
-
-
-def test_different_strings():
-    """
-    Test completly different strings
-    """
     assert LCSseq.distance("aaaa", "bbbb") == 4
-    assert LCSseq.similarity("aaaa", "bbbb") == 0
-    assert LCSseq.normalized_distance("aaaa", "bbbb") == 1.0
-    assert LCSseq.normalized_similarity("aaaa", "bbbb") == 0.0
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_Editops():
+    """
+    basic test for LCSseq.editops
+    """
+    assert LCSseq.editops("0", "").as_list() == [("delete", 0, 0)]
+    assert LCSseq.editops("", "0").as_list() == [("insert", 0, 0)]
+
+    assert LCSseq.editops("00", "0").as_list() == [("delete", 1, 1)]
+    assert LCSseq.editops("0", "00").as_list() == [("insert", 1, 1)]
+
+    assert LCSseq.editops("qabxcd", "abycdf").as_list() == [
+        ("delete", 0, 0),
+        ("insert", 3, 2),
+        ("delete", 3, 3),
+        ("insert", 6, 5),
+    ]
+    assert LCSseq.editops("Lorem ipsum.", "XYZLorem ABC iPsum").as_list() == [
+        ("insert", 0, 0),
+        ("insert", 0, 1),
+        ("insert", 0, 2),
+        ("insert", 6, 9),
+        ("insert", 6, 10),
+        ("insert", 6, 11),
+        ("insert", 6, 12),
+        ("insert", 7, 14),
+        ("delete", 7, 15),
+        ("delete", 11, 18),
+    ]
+
+    ops = LCSseq.editops("aaabaaa", "abbaaabba")
+    assert ops.src_len == 7
+    assert ops.dest_len == 9
+
+
+def testCaseInsensitive():
+    assert LCSseq.distance("new york mets", "new YORK mets", processor=utils_cpp.default_process) == 0
+    assert LCSseq.distance("new york mets", "new YORK mets", processor=utils_py.default_process) == 0
