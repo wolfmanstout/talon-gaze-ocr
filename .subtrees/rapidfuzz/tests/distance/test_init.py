@@ -1,40 +1,33 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-import unittest
-import pytest
-
-from hypothesis import given, settings
-import hypothesis.strategies as st
+from __future__ import annotations
 
 import random
 
-from rapidfuzz.distance import (
-    Levenshtein,
-    Editops,
-    Opcodes,
-    Editop,
-    Opcode,
-    MatchingBlock,
-)
+import hypothesis.strategies as st
+import pytest
+from hypothesis import given, settings
+
+import rapidfuzz.distance._initialize_cpp as distance_cpp
+import rapidfuzz.distance._initialize_py as distance_py
+from rapidfuzz.distance import Editops, Levenshtein, Opcodes
 
 
-def test_editops_comparision():
+def test_editops_comparison():
     """
-    test comparision with Editops
+    test comparison with Editops
     """
     ops = Levenshtein.editops("aaabaaa", "abbaaabba")
     assert ops == ops
-    assert not (ops != ops)
+    assert not (ops != ops)  # noqa: SIM202
     assert ops == ops.copy()
-    assert not (ops != ops.copy())
+    assert not (ops != ops.copy())  # noqa: SIM202
 
 
-def test_editops_get_index():
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_editops_get_index(module):
     """
     test __getitem__ with index of Editops
     """
-    ops = Editops(
+    ops = module.Editops(
         [
             ("delete", 1, 1),
             ("replace", 2, 1),
@@ -72,11 +65,100 @@ def test_editops_get_index():
         ops[-6]
 
 
-def test_editops_inversion():
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_editops_get_slice(module):
+    """
+    test __getitem__ with slice of Editops
+    """
+    ops = module.Editops(
+        [
+            ("delete", 1, 1),
+            ("replace", 2, 1),
+            ("insert", 6, 5),
+            ("insert", 6, 6),
+            ("insert", 6, 7),
+        ],
+        7,
+        9,
+    )
+
+    ops_list = [
+        ("delete", 1, 1),
+        ("replace", 2, 1),
+        ("insert", 6, 5),
+        ("insert", 6, 6),
+        ("insert", 6, 7),
+    ]
+
+    assert ops[::].as_list() == ops_list[::]
+    assert ops[::] is not ops
+    assert ops[1:].as_list() == ops_list[1:]
+    assert ops[:3].as_list() == ops_list[:3]
+    assert ops[1:3].as_list() == ops_list[1:3]
+    assert ops[:-1].as_list() == ops_list[:-1]
+    assert ops[-3:].as_list() == ops_list[-3:]
+    assert ops[-3:-1].as_list() == ops_list[-3:-1]
+
+    with pytest.raises(ValueError, match="slice step cannot be zero"):
+        ops[::0]
+
+    with pytest.raises(ValueError, match="step sizes below 0 lead to an invalid order of editops"):
+        ops[::-1]
+
+
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_editops_del_slice(module):
+    """
+    test __delitem__ with slice of Editops
+    """
+    ops = module.Editops(
+        [
+            ("delete", 1, 1),
+            ("replace", 2, 1),
+            ("insert", 6, 5),
+            ("insert", 6, 6),
+            ("insert", 6, 7),
+        ],
+        7,
+        9,
+    )
+
+    ops_list = [
+        ("delete", 1, 1),
+        ("replace", 2, 1),
+        ("insert", 6, 5),
+        ("insert", 6, 6),
+        ("insert", 6, 7),
+    ]
+
+    def del_test(key):
+        _ops = ops[::]
+        _ops_list = ops_list[::]
+        del _ops[key]
+        del _ops_list[key]
+        assert _ops.as_list() == _ops_list
+
+    del_test(slice(None, 4, None))
+    del_test(slice(1, None, None))
+    del_test(slice(1, 4, None))
+    del_test(slice(None, 4, 2))
+    del_test(slice(1, None, 2))
+    del_test(slice(1, 4, 2))
+
+    del_test(slice(None, -1, None))
+    del_test(slice(-4, None, None))
+    del_test(slice(-4, -1, None))
+    del_test(slice(None, -1, 2))
+    del_test(slice(-4, None, 2))
+    del_test(slice(-4, -1, 2))
+
+
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_editops_inversion(module):
     """
     test correct inversion of Editops
     """
-    ops = Editops(
+    ops = module.Editops(
         [
             ("delete", 1, 1),
             ("replace", 2, 1),
@@ -97,22 +179,23 @@ def test_editops_inversion():
     ]
 
 
-def test_opcodes_comparision():
+def test_opcodes_comparison():
     """
-    test comparision with Opcodes
+    test comparison with Opcodes
     """
     ops = Levenshtein.opcodes("aaabaaa", "abbaaabba")
     assert ops == ops
-    assert not (ops != ops)
+    assert not (ops != ops)  # noqa: SIM202
     assert ops == ops.copy()
-    assert not (ops != ops.copy())
+    assert not (ops != ops.copy())  # noqa: SIM202
 
 
-def test_opcode_get_index():
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_opcode_py_get_index(module):
     """
     test __getitem__ with index of Opcodes
     """
-    ops = Opcodes(
+    ops = module.Opcodes(
         [
             ("equal", 0, 1, 0, 1),
             ("delete", 1, 2, 1, 1),
@@ -154,11 +237,12 @@ def test_opcode_get_index():
         ops[-7]
 
 
-def test_opcode_inversion():
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_opcode_inversion(module):
     """
     test correct inversion of Opcodes
     """
-    ops = Opcodes(
+    ops = module.Opcodes(
         [
             ("equal", 0, 1, 0, 1),
             ("delete", 1, 2, 1, 1),
@@ -181,33 +265,33 @@ def test_opcode_inversion():
     ]
 
 
-def test_editops_empty():
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_opcodes_empty(module):
     """
     test behavior of conversion between empty list and Editops
     """
-    ops = Opcodes([], 0, 0)
+    ops = module.Opcodes([], 0, 0)
     assert ops.as_list() == []
     assert ops.src_len == 0
     assert ops.dest_len == 0
 
-    ops = Opcodes([], 0, 3)
-    assert ops.as_list() == [
-        Opcode(tag="equal", src_start=0, src_end=0, dest_start=0, dest_end=3)
-    ]
+    ops = module.Opcodes([], 0, 3)
+    assert ops.as_list() == [module.Opcode(tag="equal", src_start=0, src_end=0, dest_start=0, dest_end=3)]
     assert ops.src_len == 0
     assert ops.dest_len == 3
 
 
-def test_editops_empty():
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_editops_empty(module):
     """
     test behavior of conversion between empty list and Opcodes
     """
-    ops = Editops([], 0, 0)
+    ops = module.Editops([], 0, 0)
     assert ops.as_list() == []
     assert ops.src_len == 0
     assert ops.dest_len == 0
 
-    ops = Editops([], 0, 3)
+    ops = module.Editops([], 0, 3)
     assert ops.as_list() == []
     assert ops.src_len == 0
     assert ops.dest_len == 3
@@ -238,30 +322,32 @@ def test_list_initialization():
     assert ops.as_opcodes() == ops2
 
 
-def test_merge_adjacent_blocks():
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_merge_adjacent_blocks(module):
     """
     test whether adjacent blocks are merged
     """
-    ops1 = [Opcode(tag="equal", src_start=0, src_end=3, dest_start=0, dest_end=3)]
+    ops1 = [module.Opcode(tag="equal", src_start=0, src_end=3, dest_start=0, dest_end=3)]
     ops2 = [
-        Opcode(tag="equal", src_start=0, src_end=1, dest_start=0, dest_end=1),
-        Opcode(tag="equal", src_start=1, src_end=3, dest_start=1, dest_end=3),
+        module.Opcode(tag="equal", src_start=0, src_end=1, dest_start=0, dest_end=1),
+        module.Opcode(tag="equal", src_start=1, src_end=3, dest_start=1, dest_end=3),
     ]
-    assert Opcodes(ops1, 3, 3) == Opcodes(ops2, 3, 3)
-    assert Opcodes(ops2, 3, 3) == Opcodes(ops2, 3, 3).as_editops().as_opcodes()
+    assert module.Opcodes(ops1, 3, 3) == module.Opcodes(ops2, 3, 3)
+    assert module.Opcodes(ops2, 3, 3) == module.Opcodes(ops2, 3, 3).as_editops().as_opcodes()
 
 
-def test_empty_matching_blocks():
+@pytest.mark.parametrize("module", [distance_py, distance_cpp])
+def test_empty_matching_blocks(module):
     """
     test behavior for empty matching blocks
     """
-    assert Editops([], 0, 0).as_matching_blocks() == [MatchingBlock(a=0, b=0, size=0)]
-    assert Editops([], 0, 3).as_matching_blocks() == [MatchingBlock(a=0, b=3, size=0)]
-    assert Editops([], 3, 0).as_matching_blocks() == [MatchingBlock(a=3, b=0, size=0)]
+    assert module.Editops([], 0, 0).as_matching_blocks() == [module.MatchingBlock(a=0, b=0, size=0)]
+    assert module.Editops([], 0, 3).as_matching_blocks() == [module.MatchingBlock(a=0, b=3, size=0)]
+    assert module.Editops([], 3, 0).as_matching_blocks() == [module.MatchingBlock(a=3, b=0, size=0)]
 
-    assert Opcodes([], 0, 0).as_matching_blocks() == [MatchingBlock(a=0, b=0, size=0)]
-    assert Opcodes([], 0, 3).as_matching_blocks() == [MatchingBlock(a=0, b=3, size=0)]
-    assert Opcodes([], 3, 0).as_matching_blocks() == [MatchingBlock(a=3, b=0, size=0)]
+    assert module.Opcodes([], 0, 0).as_matching_blocks() == [module.MatchingBlock(a=0, b=0, size=0)]
+    assert module.Opcodes([], 0, 3).as_matching_blocks() == [module.MatchingBlock(a=0, b=3, size=0)]
+    assert module.Opcodes([], 3, 0).as_matching_blocks() == [module.MatchingBlock(a=3, b=0, size=0)]
 
 
 @given(s1=st.text(), s2=st.text())
@@ -276,7 +362,3 @@ def test_editops_reversible(s1, s2):
         del ops[random.randrange(len(ops))]
         assert Opcodes(ops.as_list(), ops.src_len, ops.dest_len) == ops.as_opcodes()
         assert ops == ops.as_opcodes().as_editops()
-
-
-if __name__ == "__main__":
-    unittest.main()

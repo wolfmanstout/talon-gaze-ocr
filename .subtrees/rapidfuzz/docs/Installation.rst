@@ -2,13 +2,13 @@ Installation
 ============
 
 While there are several ways of install RapidFuzz, the recommended methods
-are either by using `pip` (the Python package manager) or
-`conda` (an open-source, cross-platform, package manager)
+are either by using ``pip`` (the Python package manager) or
+``conda`` (an open-source, cross-platform, package manager)
 
 using pip
 ---------
 
-RapidFuzz can be installed with `pip`:
+RapidFuzz can be installed with ``pip``:
 
 .. code-block:: sh
 
@@ -30,7 +30,7 @@ There are pre-built binaries (wheels) of RapidFuzz for MacOS (10.9 and later), L
 using conda
 -----------
 
-RapidFuzz can be installed with `conda`:
+RapidFuzz can be installed with ``conda``:
 
 .. code-block:: sh
 
@@ -41,10 +41,10 @@ from git
 --------
 
 RapidFuzz can be directly used from GitHub by cloning the
-repository. This requires a C++14 capable compiler.
+repository. This requires a C++17 capable compiler.
 
 .. code-block:: sh
 
-   git clone --recursive https://github.com/maxbachmann/rapidfuzz.git
+   git clone --recursive https://github.com/rapidfuzz/rapidfuzz.git
    cd rapidfuzz
    pip install .
