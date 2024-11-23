@@ -1,8 +1,19 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2022 Max Bachmann
+from __future__ import annotations
+
+from rapidfuzz._common_py import common_affix, conv_sequences
+from rapidfuzz._utils import is_none, setupPandas
+from rapidfuzz.distance._initialize_py import Editop, Editops
 
 
-def similarity(s1, s2, *, processor=None, score_cutoff=None):
+def similarity(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_cutoff=None,
+):
     """
     Calculates the length of the longest common subsequence
 
@@ -33,6 +44,7 @@ def similarity(s1, s2, *, processor=None, score_cutoff=None):
     if not s1:
         return 0
 
+    s1, s2 = conv_sequences(s1, s2)
     S = (1 << len(s1)) - 1
     block = {}
     block_get = block.get
@@ -51,7 +63,12 @@ def similarity(s1, s2, *, processor=None, score_cutoff=None):
     return res if (score_cutoff is None or res >= score_cutoff) else 0
 
 
-def _block_similarity(block, s1, s2, score_cutoff=None):
+def _block_similarity(
+    block,
+    s1,
+    s2,
+    score_cutoff=None,
+):
     if not s1:
         return 0
 
@@ -68,7 +85,13 @@ def _block_similarity(block, s1, s2, score_cutoff=None):
     return res if (score_cutoff is None or res >= score_cutoff) else 0
 
 
-def distance(s1, s2, *, processor=None, score_cutoff=None):
+def distance(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_cutoff=None,
+):
     """
     Calculates the LCS distance in the range [0, max].
 
@@ -113,13 +136,20 @@ def distance(s1, s2, *, processor=None, score_cutoff=None):
         s1 = processor(s1)
         s2 = processor(s2)
 
+    s1, s2 = conv_sequences(s1, s2)
     maximum = max(len(s1), len(s2))
     sim = similarity(s1, s2)
     dist = maximum - sim
     return dist if (score_cutoff is None or dist <= score_cutoff) else score_cutoff + 1
 
 
-def normalized_distance(s1, s2, *, processor=None, score_cutoff=None):
+def normalized_distance(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_cutoff=None,
+):
     """
     Calculates a normalized LCS similarity in the range [1, 0].
 
@@ -144,6 +174,10 @@ def normalized_distance(s1, s2, *, processor=None, score_cutoff=None):
     norm_dist : float
         normalized distance between s1 and s2 as a float between 0 and 1.0
     """
+    setupPandas()
+    if is_none(s1) or is_none(s2):
+        return 1.0
+
     if processor is not None:
         s1 = processor(s1)
         s2 = processor(s2)
@@ -151,12 +185,19 @@ def normalized_distance(s1, s2, *, processor=None, score_cutoff=None):
     if not s1 or not s2:
         return 0
 
+    s1, s2 = conv_sequences(s1, s2)
     maximum = max(len(s1), len(s2))
     norm_sim = distance(s1, s2) / maximum
     return norm_sim if (score_cutoff is None or norm_sim <= score_cutoff) else 1
 
 
-def normalized_similarity(s1, s2, *, processor=None, score_cutoff=None):
+def normalized_similarity(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_cutoff=None,
+):
     """
     Calculates a normalized LCS similarity in the range [0, 1].
 
@@ -200,6 +241,10 @@ def normalized_similarity(s1, s2, *, processor=None, score_cutoff=None):
     >>> LCSseq.normalized_similarity(["lewenstein"], ["levenshtein"], processor=lambda s: s[0])
     0.81818181818181
     """
+    setupPandas()
+    if is_none(s1) or is_none(s2):
+        return 0.0
+
     if processor is not None:
         s1 = processor(s1)
         s2 = processor(s2)
@@ -208,7 +253,36 @@ def normalized_similarity(s1, s2, *, processor=None, score_cutoff=None):
     return norm_sim if (score_cutoff is None or norm_sim >= score_cutoff) else 0
 
 
-def editops(s1, s2, *, processor=None):
+def _matrix(s1, s2):
+    if not s1:
+        return (0, [])
+
+    S = (1 << len(s1)) - 1
+    block = {}
+    block_get = block.get
+    x = 1
+    for ch1 in s1:
+        block[ch1] = block_get(ch1, 0) | x
+        x <<= 1
+
+    matrix = []
+    for ch2 in s2:
+        Matches = block_get(ch2, 0)
+        u = S & Matches
+        S = (S + u) | (S - u)
+        matrix.append(S)
+
+    # calculate the equivalent of popcount(~S) in C. This breaks for len(s1) == 0
+    sim = bin(S)[-len(s1) :].count("0")
+    return (sim, matrix)
+
+
+def editops(
+    s1,
+    s2,
+    *,
+    processor=None,
+):
     """
     Return Editops describing how to turn s1 into s2.
 
@@ -230,7 +304,7 @@ def editops(s1, s2, *, processor=None):
     Notes
     -----
     The alignment is calculated using an algorithm of Heikki Hyyrö, which is
-    described [6]_. It has a time complexity and memory usage of ``O([N/64] * M)``.
+    described in [6]_. It has a time complexity and memory usage of ``O([N/64] * M)``.
 
     References
     ----------
@@ -247,10 +321,64 @@ def editops(s1, s2, *, processor=None):
      insert s1[4] s2[2]
      insert s1[6] s2[5]
     """
-    raise NotImplementedError
+    if processor is not None:
+        s1 = processor(s1)
+        s2 = processor(s2)
+
+    s1, s2 = conv_sequences(s1, s2)
+    prefix_len, suffix_len = common_affix(s1, s2)
+    s1 = s1[prefix_len : len(s1) - suffix_len]
+    s2 = s2[prefix_len : len(s2) - suffix_len]
+    sim, matrix = _matrix(s1, s2)
+
+    editops = Editops([], 0, 0)
+    editops._src_len = len(s1) + prefix_len + suffix_len
+    editops._dest_len = len(s2) + prefix_len + suffix_len
+
+    dist = len(s1) + len(s2) - 2 * sim
+    if dist == 0:
+        return editops
+
+    editop_list = [None] * dist
+    col = len(s1)
+    row = len(s2)
+    while row != 0 and col != 0:
+        # deletion
+        if matrix[row - 1] & (1 << (col - 1)):
+            dist -= 1
+            col -= 1
+            editop_list[dist] = Editop("delete", col + prefix_len, row + prefix_len)
+        else:
+            row -= 1
+
+            # insertion
+            if row and not (matrix[row - 1] & (1 << (col - 1))):
+                dist -= 1
+                editop_list[dist] = Editop("insert", col + prefix_len, row + prefix_len)
+            # match
+            else:
+                col -= 1
+
+    while col != 0:
+        dist -= 1
+        col -= 1
+        editop_list[dist] = Editop("delete", col + prefix_len, row + prefix_len)
+
+    while row != 0:
+        dist -= 1
+        row -= 1
+        editop_list[dist] = Editop("insert", col + prefix_len, row + prefix_len)
+
+    editops._editops = editop_list
+    return editops
 
 
-def opcodes(s1, s2, *, processor=None):
+def opcodes(
+    s1,
+    s2,
+    *,
+    processor=None,
+):
     """
     Return Opcodes describing how to turn s1 into s2.
 
@@ -272,7 +400,7 @@ def opcodes(s1, s2, *, processor=None):
     Notes
     -----
     The alignment is calculated using an algorithm of Heikki Hyyrö, which is
-    described [7]_. It has a time complexity and memory usage of ``O([N/64] * M)``.
+    described in [7]_. It has a time complexity and memory usage of ``O([N/64] * M)``.
 
     References
     ----------
@@ -295,33 +423,4 @@ def opcodes(s1, s2, *, processor=None):
       equal a[4:6] (cd) b[3:5] (cd)
      insert a[6:6] () b[5:6] (f)
     """
-    raise NotImplementedError
-
-
-def _GetScorerFlagsDistance(**kwargs):
-    return {"optimal_score": 0, "worst_score": 2**63 - 1, "flags": (1 << 6)}
-
-
-def _GetScorerFlagsSimilarity(**kwargs):
-    return {"optimal_score": 2**63 - 1, "worst_score": 0, "flags": (1 << 6)}
-
-
-def _GetScorerFlagsNormalizedDistance(**kwargs):
-    return {"optimal_score": 0, "worst_score": 1, "flags": (1 << 5)}
-
-
-def _GetScorerFlagsNormalizedSimilarity(**kwargs):
-    return {"optimal_score": 1, "worst_score": 0, "flags": (1 << 5)}
-
-
-distance._RF_ScorerPy = {"get_scorer_flags": _GetScorerFlagsDistance}
-
-similarity._RF_ScorerPy = {"get_scorer_flags": _GetScorerFlagsSimilarity}
-
-normalized_distance._RF_ScorerPy = {
-    "get_scorer_flags": _GetScorerFlagsNormalizedDistance
-}
-
-normalized_similarity._RF_ScorerPy = {
-    "get_scorer_flags": _GetScorerFlagsNormalizedSimilarity
-}
+    return editops(s1, s2, processor=processor).as_opcodes()

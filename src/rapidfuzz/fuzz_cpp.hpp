@@ -1,120 +1,255 @@
 #pragma once
 #include "cpp_common.hpp"
 
-static inline double ratio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline double ratio_func(const RF_String& str1, const RF_String& str2, double score_cutoff)
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::ratio(first1, last1, first2, last2, score_cutoff);
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::ratio(s1, s2, score_cutoff);
     });
 }
 static inline bool RatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
 {
+#ifdef RAPIDFUZZ_X64
+    if (str_count != 1)
+        return multi_similarity_init<rf::fuzz::experimental::MultiRatio, double>(self, str_count, str);
+#endif
+
     return similarity_init<fuzz::CachedRatio, double>(self, str_count, str);
 }
-
-static inline double partial_ratio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::partial_ratio(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = ratio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+static inline bool RatioMultiStringSupport(const RF_Kwargs*)
+{
+#ifdef RAPIDFUZZ_X64
+    return true;
+#else
+    return false;
+#endif
+}
+
+static inline double partial_ratio_func(const RF_String& str1, const RF_String& str2, double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::partial_ratio(s1, s2, score_cutoff);
     });
 }
-static inline bool PartialRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
+static inline bool PartialRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count,
+                                    const RF_String* str)
 {
     return similarity_init<fuzz::CachedPartialRatio, double>(self, str_count, str);
 }
-
-rapidfuzz::ScoreAlignment<double> partial_ratio_alignment_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedPartialRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::partial_ratio_alignment(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = partial_ratio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+rf::ScoreAlignment<double> partial_ratio_alignment_func(const RF_String& str1, const RF_String& str2,
+                                                        double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::partial_ratio_alignment(s1, s2, score_cutoff);
     });
 }
 
-static inline double token_sort_ratio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline double token_sort_ratio_func(const RF_String& str1, const RF_String& str2, double score_cutoff)
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::token_sort_ratio(first1, last1, first2, last2, score_cutoff);
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::token_sort_ratio(s1, s2, score_cutoff);
     });
 }
-static inline bool TokenSortRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
+static inline bool TokenSortRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count,
+                                      const RF_String* str)
 {
+#ifdef RAPIDFUZZ_X64
+    if (str_count != 1)
+        return multi_similarity_init<rf::fuzz::experimental::MultiTokenSortRatio, double>(self, str_count,
+                                                                                          str);
+#endif
+
     return similarity_init<fuzz::CachedTokenSortRatio, double>(self, str_count, str);
 }
-
-
-static inline double token_set_ratio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedTokenSortRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::token_set_ratio(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = token_sort_ratio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+static inline double token_set_ratio_func(const RF_String& str1, const RF_String& str2, double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::token_set_ratio(s1, s2, score_cutoff);
     });
 }
-static inline bool TokenSetRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
+static inline bool TokenSetRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count,
+                                     const RF_String* str)
 {
     return similarity_init<fuzz::CachedTokenSetRatio, double>(self, str_count, str);
 }
-
-static inline double token_ratio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedTokenSetRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::token_ratio(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = token_set_ratio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+static inline double token_ratio_func(const RF_String& str1, const RF_String& str2, double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::token_ratio(s1, s2, score_cutoff);
     });
 }
-static inline bool TokenRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
+static inline bool TokenRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count,
+                                  const RF_String* str)
 {
     return similarity_init<fuzz::CachedTokenRatio, double>(self, str_count, str);
 }
-
-static inline double partial_token_sort_ratio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedTokenRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::partial_token_sort_ratio(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = token_ratio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+static inline double partial_token_sort_ratio_func(const RF_String& str1, const RF_String& str2,
+                                                   double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::partial_token_sort_ratio(s1, s2, score_cutoff);
     });
 }
-static inline bool PartialTokenSortRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
+static inline bool PartialTokenSortRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count,
+                                             const RF_String* str)
 {
     return similarity_init<fuzz::CachedPartialTokenSortRatio, double>(self, str_count, str);
 }
-
-static inline double partial_token_set_ratio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedPartialTokenSortRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::partial_token_set_ratio(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = partial_token_sort_ratio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+static inline double partial_token_set_ratio_func(const RF_String& str1, const RF_String& str2,
+                                                  double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::partial_token_set_ratio(s1, s2, score_cutoff);
     });
 }
-static inline bool PartialTokenSetRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
+static inline bool PartialTokenSetRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count,
+                                            const RF_String* str)
 {
     return similarity_init<fuzz::CachedPartialTokenSetRatio, double>(self, str_count, str);
 }
-
-static inline double partial_token_ratio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedPartialTokenSetRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::partial_token_ratio(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = partial_token_set_ratio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+static inline double partial_token_ratio_func(const RF_String& str1, const RF_String& str2,
+                                              double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::partial_token_ratio(s1, s2, score_cutoff);
     });
 }
-static inline bool PartialTokenRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
+static inline bool PartialTokenRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count,
+                                         const RF_String* str)
 {
     return similarity_init<fuzz::CachedPartialTokenRatio, double>(self, str_count, str);
 }
-
-static inline double WRatio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedPartialTokenRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::WRatio(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = partial_token_ratio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+static inline double WRatio_func(const RF_String& str1, const RF_String& str2, double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::WRatio(s1, s2, score_cutoff);
     });
 }
 static inline bool WRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
 {
     return similarity_init<fuzz::CachedWRatio, double>(self, str_count, str);
 }
-
-static inline double QRatio_func(const RF_String& s1, const RF_String& s2, double score_cutoff)
+static inline RF_UncachedScorerFunc UncachedWRatioFuncInit()
 {
-    return visitor(s1, s2, [&](auto first1, auto last1, auto first2, auto last2) {
-        return fuzz::QRatio(first1, last1, first2, last2, score_cutoff);
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = WRatio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
+}
+
+static inline double QRatio_func(const RF_String& str1, const RF_String& str2, double score_cutoff)
+{
+    return visitor(str1, str2, [&](auto s1, auto s2) {
+        return fuzz::QRatio(s1, s2, score_cutoff);
     });
 }
 static inline bool QRatioInit(RF_ScorerFunc* self, const RF_Kwargs*, int64_t str_count, const RF_String* str)
 {
+#ifdef RAPIDFUZZ_X64
+    if (str_count != 1)
+        return multi_similarity_init<rf::fuzz::experimental::MultiQRatio, double>(self, str_count, str);
+#endif
+
     return similarity_init<fuzz::CachedQRatio, double>(self, str_count, str);
+}
+static inline RF_UncachedScorerFunc UncachedQRatioFuncInit()
+{
+    RF_UncachedScorerFunc scorer;
+    scorer.call.f64 = [](const RF_String* str1, const RF_String* str2, const RF_Kwargs*, double score_cutoff,
+                         double, double* result) {
+        *result = QRatio_func(*str1, *str2, score_cutoff);
+        return true;
+    };
+    return scorer;
 }

@@ -1,11 +1,10 @@
+from __future__ import annotations
+
 __author__: str
 __license__: str
 __version__: str
 
-from rapidfuzz import (
-    process as process,
-    distance as distance,
-    fuzz as fuzz,
-    string_metric as string_metric,
-    utils as utils,
-)
+from rapidfuzz import distance as distance
+from rapidfuzz import fuzz as fuzz
+from rapidfuzz import process as process
+from rapidfuzz import utils as utils

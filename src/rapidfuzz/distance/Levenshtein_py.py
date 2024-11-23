@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2022 Max Bachmann
+from __future__ import annotations
 
-from .Indel_py import distance as indel_distance
+from rapidfuzz._common_py import common_affix, conv_sequences
+from rapidfuzz._utils import is_none, setupPandas
+from rapidfuzz.distance import Indel_py as Indel
+from rapidfuzz.distance._initialize_py import Editop, Editops
 
 
 def _levenshtein_maximum(s1, s2, weights):
@@ -73,7 +77,15 @@ def _uniform_distance(s1, s2):
     return currDist
 
 
-def distance(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
+def distance(
+    s1,
+    s2,
+    *,
+    weights=(1, 1, 1),
+    processor=None,
+    score_cutoff=None,
+    score_hint=None,
+):
     """
     Calculates the minimum number of insertions, deletions, and substitutions
     required to change one sequence into the other according to Levenshtein with custom
@@ -85,11 +97,11 @@ def distance(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
         First string to compare.
     s2 : Sequence[Hashable]
         Second string to compare.
-    weights : Tuple[int, int, int] or None, optional
+    weights : tuple[int, int, int] or None, optional
         The weights for the three operations in the form
         (insertion, deletion, substitution). Default is (1, 1, 1),
         which gives all three operations a weight of 1.
-    processor: callable, optional
+    processor : callable, optional
         Optional callable that is used to preprocess the strings before
         comparing them. Default is None, which deactivates this behaviour.
     score_cutoff : int, optional
@@ -97,6 +109,9 @@ def distance(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
         considered as a result. If the distance is bigger than score_cutoff,
         score_cutoff + 1 is returned instead. Default is None, which deactivates
         this behaviour.
+    score_hint : int, optional
+        Expected distance between s1 and s2. This is used to select a
+        faster implementation. Default is None, which deactivates this behaviour.
 
     Returns
     -------
@@ -128,21 +143,31 @@ def distance(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
     >>> Levenshtein.distance("lewenstein", "levenshtein", weights=(1,1,2))
     3
     """
+    _ = score_hint
     if processor is not None:
         s1 = processor(s1)
         s2 = processor(s2)
 
-    if weights == (1, 1, 1):
+    s1, s2 = conv_sequences(s1, s2)
+    if weights is None or weights == (1, 1, 1):
         dist = _uniform_distance(s1, s2)
     elif weights == (1, 1, 2):
-        dist = indel_distance(s1, s2)
+        dist = Indel.distance(s1, s2)
     else:
         dist = _uniform_generic(s1, s2, weights)
 
     return dist if (score_cutoff is None or dist <= score_cutoff) else score_cutoff + 1
 
 
-def similarity(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
+def similarity(
+    s1,
+    s2,
+    *,
+    weights=(1, 1, 1),
+    processor=None,
+    score_cutoff=None,
+    score_hint=None,
+):
     """
     Calculates the levenshtein similarity in the range [max, 0] using custom
     costs for insertion, deletion and substitution.
@@ -156,11 +181,11 @@ def similarity(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
         First string to compare.
     s2 : Sequence[Hashable]
         Second string to compare.
-    weights : Tuple[int, int, int] or None, optional
+    weights : tuple[int, int, int] or None, optional
         The weights for the three operations in the form
         (insertion, deletion, substitution). Default is (1, 1, 1),
         which gives all three operations a weight of 1.
-    processor: callable, optional
+    processor : callable, optional
         Optional callable that is used to preprocess the strings before
         comparing them. Default is None, which deactivates this behaviour.
     score_cutoff : int, optional
@@ -168,6 +193,9 @@ def similarity(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
         considered as a result. If the similarity is smaller than score_cutoff,
         0 is returned instead. Default is None, which deactivates
         this behaviour.
+    score_hint : int, optional
+        Expected similarity between s1 and s2. This is used to select a
+        faster implementation. Default is None, which deactivates this behaviour.
 
     Returns
     -------
@@ -179,10 +207,13 @@ def similarity(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
     ValueError
         If unsupported weights are provided a ValueError is thrown
     """
+    _ = score_hint
     if processor is not None:
         s1 = processor(s1)
         s2 = processor(s2)
 
+    s1, s2 = conv_sequences(s1, s2)
+    weights = weights or (1, 1, 1)
     maximum = _levenshtein_maximum(s1, s2, weights)
     dist = distance(s1, s2, weights=weights)
     sim = maximum - dist
@@ -190,7 +221,13 @@ def similarity(s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None):
 
 
 def normalized_distance(
-    s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None
+    s1,
+    s2,
+    *,
+    weights=(1, 1, 1),
+    processor=None,
+    score_cutoff=None,
+    score_hint=None,
 ):
     """
     Calculates a normalized levenshtein distance in the range [1, 0] using custom
@@ -205,17 +242,20 @@ def normalized_distance(
         First string to compare.
     s2 : Sequence[Hashable]
         Second string to compare.
-    weights : Tuple[int, int, int] or None, optional
+    weights : tuple[int, int, int] or None, optional
         The weights for the three operations in the form
         (insertion, deletion, substitution). Default is (1, 1, 1),
         which gives all three operations a weight of 1.
-    processor: callable, optional
+    processor : callable, optional
         Optional callable that is used to preprocess the strings before
         comparing them. Default is None, which deactivates this behaviour.
     score_cutoff : float, optional
         Optional argument for a score threshold as a float between 0 and 1.0.
-        For norm_dist > score_cutoff 1.0 is returned instead. Default is 1.0,
+        For norm_dist > score_cutoff 1.0 is returned instead. Default is None,
         which deactivates this behaviour.
+    score_hint : float, optional
+        Expected normalized distance between s1 and s2. This is used to select a
+        faster implementation. Default is None, which deactivates this behaviour.
 
     Returns
     -------
@@ -227,10 +267,17 @@ def normalized_distance(
     ValueError
         If unsupported weights are provided a ValueError is thrown
     """
+    _ = score_hint
+    setupPandas()
+    if is_none(s1) or is_none(s2):
+        return 1.0
+
     if processor is not None:
         s1 = processor(s1)
         s2 = processor(s2)
 
+    s1, s2 = conv_sequences(s1, s2)
+    weights = weights or (1, 1, 1)
     maximum = _levenshtein_maximum(s1, s2, weights)
     dist = distance(s1, s2, weights=weights)
     norm_dist = dist / maximum if maximum else 0
@@ -238,7 +285,13 @@ def normalized_distance(
 
 
 def normalized_similarity(
-    s1, s2, *, weights=(1, 1, 1), processor=None, score_cutoff=None
+    s1,
+    s2,
+    *,
+    weights=(1, 1, 1),
+    processor=None,
+    score_cutoff=None,
+    score_hint=None,
 ):
     """
     Calculates a normalized levenshtein similarity in the range [0, 1] using custom
@@ -252,17 +305,20 @@ def normalized_similarity(
         First string to compare.
     s2 : Sequence[Hashable]
         Second string to compare.
-    weights : Tuple[int, int, int] or None, optional
+    weights : tuple[int, int, int] or None, optional
         The weights for the three operations in the form
         (insertion, deletion, substitution). Default is (1, 1, 1),
         which gives all three operations a weight of 1.
-    processor: callable, optional
+    processor : callable, optional
         Optional callable that is used to preprocess the strings before
         comparing them. Default is None, which deactivates this behaviour.
     score_cutoff : float, optional
         Optional argument for a score threshold as a float between 0 and 1.0.
-        For norm_sim < score_cutoff 0 is returned instead. Default is 0,
+        For norm_sim < score_cutoff 0 is returned instead. Default is None,
         which deactivates this behaviour.
+    score_hint : int, optional
+        Expected normalized similarity between s1 and s2. This is used to select a
+        faster implementation. Default is None, which deactivates this behaviour.
 
     Returns
     -------
@@ -299,16 +355,70 @@ def normalized_similarity(
     >>> Levenshtein.normalized_similarity(["lewenstein"], ["levenshtein"], processor=lambda s: s[0])
     0.81818181818181
     """
+    _ = score_hint
+    setupPandas()
+    if is_none(s1) or is_none(s2):
+        return 0.0
+
     if processor is not None:
         s1 = processor(s1)
         s2 = processor(s2)
 
+    s1, s2 = conv_sequences(s1, s2)
+    weights = weights or (1, 1, 1)
     norm_dist = normalized_distance(s1, s2, weights=weights)
     norm_sim = 1.0 - norm_dist
     return norm_sim if (score_cutoff is None or norm_sim >= score_cutoff) else 0
 
 
-def editops(s1, s2, *, processor=None):
+def _matrix(s1, s2):
+    if not s1:
+        return (len(s2), [], [])
+
+    VP = (1 << len(s1)) - 1
+    VN = 0
+    currDist = len(s1)
+    mask = 1 << (len(s1) - 1)
+
+    block = {}
+    block_get = block.get
+    x = 1
+    for ch1 in s1:
+        block[ch1] = block_get(ch1, 0) | x
+        x <<= 1
+
+    matrix_VP = []
+    matrix_VN = []
+    for ch2 in s2:
+        # Step 1: Computing D0
+        PM_j = block_get(ch2, 0)
+        X = PM_j
+        D0 = (((X & VP) + VP) ^ VP) | X | VN
+        # Step 2: Computing HP and HN
+        HP = VN | ~(D0 | VP)
+        HN = D0 & VP
+        # Step 3: Computing the value D[m,j]
+        currDist += (HP & mask) != 0
+        currDist -= (HN & mask) != 0
+        # Step 4: Computing Vp and VN
+        HP = (HP << 1) | 1
+        HN = HN << 1
+        VP = HN | ~(D0 | HP)
+        VN = HP & D0
+
+        matrix_VP.append(VP)
+        matrix_VN.append(VN)
+
+    return (currDist, matrix_VP, matrix_VN)
+
+
+def editops(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_hint=None,
+):
     """
     Return Editops describing how to turn s1 into s2.
 
@@ -318,9 +428,12 @@ def editops(s1, s2, *, processor=None):
         First string to compare.
     s2 : Sequence[Hashable]
         Second string to compare.
-    processor: callable, optional
+    processor : callable, optional
         Optional callable that is used to preprocess the strings before
         comparing them. Default is None, which deactivates this behaviour.
+    score_hint : int, optional
+        Expected distance between s1 and s2. This is used to select a
+        faster implementation. Default is None, which deactivates this behaviour.
 
     Returns
     -------
@@ -346,10 +459,69 @@ def editops(s1, s2, *, processor=None):
     replace s1[3] s2[2]
      insert s1[6] s2[5]
     """
-    raise NotImplementedError
+    _ = score_hint
+    if processor is not None:
+        s1 = processor(s1)
+        s2 = processor(s2)
+
+    s1, s2 = conv_sequences(s1, s2)
+    prefix_len, suffix_len = common_affix(s1, s2)
+    s1 = s1[prefix_len : len(s1) - suffix_len]
+    s2 = s2[prefix_len : len(s2) - suffix_len]
+    dist, VP, VN = _matrix(s1, s2)
+
+    editops = Editops([], 0, 0)
+    editops._src_len = len(s1) + prefix_len + suffix_len
+    editops._dest_len = len(s2) + prefix_len + suffix_len
+
+    if dist == 0:
+        return editops
+
+    editop_list = [None] * dist
+    col = len(s1)
+    row = len(s2)
+    while row != 0 and col != 0:
+        # deletion
+        if VP[row - 1] & (1 << (col - 1)):
+            dist -= 1
+            col -= 1
+            editop_list[dist] = Editop("delete", col + prefix_len, row + prefix_len)
+        else:
+            row -= 1
+
+            # insertion
+            if row and (VN[row - 1] & (1 << (col - 1))):
+                dist -= 1
+                editop_list[dist] = Editop("insert", col + prefix_len, row + prefix_len)
+            else:
+                col -= 1
+
+                # replace (Matches are not recorded)
+                if s1[col] != s2[row]:
+                    dist -= 1
+                    editop_list[dist] = Editop("replace", col + prefix_len, row + prefix_len)
+
+    while col != 0:
+        dist -= 1
+        col -= 1
+        editop_list[dist] = Editop("delete", col + prefix_len, row + prefix_len)
+
+    while row != 0:
+        dist -= 1
+        row -= 1
+        editop_list[dist] = Editop("insert", col + prefix_len, row + prefix_len)
+
+    editops._editops = editop_list
+    return editops
 
 
-def opcodes(s1, s2, *, processor=None):
+def opcodes(
+    s1,
+    s2,
+    *,
+    processor=None,
+    score_hint=None,
+):
     """
     Return Opcodes describing how to turn s1 into s2.
 
@@ -359,9 +531,12 @@ def opcodes(s1, s2, *, processor=None):
         First string to compare.
     s2 : Sequence[Hashable]
         Second string to compare.
-    processor: callable, optional
+    processor : callable, optional
         Optional callable that is used to preprocess the strings before
         comparing them. Default is None, which deactivates this behaviour.
+    score_hint : int, optional
+        Expected distance between s1 and s2. This is used to select a
+        faster implementation. Default is None, which deactivates this behaviour.
 
     Returns
     -------
@@ -393,33 +568,4 @@ def opcodes(s1, s2, *, processor=None):
       equal a[4:6] (cd) b[3:5] (cd)
      insert a[6:6] () b[5:6] (f)
     """
-    raise NotImplementedError
-
-
-def _GetScorerFlagsDistance(**kwargs):
-    return {"optimal_score": 0, "worst_score": 2**63 - 1, "flags": (1 << 6)}
-
-
-def _GetScorerFlagsSimilarity(**kwargs):
-    return {"optimal_score": 2**63 - 1, "worst_score": 0, "flags": (1 << 6)}
-
-
-def _GetScorerFlagsNormalizedDistance(**kwargs):
-    return {"optimal_score": 0, "worst_score": 1, "flags": (1 << 5)}
-
-
-def _GetScorerFlagsNormalizedSimilarity(**kwargs):
-    return {"optimal_score": 1, "worst_score": 0, "flags": (1 << 5)}
-
-
-distance._RF_ScorerPy = {"get_scorer_flags": _GetScorerFlagsDistance}
-
-similarity._RF_ScorerPy = {"get_scorer_flags": _GetScorerFlagsSimilarity}
-
-normalized_distance._RF_ScorerPy = {
-    "get_scorer_flags": _GetScorerFlagsNormalizedDistance
-}
-
-normalized_similarity._RF_ScorerPy = {
-    "get_scorer_flags": _GetScorerFlagsNormalizedSimilarity
-}
+    return editops(s1, s2, processor=processor, score_hint=score_hint).as_opcodes()
