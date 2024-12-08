@@ -1,8 +1,0 @@
-imagehash
-numpy
-pandas
-pillow
-pytesseract
-rapidfuzz
-scikit-image
-scikit-learn
