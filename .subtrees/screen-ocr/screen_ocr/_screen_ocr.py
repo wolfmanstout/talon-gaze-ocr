@@ -207,13 +207,15 @@ class Reader:
             if homophones
             else default_homophones()
         )
-        # Only toggle HUD visibility on older Windows versions. On newer versions and
-        # other platforms, the HUD will not be present in the screenshot.
+        # On most platforms the HUD will not be present in the screenshot. It is
+        # observed that on Windows, Windows 10 does not hide the HUD, despite the
+        # Microsoft documentation suggesting otherwise. To work around this, we toggle
+        # the HUD visibility on older Windows versions.
         self.needs_hud_toggle = False
         try:
             if actions and platform.system() == "Windows":
                 win_ver = tuple(map(int, platform.version().split(".")))
-                if win_ver < (10, 0, 22000):
+                if win_ver < (10, 0, 22000):  # Initial Windows 11 release
                     self.needs_hud_toggle = True
         except Exception:
             print("Failed to check Windows version. Will not toggle HUD.")
