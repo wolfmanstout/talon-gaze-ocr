@@ -1,6 +1,7 @@
 """Library for processing screen contents using OCR."""
 
 import os
+import platform
 import re
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -46,10 +47,10 @@ try:
 except ImportError:
     Image = ImageGrab = ImageOps = None
 try:
-    from talon import screen, ui
+    from talon import actions, screen, ui
     from talon.types.rect import Rect
 except ImportError:
-    ui = screen = Rect = None
+    ui = screen = Rect = actions = None
 
 # Represented as [left, top, right, bottom] pixel coordinates
 BoundingBox = tuple[int, int, int, int]
@@ -206,6 +207,17 @@ class Reader:
             if homophones
             else default_homophones()
         )
+        # Only toggle HUD visibility on older Windows versions. On newer versions and
+        # other platforms, the HUD will not be present in the screenshot.
+        self.needs_hud_toggle = False
+        try:
+            if actions and platform.system() == "Windows":
+                win_ver = tuple(map(int, platform.version().split(".")))
+                if win_ver < (10, 0, 22000):
+                    self.needs_hud_toggle = True
+        except Exception:
+            print("Failed to check Windows version. Will not toggle HUD.")
+            pass
 
     def read_nearby(
         self,
@@ -284,7 +296,21 @@ class Reader:
     def _clean_screenshot(
         self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
     ) -> tuple[Any, BoundingBox]:
-        return self._screenshot(bounding_box, clamp_to_main_screen)
+        if not self.needs_hud_toggle:
+            return self._screenshot(bounding_box, clamp_to_main_screen)
+        # Attempt to turn off HUD if talon_hud is installed.
+        try:
+            actions.user.hud_set_visibility(False, pause_seconds=0.02)
+        except Exception:
+            pass
+        try:
+            return self._screenshot(bounding_box, clamp_to_main_screen)
+        finally:
+            # Attempt to turn on HUD if talon_hud is installed.
+            try:
+                actions.user.hud_set_visibility(True, pause_seconds=0.001)
+            except Exception:
+                pass
 
     def _screenshot(
         self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
