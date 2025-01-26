@@ -19,6 +19,10 @@ If you use [Talon HUD](https://github.com/chaosparrot/talon_hud), consider
 setting `user.talon_hud_allows_capture = false` to make the HUD invisible to OCR
 (only supported on Talon Beta).
 
+Restart Talon to ensure that the package is fully reloaded. Unlike most Talon
+scripts, this package requires Talon to be restarted when it is updated or
+settings are changed.
+
 Required permissions:
 
 - On Mac, Talon requires the ability to read the screen. As per the
