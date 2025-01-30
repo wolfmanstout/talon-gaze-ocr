@@ -2,7 +2,7 @@ import glob
 import logging
 import re
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from math import floor
 from pathlib import Path
 from typing import Literal, Optional, Union
@@ -144,6 +144,49 @@ ctx.lists["self.ocr_actions"] = {
 }
 ctx.lists["self.ocr_modifiers"] = {
     "all": "selectAll",
+}
+
+
+def paste_link() -> None:
+    actions.user.hyperlink()
+    actions.sleep("100ms")
+    actions.edit.paste()
+
+
+def capitalize() -> None:
+    text = actions.edit.selected_text()
+    actions.insert(text[0].capitalize() + text[1:] if text else "")
+
+
+def uncapitalize() -> None:
+    text = actions.edit.selected_text()
+    actions.insert(text[0].lower() + text[1:] if text else "")
+
+
+_OCR_ACTIONS: dict[str, Callable[[], None]] = {
+    "": lambda: None,
+    "select": lambda: None,
+    "copy": lambda: actions.edit.copy(),
+    "cut": lambda: actions.edit.cut(),
+    "paste": lambda: actions.edit.paste(),
+    "paste_link": paste_link,
+    "delete": lambda: actions.key("backspace"),
+    "delete_with_whitespace": lambda: actions.key("backspace"),
+    "capitalize": capitalize,
+    "uncapitalize": uncapitalize,
+    "lowercase": lambda: actions.insert(actions.edit.selected_text().lower()),
+    "uppercase": lambda: actions.insert(actions.edit.selected_text().upper()),
+    "bold": lambda: actions.user.bold(),
+    "italic": lambda: actions.user.italic(),
+    "strikethrough": lambda: actions.user.strikethrough(),
+    "number_list": lambda: actions.user.number_list(),
+    "bullet_list": lambda: actions.user.bullet_list(),
+    "link": lambda: actions.user.hyperlink(),
+}
+
+_OCR_MODIFIERS: dict[str, Callable[[], None]] = {
+    "": lambda: None,
+    "selectAll": lambda: actions.edit.select_all(),
 }
 
 
@@ -531,11 +574,9 @@ def select_matching_text_generator(text: TimestampedText):
         raise RuntimeError(f'Unable to find: "{text}"')
 
 
-def perform_ocr_action_generator(
-    ocr_action: str,
-    ocr_modifier: str,
+def select_text_range_generator(
     text_range: TextRange,
-    for_deletion: Optional[bool] = None,
+    for_deletion: bool,
 ):
     if not text_range.start:
         assert text_range.end
@@ -545,11 +586,6 @@ def perform_ocr_action_generator(
             hold_shift=True,
         )
     else:
-        for_deletion = (
-            for_deletion
-            if for_deletion is not None
-            else ocr_action in ("cut", "delete_with_whitespace")
-        )
         yield from select_text_generator(
             text_range.start,
             text_range.end,
@@ -557,53 +593,6 @@ def perform_ocr_action_generator(
             after_start=text_range.after_start,
             before_end=text_range.before_end,
         )
-    if ocr_modifier == "":
-        pass
-    elif ocr_modifier == "selectAll":
-        actions.edit.select_all()
-    else:
-        raise RuntimeError(f"Modifier not supported: {ocr_modifier}")
-
-    if ocr_action == "select":
-        pass
-    elif ocr_action == "copy":
-        actions.edit.copy()
-    elif ocr_action == "cut":
-        actions.edit.cut()
-    elif ocr_action == "paste":
-        actions.edit.paste()
-    elif ocr_action == "paste_link":
-        actions.user.hyperlink()
-        actions.sleep("100ms")
-        actions.edit.paste()
-    elif ocr_action in ("delete", "delete_with_whitespace"):
-        actions.key("backspace")
-    elif ocr_action == "capitalize":
-        text = actions.edit.selected_text()
-        actions.insert(text[0].capitalize() + text[1:] if text else "")
-    elif ocr_action == "uncapitalize":
-        text = actions.edit.selected_text()
-        actions.insert(text[0].lower() + text[1:] if text else "")
-    elif ocr_action == "lowercase":
-        text = actions.edit.selected_text()
-        actions.insert(text.lower())
-    elif ocr_action == "uppercase":
-        text = actions.edit.selected_text()
-        actions.insert(text.upper())
-    elif ocr_action == "bold":
-        actions.user.bold()
-    elif ocr_action == "italic":
-        actions.user.italic()
-    elif ocr_action == "strikethrough":
-        actions.user.strikethrough()
-    elif ocr_action == "number_list":
-        actions.user.number_list()
-    elif ocr_action == "bullet_list":
-        actions.user.bullet_list()
-    elif ocr_action == "link":
-        actions.user.hyperlink()
-    else:
-        raise RuntimeError(f"Action not supported: {ocr_action}")
 
 
 def context_sensitive_insert(text: str):
@@ -616,6 +605,10 @@ def context_sensitive_insert(text: str):
 
 @mod.action_class
 class GazeOcrActions:
+    #
+    # Actions related to the eye tracker.
+    #
+
     def connect_ocr_eye_tracker():
         """Connects eye tracker to OCR."""
         tracker.connect()
@@ -624,140 +617,9 @@ class GazeOcrActions:
         """Disconnects eye tracker from OCR."""
         tracker.disconnect()
 
-    def move_cursor_to_word(text: TimestampedText):
-        """Moves cursor to onscreen word."""
-        begin_generator(move_cursor_to_word_generator(text))
-
-    def move_text_cursor_to_word(
-        text: TimestampedText,
-        position: str,
-    ):
-        """Moves text cursor near onscreen word."""
-        begin_generator(move_text_cursor_to_word_generator(text, position))
-
-    def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
-        """Moves mouse cursor to gaze location."""
-        tracker.move_to_gaze_point((offset_right, offset_down))
-
-    def perform_ocr_action(
-        ocr_action: str,
-        ocr_modifier: str,
-        text_range: TextRange,
-    ):
-        """Selects text and performs an action."""
-        begin_generator(
-            perform_ocr_action_generator(ocr_action, ocr_modifier, text_range)
-        )
-
-    def replace_text(ocr_modifier: str, text_range: TextRange, replacement: str):
-        """Replaces onscreen text."""
-
-        def run():
-            yield from perform_ocr_action_generator(
-                "select",
-                ocr_modifier,
-                text_range,
-                for_deletion=settings.get("user.context_sensitive_dictation"),
-            )
-            context_sensitive_insert(replacement)
-
-        begin_generator(run())
-
-    def insert_adjacent_to_text(
-        find_text: TimestampedText, position: str, insertion_text: str
-    ):
-        """Insert text adjacent to onscreen text."""
-
-        def run():
-            yield from move_text_cursor_to_word_generator(
-                find_text,
-                position,
-            )
-            context_sensitive_insert(insertion_text)
-
-        begin_generator(run())
-
-    def append_text(text: TimestampedText):
-        """Finds onscreen text that matches the beginning of the provided text and
-        appends the rest to it."""
-
-        def run():
-            prefix_length = yield from move_text_cursor_to_longest_prefix_generator(
-                text, "after"
-            )
-            insertion_text = text.text[prefix_length:]
-            context_sensitive_insert(insertion_text)
-
-        begin_generator(run())
-
-    def prepend_text(text: TimestampedText):
-        """Finds onscreen text that matches the end of the provided text and
-        prepends the rest to it."""
-
-        def run():
-            suffix_length = yield from move_text_cursor_to_longest_suffix_generator(
-                text, "before"
-            )
-            insertion_text = text.text[:-suffix_length]
-            context_sensitive_insert(insertion_text)
-
-        begin_generator(run())
-
-    def insert_text_difference(text: TimestampedText):
-        """Finds onscreen text that matches the start and/or end of the provided text
-        and inserts the difference."""
-
-        def run():
-            start, end = yield from move_text_cursor_to_difference(text)
-            insertion_text = text.text[start:end]
-            context_sensitive_insert(insertion_text)
-
-        begin_generator(run())
-
-    def revise_text(text: TimestampedText):
-        """Finds onscreen text that matches the beginning and end of the provided text
-        and replaces it."""
-
-        def run():
-            yield from select_matching_text_generator(text)
-            insertion_text = text.text
-            context_sensitive_insert(insertion_text)
-
-        begin_generator(run())
-
-    def revise_text_starting_with(text: TimestampedText):
-        """Finds onscreen text that matches the beginning of the provided text
-        and replaces it until the caret."""
-
-        def run():
-            try:
-                yield from move_text_cursor_to_longest_prefix_generator(
-                    text, "before", hold_shift=True
-                )
-            except RuntimeError as e:
-                # Keep going so the user doesn't lose the dictated text.
-                print(e)
-            insertion_text = text.text
-            context_sensitive_insert(insertion_text)
-
-        begin_generator(run())
-
-    def revise_text_ending_with(text: TimestampedText):
-        """Finds onscreen text that matches the end of the provided text and
-        replaces it from the caret."""
-
-        def run():
-            try:
-                yield from move_text_cursor_to_longest_suffix_generator(
-                    text, "after", hold_shift=True
-                )
-            except RuntimeError as e:
-                # Keep going so the user doesn't lose the dictated text.
-                print(e)
-            insertion_text = text.text
-            context_sensitive_insert(insertion_text)
-
-        begin_generator(run())
+    #
+    # Actions related to the UI.
+    #
 
     def show_ocr_overlay(type: str, near: Optional[TimestampedText] = None):
         """Displays overlay over primary screen.
@@ -868,62 +730,223 @@ class GazeOcrActions:
         actions.mode.disable("user.gaze_ocr_disambiguation")
         reset_disambiguation()
 
-    def click_text(text: TimestampedText):
-        """Click on the provided on-screen text."""
+    #
+    # Actions operating on the gaze point.
+    #
+
+    def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
+        """Moves mouse cursor to gaze location."""
+        tracker.move_to_gaze_point((offset_right, offset_down))
+
+    #
+    # Actions operating on a single point within onscreen text.
+    #
+
+    def move_cursor_to_word(text: TimestampedText):
+        """Moves cursor to onscreen word."""
+        begin_generator(move_cursor_to_word_generator(text))
+
+    def move_text_cursor_to_word(
+        text: TimestampedText,
+        position: str,
+    ):
+        """Moves text cursor near onscreen word."""
+        begin_generator(move_text_cursor_to_word_generator(text, position))
+
+    def insert_adjacent_to_text(
+        find_text: TimestampedText, position: str, insertion_text: str
+    ):
+        """Insert text adjacent to onscreen text."""
+
+        def run():
+            yield from move_text_cursor_to_word_generator(
+                find_text,
+                position,
+            )
+            context_sensitive_insert(insertion_text)
+
+        begin_generator(run())
+
+    def move_cursor_to_text_and_do(
+        text: TimestampedText, action: Callable[[], None]
+    ) -> None:
+        """Moves cursor to onscreen word and performs an action."""
 
         def run():
             yield from move_cursor_to_word_generator(text)
-            actions.mouse_click(0)
+            action()
 
         begin_generator(run())
+
+    def click_text(text: TimestampedText):
+        """Click on the provided on-screen text."""
+        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(0))
 
     def double_click_text(text: TimestampedText):
         """Double-lick on the provided on-screen text."""
 
-        def run():
-            yield from move_cursor_to_word_generator(text)
+        def double_click() -> None:
             actions.mouse_click(0)
             actions.mouse_click(0)
 
-        begin_generator(run())
+        actions.user.move_cursor_to_text_and_do(text, double_click)
 
     def right_click_text(text: TimestampedText):
         """Right-click on the provided on-screen text."""
-
-        def run():
-            yield from move_cursor_to_word_generator(text)
-            actions.mouse_click(1)
-
-        begin_generator(run())
+        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(1))
 
     def middle_click_text(text: TimestampedText):
         """Middle-click on the provided on-screen text."""
-
-        def run():
-            yield from move_cursor_to_word_generator(text)
-            actions.mouse_click(2)
-
-        begin_generator(run())
+        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(2))
 
     def modifier_click_text(modifier: str, text: TimestampedText):
         """Control-click on the provided on-screen text."""
 
-        def run():
-            yield from move_cursor_to_word_generator(text)
+        def modifier_click() -> None:
             actions.key(f"{modifier}:down")
             actions.mouse_click(0)
             actions.key(f"{modifier}:up")
 
-        begin_generator(run())
+        actions.user.move_cursor_to_text_and_do(text, modifier_click)
 
     def change_text_homophone(text: TimestampedText):
         """Switch the on-screen text to a different homophone."""
 
-        def run():
-            # Use click instead of selection because it is more reliable.
-            yield from move_cursor_to_word_generator(text)
+        def change_homophone() -> None:
             actions.mouse_click(0)
             actions.edit.select_word()
             actions.user.homophones_show_selection()
+
+        actions.user.move_cursor_to_text_and_do(text, change_homophone)
+
+    #
+    # Actions operating on a selection of onscreen text.
+    #
+
+    def select_text_and_do(
+        text_range: TextRange,
+        for_deletion: bool,
+        ocr_modifier: str,
+        action: Callable[[], None],
+    ) -> None:
+        """Selects text and performs an action."""
+        if ocr_modifier not in _OCR_MODIFIERS:
+            raise ValueError(f"Modifier not supported: {ocr_modifier}")
+
+        def run():
+            yield from select_text_range_generator(text_range, for_deletion)
+            _OCR_MODIFIERS[ocr_modifier]()
+            action()
+
+        begin_generator(run())
+
+    def perform_ocr_action(
+        ocr_action: str,
+        ocr_modifier: str,
+        text_range: TextRange,
+    ) -> None:
+        """Selects text and performs a known action by name."""
+        if ocr_action not in _OCR_ACTIONS:
+            raise ValueError(f"Action not supported: {ocr_action}")
+
+        actions.user.select_text_and_do(
+            text_range=text_range,
+            for_deletion=(ocr_action in ("cut", "delete_with_whitespace")),
+            ocr_modifier=ocr_modifier,
+            action=_OCR_ACTIONS[ocr_action],
+        )
+
+    def replace_text(ocr_modifier: str, text_range: TextRange, replacement: str):
+        """Replaces onscreen text."""
+        actions.user.select_text_and_do(
+            text_range=text_range,
+            for_deletion=settings.get("user.context_sensitive_dictation"),
+            ocr_modifier=ocr_modifier,
+            action=lambda: context_sensitive_insert(replacement),
+        )
+
+    #
+    # Actions providing natural text editing.
+    #
+
+    def append_text(text: TimestampedText):
+        """Finds onscreen text that matches the beginning of the provided text and
+        appends the rest to it."""
+
+        def run():
+            prefix_length = yield from move_text_cursor_to_longest_prefix_generator(
+                text, "after"
+            )
+            insertion_text = text.text[prefix_length:]
+            context_sensitive_insert(insertion_text)
+
+        begin_generator(run())
+
+    def prepend_text(text: TimestampedText):
+        """Finds onscreen text that matches the end of the provided text and
+        prepends the rest to it."""
+
+        def run():
+            suffix_length = yield from move_text_cursor_to_longest_suffix_generator(
+                text, "before"
+            )
+            insertion_text = text.text[:-suffix_length]
+            context_sensitive_insert(insertion_text)
+
+        begin_generator(run())
+
+    def insert_text_difference(text: TimestampedText):
+        """Finds onscreen text that matches the start and/or end of the provided text
+        and inserts the difference."""
+
+        def run():
+            start, end = yield from move_text_cursor_to_difference(text)
+            insertion_text = text.text[start:end]
+            context_sensitive_insert(insertion_text)
+
+        begin_generator(run())
+
+    def revise_text(text: TimestampedText):
+        """Finds onscreen text that matches the beginning and end of the provided text
+        and replaces it."""
+
+        def run():
+            yield from select_matching_text_generator(text)
+            insertion_text = text.text
+            context_sensitive_insert(insertion_text)
+
+        begin_generator(run())
+
+    def revise_text_starting_with(text: TimestampedText):
+        """Finds onscreen text that matches the beginning of the provided text
+        and replaces it until the caret."""
+
+        def run():
+            try:
+                yield from move_text_cursor_to_longest_prefix_generator(
+                    text, "before", hold_shift=True
+                )
+            except RuntimeError as e:
+                # Keep going so the user doesn't lose the dictated text.
+                print(e)
+            insertion_text = text.text
+            context_sensitive_insert(insertion_text)
+
+        begin_generator(run())
+
+    def revise_text_ending_with(text: TimestampedText):
+        """Finds onscreen text that matches the end of the provided text and
+        replaces it from the caret."""
+
+        def run():
+            try:
+                yield from move_text_cursor_to_longest_suffix_generator(
+                    text, "after", hold_shift=True
+                )
+            except RuntimeError as e:
+                # Keep going so the user doesn't lose the dictated text.
+                print(e)
+            insertion_text = text.text
+            context_sensitive_insert(insertion_text)
 
         begin_generator(run())
