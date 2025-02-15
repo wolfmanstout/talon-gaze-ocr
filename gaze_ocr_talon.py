@@ -114,7 +114,10 @@ mod.setting(
     desc="Region to OCR when no data from the eye tracker",
 )
 
-mod.mode("gaze_ocr_disambiguation")
+mod.tag(
+    "gaze_ocr_disambiguation",
+    desc="Tag for disambiguating between different onscreen matches.",
+)
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
 mod.list("ocr_modifiers", desc="Modifiers to perform on selected text.")
 ctx.lists["self.ocr_actions"] = {
@@ -408,7 +411,7 @@ def show_disambiguation():
                 disambiguation_canvas.close,
             )
 
-    actions.mode.enable("user.gaze_ocr_disambiguation")
+    ctx.tags = ["user.gaze_ocr_disambiguation"]
     if disambiguation_canvas:
         disambiguation_canvas.close()
     disambiguation_canvas = Canvas.from_rect(screen_ocr.to_rect(contents.bounding_box))
@@ -690,7 +693,7 @@ class GazeOcrActions:
             assert not disambiguation_generator
             assert not disambiguation_canvas
             raise RuntimeError("Disambiguation not active")
-        actions.mode.disable("user.gaze_ocr_disambiguation")
+        ctx.tags = []
         disambiguation_canvas.close()
         disambiguation_canvas = None
         # Give the canvas a moment to disappear so it doesn't interfere with subsequent screenshots.
@@ -705,7 +708,7 @@ class GazeOcrActions:
 
     def hide_gaze_ocr_options():
         """Hide the disambiguation UI."""
-        actions.mode.disable("user.gaze_ocr_disambiguation")
+        ctx.tags = []
         reset_disambiguation()
 
     #
