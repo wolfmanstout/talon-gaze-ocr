@@ -436,7 +436,20 @@ def show_disambiguation():
     ctx.tags = ["user.gaze_ocr_disambiguation"]
     if disambiguation_canvas:
         disambiguation_canvas.close()
-    disambiguation_canvas = Canvas.from_rect(screen_ocr.to_rect(contents.bounding_box))
+    rect = screen_ocr.to_rect(contents.bounding_box)
+    screen_rect = screen.main().rect
+    # If rect is approximately equal to screen.main().rect, use Canvas.from_screen to
+    # avoid Windows bug where the screen is blacked out.
+    # https://github.com/wolfmanstout/talon-gaze-ocr/issues/47
+    if (
+        abs(rect.x - screen_rect.x) < 1
+        and abs(rect.y - screen_rect.y) < 1
+        and abs(rect.width - screen_rect.width) < 1
+        and abs(rect.height - screen_rect.height) < 1
+    ):
+        disambiguation_canvas = Canvas.from_screen(screen.main())
+    else:
+        disambiguation_canvas = Canvas.from_rect(rect)
     disambiguation_canvas.register("draw", on_draw)
     disambiguation_canvas.freeze()
 
