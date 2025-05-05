@@ -197,7 +197,7 @@ class Controller:
             # Pad the range to account for timestamp inaccuracy.
             gaze_bounds = (
                 self.eye_tracker.get_gaze_bounds_during_time_range(
-                    start_timestamp - 0.1, end_timestamp + 0.1
+                    start_timestamp - 0.5, end_timestamp + 0.5
                 )
                 if self.eye_tracker and self.eye_tracker.is_connected
                 else None

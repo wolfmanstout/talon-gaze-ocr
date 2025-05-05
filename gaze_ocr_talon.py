@@ -219,7 +219,18 @@ def add_homophones(
             homophones[word.lower()] = merged_words
 
 
-digits = "zero one two three four five six seven eight nine".split()
+digits = [
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+]
 default_digits_map = {n: i for i, n in enumerate(digits)}
 
 # Inline punctuation words in case people are using vanilla knausj, where these are not
