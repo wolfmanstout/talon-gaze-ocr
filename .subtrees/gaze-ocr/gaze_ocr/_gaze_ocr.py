@@ -886,14 +886,18 @@ class Controller:
         if not locations:
             return None
         contents = self.latest_screen_contents()
-        if not contents.screen_coordinates:
-            # "Nearest" is undefined.
-            return None
+        reference_point = contents.screen_coordinates
+        if not reference_point:
+            if contents.bounding_box:
+                # Use center of bounding box as reference point
+                left, top, right, bottom = contents.bounding_box
+                reference_point = ((left + right) // 2, (top + bottom) // 2)
+            else:
+                # "Nearest" is undefined.
+                return None
         distance_to_words = [
             (
-                _distance_squared(
-                    location.click_coordinates, contents.screen_coordinates
-                ),
+                _distance_squared(location.click_coordinates, reference_point),
                 location,
             )
             for location in locations
