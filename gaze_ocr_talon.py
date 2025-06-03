@@ -444,10 +444,10 @@ def begin_generator(generator):
         pass
 
 
-def move_cursor_to_word_generator(text: TimestampedText):
+def move_cursor_to_word_generator(text: TimestampedText, disambiguate: bool = True):
     result = yield from gaze_ocr_controller.move_cursor_to_words_generator(
         text.text,
-        disambiguate=True,
+        disambiguate=disambiguate,
         time_range=(text.start, text.end),
         click_offset_right=settings.get("user.ocr_click_offset_right"),
     )
@@ -762,12 +762,12 @@ class GazeOcrActions:
         begin_generator(run())
 
     def move_cursor_to_text_and_do(
-        text: TimestampedText, action: Callable[[], None]
+        text: TimestampedText, action: Callable[[], None], disambiguate: bool = True
     ) -> None:
         """Moves cursor to onscreen word and performs an action."""
 
         def run():
-            yield from move_cursor_to_word_generator(text)
+            yield from move_cursor_to_word_generator(text, disambiguate)
             action()
 
         begin_generator(run())
@@ -775,6 +775,13 @@ class GazeOcrActions:
     def click_text(text: TimestampedText):
         """Click on the provided on-screen text."""
         actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(0))
+
+    def click_text_without_disambiguation(text: TimestampedText):
+        """Click on the provided on-screen text, choosing the best match if multiple are
+        found."""
+        actions.user.move_cursor_to_text_and_do(
+            text, lambda: actions.mouse_click(0), disambiguate=False
+        )
 
     def double_click_text(text: TimestampedText):
         """Double-lick on the provided on-screen text."""
