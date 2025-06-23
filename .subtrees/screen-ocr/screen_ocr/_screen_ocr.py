@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from itertools import islice
 from typing import (
     Any,
-    Optional,
     Union,
 )
 
@@ -183,11 +182,11 @@ class Reader:
         margin: int = 0,
         resize_factor: int = 1,
         resize_method=None,  # Pillow resize method
-        debug_image_callback: Optional[Callable[[str, Any], None]] = None,
+        debug_image_callback: Callable[[str, Any], None] | None = None,
         confidence_threshold: float = 0.75,
         radius: int = 200,  # screenshot "radius"
         search_radius: int = 125,
-        homophones: Optional[Mapping[str, Iterable[str]]] = None,
+        homophones: Mapping[str, Iterable[str]] | None = None,
     ):
         self._backend = backend
         self.margin = margin
@@ -210,8 +209,8 @@ class Reader:
     def read_nearby(
         self,
         screen_coordinates: tuple[int, int],
-        search_radius: Optional[int] = None,
-        crop_radius: Optional[int] = None,
+        search_radius: int | None = None,
+        crop_radius: int | None = None,
     ):
         """Return ScreenContents nearby the provided coordinates."""
         search_radius = search_radius or self.search_radius
@@ -230,7 +229,7 @@ class Reader:
             search_radius=search_radius,
         )
 
-    def read_screen(self, bounding_box: Optional[BoundingBox] = None):
+    def read_screen(self, bounding_box: BoundingBox | None = None):
         """Return ScreenContents for the entire screen."""
         screenshot, bounding_box = self._clean_screenshot(bounding_box)
         return self.read_image(
@@ -257,9 +256,9 @@ class Reader:
     def read_image(
         self,
         image,
-        bounding_box: Optional[BoundingBox] = None,
-        screen_coordinates: Optional[tuple[int, int]] = None,
-        search_radius: Optional[int] = None,
+        bounding_box: BoundingBox | None = None,
+        screen_coordinates: tuple[int, int] | None = None,
+        search_radius: int | None = None,
     ):
         """Return ScreenContents of the provided image."""
         bounding_box = bounding_box or (0, 0, image.width, image.height)
@@ -282,7 +281,7 @@ class Reader:
         return _talon and isinstance(self._backend, _talon.TalonBackend)
 
     def _clean_screenshot(
-        self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
+        self, bounding_box: BoundingBox | None, clamp_to_main_screen: bool = True
     ) -> tuple[Any, BoundingBox]:
         if not actions:
             return self._screenshot(bounding_box, clamp_to_main_screen)
@@ -301,7 +300,7 @@ class Reader:
                 pass
 
     def _screenshot(
-        self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
+        self, bounding_box: BoundingBox | None, clamp_to_main_screen: bool = True
     ) -> tuple[Any, BoundingBox]:
         if self._is_talon_backend():
             assert screen
@@ -458,13 +457,13 @@ class ScreenContents:
 
     def __init__(
         self,
-        screen_coordinates: Optional[tuple[int, int]],
+        screen_coordinates: tuple[int, int] | None,
         bounding_box: BoundingBox,
         screenshot,
         result: _base.OcrResult,
         confidence_threshold: float,
         homophones: Mapping[str, Iterable[str]],
-        search_radius: Optional[int],
+        search_radius: int | None,
     ):
         self.screen_coordinates = screen_coordinates
         self.bounding_box = bounding_box
@@ -517,7 +516,7 @@ class ScreenContents:
 
     def find_nearest_word_coordinates(
         self, target_word: str, cursor_position: str
-    ) -> Optional[tuple[int, int]]:
+    ) -> tuple[int, int] | None:
         """Return the coordinates of the nearest instance of the provided word.
 
         Uses fuzzy matching.
@@ -538,7 +537,7 @@ class ScreenContents:
         elif cursor_position == "after":
             return word_location.end_coordinates
 
-    def find_nearest_word(self, target_word: str) -> Optional[WordLocation]:
+    def find_nearest_word(self, target_word: str) -> WordLocation | None:
         """Return the location of the nearest instance of the provided word.
 
         Uses fuzzy matching.
@@ -549,8 +548,8 @@ class ScreenContents:
     def find_nearest_words(
         self,
         target: str,
-        filter_function: Optional[Callable[[Sequence[WordLocation]], bool]] = None,
-    ) -> Optional[Sequence[WordLocation]]:
+        filter_function: Callable[[Sequence[WordLocation]], bool] | None = None,
+    ) -> Sequence[WordLocation] | None:
         """Return the locations of the nearest sequence of the provided words.
 
         Uses fuzzy matching.
@@ -562,7 +561,7 @@ class ScreenContents:
 
     def find_nearest_words_within_matches(
         self, sequences: Sequence[Sequence[WordLocation]]
-    ) -> Optional[Sequence[WordLocation]]:
+    ) -> Sequence[WordLocation] | None:
         if not sequences:
             return None
         if not self.screen_coordinates:
@@ -634,7 +633,7 @@ class ScreenContents:
     def find_longest_matching_prefix(
         self,
         target: str,
-        filter_location_function: Optional[WordLocationsPredicate] = None,
+        filter_location_function: WordLocationsPredicate | None = None,
     ) -> tuple[Sequence[Sequence[WordLocation]], int]:
         """Return a tuple of the locations of all longest matching prefixes of the
         provided words, and the length of the prefix.
@@ -670,7 +669,7 @@ class ScreenContents:
     def find_longest_matching_suffix(
         self,
         target: str,
-        filter_location_function: Optional[WordLocationsPredicate] = None,
+        filter_location_function: WordLocationsPredicate | None = None,
     ) -> tuple[Sequence[Sequence[WordLocation]], int]:
         """Return a tuple of the locations of all longest matching suffixes of the
         provided words, and the length of the suffix.

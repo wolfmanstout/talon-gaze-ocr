@@ -3,7 +3,6 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Optional
 
 from talon import actions, tracking_system, ui
 from talon.track import tobii
@@ -67,7 +66,7 @@ class Keyboard:
 
 
 class AppActions:
-    def peek_left(self) -> Optional[str]:
+    def peek_left(self) -> str | None:
         try:
             return actions.user.dictation_peek(True, False)[0]
         except KeyError:
@@ -78,7 +77,7 @@ class AppActions:
                 logging.warning("Action user.dictation_peek is unavailable.")
                 return None
 
-    def peek_right(self) -> Optional[str]:
+    def peek_right(self) -> str | None:
         try:
             return actions.user.dictation_peek(False, True)[1]
         except KeyError:

@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from talon import Module, actions
 from talon.grammar import Phrase
@@ -16,9 +15,9 @@ class TimestampedText:
 
 @dataclass
 class TextRange:
-    start: Optional[TimestampedText]
+    start: TimestampedText | None
     after_start: bool
-    end: Optional[TimestampedText]
+    end: TimestampedText | None
     before_end: bool
 
 

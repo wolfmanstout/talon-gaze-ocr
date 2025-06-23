@@ -4,7 +4,7 @@ import sys
 from collections.abc import Callable, Iterable, Sequence
 from math import floor
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 from talon import Context, Module, actions, app, cron, fs, screen, settings
@@ -362,7 +362,7 @@ def get_debug_color(has_light_background: bool):
 
 disambiguation_canvas = None
 debug_canvas = None
-ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
+ambiguous_matches: Sequence[gaze_ocr.CursorLocation] | None = None
 disambiguation_generator = None
 
 
@@ -540,7 +540,7 @@ def move_text_cursor_to_difference(text: TimestampedText):
 
 def select_text_generator(
     start: TimestampedText,
-    end: Optional[TimestampedText] = None,
+    end: TimestampedText | None = None,
     for_deletion: bool = False,
     after_start: bool = False,
     before_end: bool = False,
@@ -626,7 +626,7 @@ class GazeOcrActions:
     # Actions related to the UI.
     #
 
-    def show_ocr_overlay(type: str, near: Optional[TimestampedText] = None):
+    def show_ocr_overlay(type: str, near: TimestampedText | None = None):
         """Displays overlay over primary screen.
 
         Reads nearby gaze when the near parameter is spoken."""

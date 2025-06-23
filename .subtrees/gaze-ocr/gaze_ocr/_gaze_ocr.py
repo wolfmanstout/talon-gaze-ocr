@@ -12,7 +12,7 @@ from collections.abc import Callable, Generator, Sequence
 from concurrent import futures
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Optional
+from typing import Any
 
 from screen_ocr import Reader, ScreenContents, WordLocation
 
@@ -89,7 +89,7 @@ class OcrCache:
     def read(
         self,
         time_range: tuple[float, float],
-        bounding_box: Optional[tuple[int, int, int, int]],
+        bounding_box: tuple[int, int, int, int] | None,
     ):
         if (
             self._last_time_range
@@ -137,7 +137,7 @@ class Controller:
         mouse,
         keyboard,
         app_actions=None,
-        save_data_directory: Optional[str] = None,
+        save_data_directory: str | None = None,
         gaze_box_padding: int = 100,
         fallback_when_no_eye_tracker: EyeTrackerFallback = EyeTrackerFallback.MAIN_SCREEN,
     ):
@@ -184,7 +184,7 @@ class Controller:
 
     def read_nearby(
         self,
-        time_range: Optional[tuple[float, float]] = None,
+        time_range: tuple[float, float] | None = None,
     ) -> None:
         """Perform OCR nearby the gaze point in the current thread.
 
@@ -248,9 +248,9 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        time_range: Optional[tuple[float, float]] = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
-    ) -> Optional[tuple[int, int]]:
+    ) -> tuple[int, int] | None:
         """Move the mouse cursor nearby the specified word or words.
 
         If successful, returns the new cursor coordinates.
@@ -276,9 +276,9 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        time_range: Optional[tuple[float, float]] = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[tuple[int, int]]]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, tuple[int, int] | None]:
         """Same as move_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
         """
@@ -332,11 +332,11 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[WordLocationsPredicate] = None,
+        filter_location_function: WordLocationsPredicate | None = None,
         include_whitespace: bool = False,
-        time_range: Optional[tuple[float, float]] = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
-    ) -> Optional[CursorLocation]:
+    ) -> CursorLocation | None:
         """Move the text cursor nearby the specified word or phrase.
 
         If successful, returns list of screen_ocr.WordLocation of the matching words.
@@ -367,13 +367,13 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[WordLocationsPredicate] = None,
+        filter_location_function: WordLocationsPredicate | None = None,
         include_whitespace: bool = False,
-        time_range: Optional[tuple[float, float]] = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
-        selection_position: Optional[SelectionPosition] = None,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation]]:
+        selection_position: SelectionPosition | None = None,
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, CursorLocation | None]:
         """Same as move_text_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
         """
@@ -422,11 +422,11 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[WordLocationsPredicate] = None,
-        time_range: Optional[tuple[float, float]] = None,
+        filter_location_function: WordLocationsPredicate | None = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
-    ) -> tuple[Optional[CursorLocation], int]:
+    ) -> tuple[CursorLocation | None, int]:
         """Moves the text cursor to the longest prefix of the provided words that
         matches onscreen text. See move_text_cursor_to_words for argument details."""
         return self._extract_result(
@@ -446,12 +446,12 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[WordLocationsPredicate] = None,
-        time_range: Optional[tuple[float, float]] = None,
+        filter_location_function: WordLocationsPredicate | None = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
     ) -> Generator[
-        Sequence[CursorLocation], CursorLocation, tuple[Optional[CursorLocation], int]
+        Sequence[CursorLocation], CursorLocation, tuple[CursorLocation | None, int]
     ]:
         """Same as move_text_cursor_to_longest_prefix, except it supports
         disambiguation through a generator. See header comment for details."""
@@ -492,11 +492,11 @@ class Controller:
         self,
         words: str,
         cursor_position: str = "middle",
-        filter_location_function: Optional[WordLocationsPredicate] = None,
-        time_range: Optional[tuple[float, float]] = None,
+        filter_location_function: WordLocationsPredicate | None = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
-    ) -> tuple[Optional[CursorLocation], int]:
+    ) -> tuple[CursorLocation | None, int]:
         """Moves the text cursor to the longest suffix of the provided words that
         matches onscreen text. See move_text_cursor_to_words for argument details."""
         return self._extract_result(
@@ -516,12 +516,12 @@ class Controller:
         words: str,
         disambiguate: bool,
         cursor_position: str = "middle",
-        filter_location_function: Optional[WordLocationsPredicate] = None,
-        time_range: Optional[tuple[float, float]] = None,
+        filter_location_function: WordLocationsPredicate | None = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
         hold_shift: bool = False,
     ) -> Generator[
-        Sequence[CursorLocation], CursorLocation, tuple[Optional[CursorLocation], int]
+        Sequence[CursorLocation], CursorLocation, tuple[CursorLocation | None, int]
     ]:
         """Same as move_text_cursor_to_longest_suffix, except it supports
         disambiguation through a generator. See header comment for details."""
@@ -562,9 +562,9 @@ class Controller:
         self,
         words: str,
         disambiguate: bool,
-        time_range: Optional[tuple[float, float]] = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[tuple[int, int]]]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, tuple[int, int] | None]:
         """Finds onscreen text that matches the start and/or end of the provided words,
         and moves the text cursor to the start of where the words differ. Returns the
         start and end indices of the differing text in the provided words, if found."""
@@ -643,14 +643,14 @@ class Controller:
     def select_text(
         self,
         start_words: str,
-        end_words: Optional[str] = None,
+        end_words: str | None = None,
         for_deletion: bool = False,
-        start_time_range: Optional[tuple[float, float]] = None,
-        end_time_range: Optional[tuple[float, float]] = None,
+        start_time_range: tuple[float, float] | None = None,
+        end_time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
         after_start: bool = False,
         before_end: bool = False,
-    ) -> Optional[CursorLocation]:
+    ) -> CursorLocation | None:
         """Select a range of onscreen text.
 
         If only start_words is provided, the full word or phrase is selected. If
@@ -684,15 +684,15 @@ class Controller:
         self,
         start_words: str,
         disambiguate: bool,
-        end_words: Optional[str] = None,
+        end_words: str | None = None,
         for_deletion: bool = False,
-        start_time_range: Optional[tuple[float, float]] = None,
-        end_time_range: Optional[tuple[float, float]] = None,
+        start_time_range: tuple[float, float] | None = None,
+        end_time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
         after_start: bool = False,
         before_end: bool = False,
         select_pause_seconds: float = 0.01,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation]]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, CursorLocation | None]:
         """Same as select_text, except it supports disambiguation through a generator.
         See header comment for details.
         """
@@ -759,9 +759,9 @@ class Controller:
     def select_matching_text(
         self,
         words: str,
-        time_range: Optional[tuple[float, float]] = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
-    ) -> Optional[tuple[int, int]]:
+    ) -> tuple[int, int] | None:
         """Selects onscreen text that matches the beginning and/or end of the provided
         text. Returns the start and end indices corresponding to the changed text, if
         found. See select_text for argument details."""
@@ -778,10 +778,10 @@ class Controller:
         self,
         words: str,
         disambiguate: bool,
-        time_range: Optional[tuple[float, float]] = None,
+        time_range: tuple[float, float] | None = None,
         click_offset_right: int = 0,
         select_pause_seconds: float = 0.01,
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[tuple[int, int]]]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, tuple[int, int] | None]:
         """Same as select_matching_text, except it supports disambiguation through a
         generator. See header comment for details."""
         if time_range:
@@ -880,7 +880,7 @@ class Controller:
 
     def find_nearest_cursor_location(
         self, locations: Sequence[CursorLocation]
-    ) -> Optional[CursorLocation]:
+    ) -> CursorLocation | None:
         """Returns the cursor location nearest to the current gaze point, if
         available."""
         if not locations:
@@ -1101,7 +1101,7 @@ class Controller:
         self,
         disambiguate: bool,
         matches: Sequence[CursorLocation],
-    ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation]]:
+    ) -> Generator[Sequence[CursorLocation], CursorLocation, CursorLocation | None]:
         if not matches:
             return None
         if len(matches) == 1:
