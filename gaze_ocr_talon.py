@@ -438,7 +438,7 @@ def show_disambiguation():
         setting_ocr_disambiguation_display_seconds = settings.get(
             "user.ocr_disambiguation_display_seconds"
         )
-        if setting_ocr_disambiguation_display_seconds:
+        if setting_ocr_disambiguation_display_seconds and disambiguation_canvas:
             cron.after(
                 f"{setting_ocr_disambiguation_display_seconds}s",
                 disambiguation_canvas.close,
@@ -712,9 +712,11 @@ class GazeOcrActions:
                         )
                     else:
                         raise RuntimeError(f"Type not recognized: {type}")
-            cron.after(
-                f"{settings.get('user.ocr_debug_display_seconds')}s", debug_canvas.close
-            )
+            if debug_canvas:
+                cron.after(
+                    f"{settings.get('user.ocr_debug_display_seconds')}s",
+                    debug_canvas.close,
+                )
 
         # Increased size slightly for canvas to ensure everything will be inside canvas
         canvas_rect = contents_rect.copy()
