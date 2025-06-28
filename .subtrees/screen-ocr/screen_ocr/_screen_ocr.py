@@ -9,7 +9,6 @@ from itertools import islice
 from typing import (
     Any,
     Optional,
-    Union,
 )
 
 try:
@@ -106,7 +105,7 @@ class Reader:
     @classmethod
     def create_reader(
         cls,
-        backend: Union[str, _base.OcrBackend],
+        backend: str | _base.OcrBackend,
         tesseract_data_path=None,
         tesseract_command=None,
         threshold_function="local_otsu",

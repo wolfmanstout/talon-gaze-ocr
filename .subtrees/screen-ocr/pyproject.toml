@@ -47,4 +47,4 @@ select = [
     # isort
     "I",
 ]
-ignore = ["E501", "SIM105", "SIM116", "UP007"]
+ignore = ["E501", "SIM105", "SIM116", "UP045"]
