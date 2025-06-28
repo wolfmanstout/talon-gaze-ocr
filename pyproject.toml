@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[tool.ruff]
+extend-exclude = [".subtrees/rapidfuzz"]
+
 [tool.ruff.lint]
 select = [
     # pycodestyle
@@ -21,7 +24,7 @@ select = [
     # isort
     "I",
 ]
-ignore = ["E501", "SIM105", "SIM116", "UP007"]
+ignore = ["E501", "SIM105", "SIM116", "UP045"]
 
 [tool.pyright]
 reportSelfClsParameterName = false
