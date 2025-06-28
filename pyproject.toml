@@ -27,4 +27,8 @@ select = [
 ignore = ["E501", "SIM105", "SIM116", "UP045"]
 
 [tool.pyright]
-reportSelfClsParameterName = false
+pythonVersion = "3.11"
+# Talon classes don't use self so ignore the associated errors
+reportGeneralTypeIssues = false
+# Talon can't be installed in CI so ignore source errors
+reportMissingImports = false
