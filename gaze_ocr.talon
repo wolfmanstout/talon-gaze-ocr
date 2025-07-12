@@ -84,8 +84,8 @@ middle (touch | click) <user.timestamped_prose>$:
 # "select apple" to select the word "apple".
 # "select apple through banana" to select the phrase "apple pear banana".
 # "select through before apple" to select from the text cursor position to before the word "apple".
-{user.ocr_common_actions} <user.prose_range>$:
-    user.perform_ocr_action(ocr_common_actions, "", prose_range)
+{user.ocr_common_actions} [{user.ocr_modifiers}] <user.prose_range>$:
+    user.perform_ocr_action(ocr_common_actions, ocr_modifiers or "", prose_range)
 # Examples: 
 # "take seen apple" to select the word "apple".
 # "copy seen apple through banana" to copy the phrase "apple pear banana".
