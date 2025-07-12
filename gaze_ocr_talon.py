@@ -120,32 +120,7 @@ mod.tag(
 )
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
 mod.list("ocr_modifiers", desc="Modifiers to perform on selected text.")
-ctx.lists["self.ocr_actions"] = {
-    "take": "select",
-    "copy": "copy",
-    "carve": "cut",
-    "paste to": "paste",
-    "paste link to": "paste_link",
-    "clear": "delete",
-    "change": "delete",
-    "delete": "delete_with_whitespace",
-    "chuck": "delete_with_whitespace",
-    "cap": "capitalize",
-    "no cap": "uncapitalize",
-    "no caps": "uncapitalize",
-    "lower": "lowercase",
-    "upper": "uppercase",
-    # Note: the following are not defined by default in knausj.
-    "bold": "bold",
-    "italic": "italic",
-    "strikethrough": "strikethrough",
-    "number": "number_list",
-    "bullet": "bullet_list",
-    "link": "link",
-}
-ctx.lists["self.ocr_modifiers"] = {
-    "all": "selectAll",
-}
+mod.list("onscreen_ocr_text", desc="Selection list for onscreen text.")
 
 
 def paste_link() -> None:
