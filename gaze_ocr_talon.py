@@ -119,6 +119,9 @@ mod.tag(
     desc="Tag for disambiguating between different onscreen matches.",
 )
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
+mod.list(
+    "ocr_common_actions", desc="Common actions that can be used without 'seen'/'scene'."
+)
 mod.list("ocr_modifiers", desc="Modifiers to perform on selected text.")
 mod.list("onscreen_ocr_text", desc="Selection list for onscreen text.")
 
