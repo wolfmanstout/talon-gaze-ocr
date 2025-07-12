@@ -5,7 +5,7 @@ import sys
 from collections.abc import Callable, Iterable, Sequence
 from math import floor
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal, Optional
 
 import numpy as np
 from talon import Context, Module, actions, app, cron, fs, screen, settings
@@ -120,34 +120,11 @@ mod.tag(
     desc="Tag for disambiguating between different onscreen matches.",
 )
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
+mod.list(
+    "ocr_common_actions", desc="Common actions that can be used without 'seen'/'scene'."
+)
 mod.list("ocr_modifiers", desc="Modifiers to perform on selected text.")
 mod.list("onscreen_ocr_text", desc="Selection list for onscreen text.")
-ctx.lists["self.ocr_actions"] = {
-    "take": "select",
-    "copy": "copy",
-    "carve": "cut",
-    "paste to": "paste",
-    "paste link to": "paste_link",
-    "clear": "delete",
-    "change": "delete",
-    "delete": "delete_with_whitespace",
-    "chuck": "delete_with_whitespace",
-    "cap": "capitalize",
-    "no cap": "uncapitalize",
-    "no caps": "uncapitalize",
-    "lower": "lowercase",
-    "upper": "uppercase",
-    # Note: the following are not defined by default in knausj.
-    "bold": "bold",
-    "italic": "italic",
-    "strikethrough": "strikethrough",
-    "number": "number_list",
-    "bullet": "bullet_list",
-    "link": "link",
-}
-ctx.lists["self.ocr_modifiers"] = {
-    "all": "selectAll",
-}
 
 
 def paste_link() -> None:
@@ -194,7 +171,7 @@ _OCR_MODIFIERS: dict[str, Callable[[], None]] = {
 
 
 @ctx.dynamic_list("user.onscreen_ocr_text")
-def onscreen_ocr_text(phrase) -> Union[str, list[str], dict[str, str]]:
+def onscreen_ocr_text(phrase) -> str | list[str] | dict[str, str]:
     global gaze_ocr_controller, punctuation_table
     reset_disambiguation()
     gaze_ocr_controller.read_nearby((phrase[0].start, phrase[-1].end))
