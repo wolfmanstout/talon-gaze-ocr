@@ -625,15 +625,20 @@ class GazeOcrActions:
     # Actions related to the UI.
     #
 
-    def show_ocr_overlay(type: str, near: Optional[TimestampedText] = None):
-        """Displays overlay over primary screen.
+    def show_ocr_overlay(
+        type: str, near: Optional[TimestampedText] = None, refresh: bool = True
+    ):
+        """Displays OCR debug overlay over primary screen, refreshing the OCR nearby
+        where the user is looking by default.
 
-        Reads nearby gaze when the near parameter is spoken."""
+        If the near parameter is provided, refreshes OCR nearby where the user is
+        looking when they spoke the near parameter."""
         reset_disambiguation()
-        if near:
-            gaze_ocr_controller.read_nearby((near.start, near.end))
-        else:
-            gaze_ocr_controller.read_nearby()
+        if refresh:
+            if near:
+                gaze_ocr_controller.read_nearby((near.start, near.end))
+            else:
+                gaze_ocr_controller.read_nearby()
         actions.user.show_ocr_overlay_for_query(type)
 
     def show_ocr_overlay_for_query(type: str, query: str = ""):
