@@ -5,7 +5,12 @@ description = "Library for processing screen contents using OCR"
 readme = "README.md"
 authors = [{ name = "James Stout" }]
 requires-python = ">=3.11"
-dependencies = ["pillow>=9.0", "rapidfuzz"]
+dependencies = [
+    "dxcam>=0.0.5; sys_platform == 'win32'",
+    "mss>=10.0.0; sys_platform == 'darwin'",
+    "pillow>=9.0",
+    "rapidfuzz",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
