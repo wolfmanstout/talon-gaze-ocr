@@ -1,6 +1,6 @@
 [project]
 name = "screen-ocr"
-version = "0.5.0"
+version = "0.6.0"
 description = "Library for processing screen contents using OCR"
 readme = "README.md"
 authors = [{ name = "James Stout" }]
