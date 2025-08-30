@@ -1,6 +1,6 @@
 [project]
 name = "screen-ocr"
-version = "0.6.0"
+version = "0.7.0"
 description = "Library for processing screen contents using OCR"
 readme = "README.md"
 authors = [{ name = "James Stout" }]
@@ -22,7 +22,13 @@ Homepage = "https://github.com/wolfmanstout/screen-ocr"
 
 [project.optional-dependencies]
 tesseract = ["numpy", "pytesseract", "pandas", "scikit-image"]
-winrt = ["winsdk"]
+winrt = [
+    "winrt-windows-foundation>=3.2.1",
+    "winrt-windows-foundation-collections>=3.2.1",
+    "winrt-windows-graphics-imaging>=3.2.1",
+    "winrt-windows-media-ocr>=3.2.1",
+    "winrt-windows-storage-streams>=3.2.1",
+]
 easyocr = ["easyocr", "numpy"]
 
 [dependency-groups]
