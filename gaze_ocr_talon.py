@@ -1,6 +1,7 @@
 import glob
 import logging
 import sys
+import time
 from collections.abc import Callable, Iterable, Sequence
 from math import floor
 from pathlib import Path
@@ -629,38 +630,87 @@ class GazeOcrActions:
 
         contents_rect = screen_ocr.to_rect(contents.bounding_box)
 
+        # Capture start time for synchronized fading
+        start_time = time.time()
+
         def on_draw(c):
-            debug_color = get_debug_color(has_light_background(contents.screenshot))
-            # Show bounding box.
-            c.paint.style = c.paint.Style.STROKE
-            c.paint.color = debug_color
-            c.draw_rect(contents_rect)
-            if contents.screen_coordinates:
-                c.paint.style = c.paint.Style.STROKE
-                c.paint.color = debug_color
-                c.draw_circle(
-                    contents.screen_coordinates[0],
-                    contents.screen_coordinates[1],
-                    contents.search_radius,
-                )
-            if query:
-                c.paint.typeface = ""
-                c.paint.textsize = 30
+            light_bg = has_light_background(contents.screenshot)
+            debug_color = get_debug_color(light_bg)
+
+            if type == "text":
+                # Text overlay needs opaque background with fading to be readable
+                # Fade timing configuration
+                fade_in_duration = 0.5  # seconds to fade in
+                fade_out_duration = 0.6  # seconds to fade out
+                total_cycle_time = fade_in_duration + fade_out_duration  # 1.1s total
+                # We use a period slightly longer than 1 second to avoid race condition
+                # with typical whole number values of ocr_debug_display_seconds.
+
+                elapsed_time = time.time() - start_time
+                cycle_time = elapsed_time % total_cycle_time
+
+                # Calculate alpha (0.0 to 1.0) based on cycle position
+                if cycle_time < fade_in_duration:
+                    # Fade in: 0 to 1 over fade_in_duration
+                    alpha = cycle_time / fade_in_duration
+                else:
+                    # Fade out: 1 to 0 over fade_out_duration
+                    alpha = 1.0 - ((cycle_time - fade_in_duration) / fade_out_duration)
+
+                # Clamp alpha to valid range
+                alpha = max(0.0, min(1.0, alpha))
+
+                bg_color = "FFFFFF" if light_bg else "000000"
+                alpha_byte = int(alpha * 255)
+
+                # Draw opaque background over the contents area with alpha
                 c.paint.style = c.paint.Style.FILL
-                c.paint.color = "FFFFFF"
-                c.draw_text(query, x=screen.main().x + screen.main().width / 2, y=20)
+                c.paint.color = f"{bg_color}{alpha_byte:02X}"
+                c.draw_rect(contents_rect)
+
+                # Show bounding box with alpha
                 c.paint.style = c.paint.Style.STROKE
-                c.paint.color = "000000"
-                c.draw_text(query, x=screen.main().x + screen.main().width / 2, y=20)
-            for line in contents.result.lines:
-                for word in line.words:
-                    if type == "text":
+                c.paint.color = f"{debug_color}{alpha_byte:02X}"
+                c.draw_rect(contents_rect)
+                if contents.screen_coordinates:
+                    c.paint.style = c.paint.Style.STROKE
+                    c.paint.color = f"{debug_color}{alpha_byte:02X}"
+                    c.draw_circle(
+                        contents.screen_coordinates[0],
+                        contents.screen_coordinates[1],
+                        contents.search_radius,
+                    )
+
+                # Draw text with alpha
+                for line in contents.result.lines:
+                    for word in line.words:
                         c.paint.typeface = ""
                         c.paint.textsize = floor(word.height)
                         c.paint.style = c.paint.Style.FILL
-                        c.paint.color = debug_color
-                        c.draw_text(word.text, word.left, word.top)
-                    elif type == "boxes":
+                        c.paint.color = f"{debug_color}{alpha_byte:02X}"
+                        # Position baseline at ~80% down from top of OCR bounding box
+                        c.draw_text(
+                            word.text, word.left, word.top + (word.height * 0.8)
+                        )
+
+            elif type == "boxes":
+                # Box outlines don't interfere with text, so no background or fading needed
+                # Show bounding box
+                c.paint.style = c.paint.Style.STROKE
+                c.paint.color = debug_color
+                c.draw_rect(contents_rect)
+                if contents.screen_coordinates:
+                    c.paint.style = c.paint.Style.STROKE
+                    c.paint.color = debug_color
+                    c.draw_circle(
+                        contents.screen_coordinates[0],
+                        contents.screen_coordinates[1],
+                        contents.search_radius,
+                    )
+
+                # Draw word boxes
+                for line in contents.result.lines:
+                    for word in line.words:
                         c.paint.style = c.paint.Style.STROKE
                         c.paint.color = debug_color
                         c.draw_rect(
@@ -671,8 +721,9 @@ class GazeOcrActions:
                                 height=word.height,
                             )
                         )
-                    else:
-                        raise RuntimeError(f"Type not recognized: {type}")
+
+            else:
+                raise RuntimeError(f"Type not recognized: {type}")
             if debug_canvas:
                 cron.after(
                     f"{settings.get('user.ocr_debug_display_seconds')}s",
@@ -688,7 +739,6 @@ class GazeOcrActions:
 
         debug_canvas = Canvas.from_rect(canvas_rect)
         debug_canvas.register("draw", on_draw)
-        debug_canvas.freeze()
 
     def choose_gaze_ocr_option(index: int):
         """Disambiguate with the provided index."""
