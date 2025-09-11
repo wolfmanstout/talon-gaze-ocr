@@ -76,7 +76,7 @@ mod.setting(
 mod.setting(
     "ocr_debug_display_seconds",
     type=float,
-    default=2,
+    default=3,
     desc="Adjust how long debugging display is shown.",
 )
 mod.setting(
@@ -662,10 +662,11 @@ class GazeOcrActions:
                 # Text overlay needs opaque background with fading to be readable
                 # Fade timing configuration
                 fade_in_duration = 0.5  # seconds to fade in
-                fade_out_duration = 0.6  # seconds to fade out
-                total_cycle_time = fade_in_duration + fade_out_duration  # 1.1s total
-                # We use a period slightly longer than 1 second to avoid race condition
-                # with typical whole number values of ocr_debug_display_seconds.
+                hold_duration = 0.5  # seconds to hold at full opacity
+                fade_out_duration = 0.5  # seconds to fade out
+                total_cycle_time = (
+                    fade_in_duration + hold_duration + fade_out_duration
+                )  # 1.5s total
 
                 elapsed_time = time.time() - start_time
                 cycle_time = elapsed_time % total_cycle_time
@@ -674,9 +675,13 @@ class GazeOcrActions:
                 if cycle_time < fade_in_duration:
                     # Fade in: 0 to 1 over fade_in_duration
                     alpha = cycle_time / fade_in_duration
+                elif cycle_time < fade_in_duration + hold_duration:
+                    # Hold: stay at 1.0
+                    alpha = 1.0
                 else:
                     # Fade out: 1 to 0 over fade_out_duration
-                    alpha = 1.0 - ((cycle_time - fade_in_duration) / fade_out_duration)
+                    fade_start = fade_in_duration + hold_duration
+                    alpha = 1.0 - ((cycle_time - fade_start) / fade_out_duration)
 
                 # Clamp alpha to valid range
                 alpha = max(0.0, min(1.0, alpha))
