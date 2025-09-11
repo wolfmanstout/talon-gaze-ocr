@@ -77,3 +77,7 @@ Key settings are defined as Talon module settings:
 - Requires `community` repository as sibling directory for full functionality
 - Only works on main screen due to current limitations
 - Eye tracker is optional but significantly improves accuracy
+
+## Talon documentation
+
+@~/dotfiles/claude/talon.md
