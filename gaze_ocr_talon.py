@@ -94,7 +94,7 @@ mod.setting(
     "ocr_gaze_point_padding",
     type=int,
     default=200,
-    desc="How much padding is applied to gaze point when searching for text.",
+    desc="How much padding is applied to gaze point when taking screenshots for debug overlay commands.",
 )
 mod.setting(
     "ocr_light_background_debug_color",
@@ -677,14 +677,6 @@ class GazeOcrActions:
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.color = f"{debug_color}{alpha_byte:02X}"
                 c.draw_rect(contents_rect)
-                if contents.screen_coordinates:
-                    c.paint.style = c.paint.Style.STROKE
-                    c.paint.color = f"{debug_color}{alpha_byte:02X}"
-                    c.draw_circle(
-                        contents.screen_coordinates[0],
-                        contents.screen_coordinates[1],
-                        contents.search_radius,
-                    )
 
                 # Draw text with alpha
                 for line in contents.result.lines:
@@ -704,14 +696,6 @@ class GazeOcrActions:
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.color = debug_color
                 c.draw_rect(contents_rect)
-                if contents.screen_coordinates:
-                    c.paint.style = c.paint.Style.STROKE
-                    c.paint.color = debug_color
-                    c.draw_circle(
-                        contents.screen_coordinates[0],
-                        contents.screen_coordinates[1],
-                        contents.search_radius,
-                    )
 
                 # Draw word boxes
                 for line in contents.result.lines:
