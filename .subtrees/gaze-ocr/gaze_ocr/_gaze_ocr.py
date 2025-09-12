@@ -148,7 +148,6 @@ class Controller:
         self.app_actions = app_actions
         self.save_data_directory = save_data_directory
         self.gaze_box_padding = gaze_box_padding
-        self._change_radius = 10
         self._executor = futures.ThreadPoolExecutor(max_workers=1)
         self._future = None
         self._ocr_cache = OcrCache(
