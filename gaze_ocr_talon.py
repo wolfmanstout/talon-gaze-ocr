@@ -640,9 +640,11 @@ class GazeOcrActions:
                 gaze_ocr_controller.read_nearby((near.start, near.end))
             else:
                 gaze_ocr_controller.read_nearby()
-        actions.user.show_ocr_overlay_for_query(type)
+        actions.user.show_ocr_overlay_for_query(type, "", True)
 
-    def show_ocr_overlay_for_query(type: str, query: str = ""):
+    def show_ocr_overlay_for_query(
+        type: str, query: str = "", persistent: bool = False
+    ):
         """Display overlay over primary screen, displaying the query."""
         global debug_canvas
         if debug_canvas:
@@ -734,7 +736,7 @@ class GazeOcrActions:
 
             else:
                 raise RuntimeError(f"Type not recognized: {type}")
-            if debug_canvas:
+            if debug_canvas and not persistent:
                 cron.after(
                     f"{settings.get('user.ocr_debug_display_seconds')}s",
                     debug_canvas.close,
@@ -749,6 +751,13 @@ class GazeOcrActions:
 
         debug_canvas = Canvas.from_rect(canvas_rect)
         debug_canvas.register("draw", on_draw)
+
+    def hide_ocr_overlay():
+        """Hide any visible OCR overlay."""
+        global debug_canvas
+        if debug_canvas:
+            debug_canvas.close()
+            debug_canvas = None
 
     def choose_gaze_ocr_option(index: int):
         """Disambiguate with the provided index."""
