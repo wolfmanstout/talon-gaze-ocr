@@ -10,7 +10,7 @@ from typing import Literal, Optional
 
 import numpy as np
 from talon import Context, Module, actions, app, cron, fs, screen, settings
-from talon.canvas import Canvas
+from talon.canvas import Canvas, MouseEvent
 from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
 
@@ -649,6 +649,7 @@ class GazeOcrActions:
         global debug_canvas
         if debug_canvas:
             debug_canvas.close()
+            debug_canvas = None
         contents = gaze_ocr_controller.latest_screen_contents()
 
         contents_rect = screen_ocr.to_rect(contents.bounding_box)
@@ -737,9 +738,16 @@ class GazeOcrActions:
             else:
                 raise RuntimeError(f"Type not recognized: {type}")
             if debug_canvas and not persistent:
+
+                def close_debug_canvas():
+                    global debug_canvas
+                    if debug_canvas:
+                        debug_canvas.close()
+                        debug_canvas = None
+
                 cron.after(
                     f"{settings.get('user.ocr_debug_display_seconds')}s",
-                    debug_canvas.close,
+                    close_debug_canvas,
                 )
 
         # Increased size slightly for canvas to ensure everything will be inside canvas
@@ -750,7 +758,16 @@ class GazeOcrActions:
         canvas_rect.center = center
 
         debug_canvas = Canvas.from_rect(canvas_rect)
+        debug_canvas.blocks_mouse = True
         debug_canvas.register("draw", on_draw)
+
+        def on_mouse(e: MouseEvent):
+            global debug_canvas
+            if e.event == "mousedown" and debug_canvas:  # Any mouse button click
+                debug_canvas.close()
+                debug_canvas = None
+
+        debug_canvas.register("mouse", on_mouse)
 
     def hide_ocr_overlay():
         """Hide any visible OCR overlay."""
