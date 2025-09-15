@@ -69,6 +69,12 @@ Key settings are defined as Talon module settings:
 
 ## Important Notes
 
+- Two branches are maintained: `main` and `beta`. Beta is used for any features
+  which depend on the Talon Beta, but is otherwise kept in sync with main. Most
+  commits should be applied first to main and then main should be merged into
+  beta. Suggest switching to main before implementing a feature if not already
+  on main. At commit time, if changes have been made already on the beta branch,
+  stash these and switch to main to commit.
 - Requires Talon restart when updated or settings changed (unlike most Talon scripts)
 - Requires `community` repository as sibling directory for full functionality
 - Only works on main screen due to current limitations
