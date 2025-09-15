@@ -4,7 +4,6 @@ import re
 import sys
 import time
 from collections.abc import Callable, Iterable, Sequence
-from math import floor
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -360,6 +359,55 @@ def get_debug_color(has_light_background: bool):
     )
 
 
+def calculate_optimal_text_size(
+    paint, text: str, bbox_width: float, bbox_height: float
+) -> float:
+    """Calculate optimal font size to fit text within bounding box using Paint.measure_text().
+
+    Uses scaling approach with existing Paint object to avoid Font creation overhead.
+    Maximizes font size while ensuring text fits within both width and height constraints.
+
+    Args:
+        paint: Skia Paint object to use for measurements
+        text: Text string to size
+        bbox_width: Target bounding box width
+        bbox_height: Target bounding box height
+
+    Returns:
+        Optimal font size as float
+    """
+    # Store original text size to restore later
+    original_size = paint.textsize
+
+    # Use a reasonable base size for measurement
+    base_size = 16
+    paint.textsize = base_size
+
+    try:
+        width, bounds = paint.measure_text(text)
+
+        if width <= 0 or bounds.height <= 0:
+            return bbox_height  # Fallback to using bbox height as font size
+
+        # Calculate scaling factors with small safety margin (95% of available space)
+        safety_factor = 0.95
+        width_scale = (bbox_width * safety_factor) / width
+        height_scale = (bbox_height * safety_factor) / bounds.height
+
+        # Use the more restrictive constraint
+        scale = min(width_scale, height_scale)
+        optimal_size = base_size * scale
+
+        # Ensure minimum readable size
+        optimal_size = max(optimal_size, 8)
+
+        return optimal_size
+
+    finally:
+        # Always restore original text size
+        paint.textsize = original_size
+
+
 disambiguation_canvas = None
 debug_canvas = None
 ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
@@ -706,7 +754,9 @@ class GazeOcrActions:
                 for line in contents.result.lines:
                     for word in line.words:
                         c.paint.typeface = ""
-                        c.paint.textsize = floor(word.height)
+                        c.paint.textsize = calculate_optimal_text_size(
+                            c.paint, word.text, word.width, word.height
+                        )
                         c.paint.style = c.paint.Style.FILL
                         c.paint.color = f"{debug_color}{alpha_byte:02X}"
                         # Position baseline at ~80% down from top of OCR bounding box
