@@ -5,14 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 **Linting and Formatting:**
-- Run Ruff linter and pyright type checking: `pre-commit run --all-files`. Rerun if it reports issues fixed or files modified.
 
-**Integration Testing**:
-- Push changes to local Talon user directory with `sync_talon_repo`.
-- Wait a couple seconds for Talon to load the changes.
-- Use `tail /mnt/c/Users/james/AppData/Roaming/talon/talon.log` to view recent logs (adding flags as needed to view more logs).
-- Changed files will show up in logs as `DEBUG [~] c:\path\to\file`, with possible `WARNING` or `ERROR` lines shown afterwards.
-- The user will need to manually test any changed functionality.
+Pre-commit will run Ruff and pycheck automatically when committing. Don't
+proceed until the commit is successful. Many Ruff issues will be fixed
+automatically, so if that fails simply retry the commit.
 
 ## Architecture Overview
 
