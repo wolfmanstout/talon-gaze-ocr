@@ -767,12 +767,14 @@ class GazeOcrActions:
             else:
                 raise RuntimeError(f"Type not recognized: {type}")
             if debug_canvas and not persistent:
+                canvas_to_close = debug_canvas
 
                 def close_debug_canvas():
                     global debug_canvas
-                    if debug_canvas:
-                        debug_canvas.close()
-                        debug_canvas = None
+                    if canvas_to_close:
+                        canvas_to_close.close()
+                        if debug_canvas == canvas_to_close:
+                            debug_canvas = None
 
                 cron.after(
                     f"{settings.get('user.ocr_debug_display_seconds')}s",
