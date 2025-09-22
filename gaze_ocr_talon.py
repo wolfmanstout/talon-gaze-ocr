@@ -279,11 +279,12 @@ def reload_backend(name, flags):
             if " " not in spoken
         ],
     )
+    # Add common OCR errors to homophones.
     add_homophones(
         homophones,
         [
-            # 0k is not actually a homophone but is frequently produced by OCR.
             ("ok", "okay", "0k"),
+            ("ally", "a11y"),
         ],
     )
     setting_ocr_use_talon_backend = settings.get("user.ocr_use_talon_backend")
