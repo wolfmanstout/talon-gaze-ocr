@@ -32,3 +32,6 @@ pythonVersion = "3.11"
 reportGeneralTypeIssues = false
 # Talon can't be installed in CI so ignore source errors
 reportMissingImports = false
+extraPaths = [".subtrees/gaze-ocr", ".subtrees/screen-ocr", ".subtrees/rapidfuzz/src"]
+# Override auto-exclude for owned subtrees, but keep rapidfuzz excluded
+exclude = [".subtrees/rapidfuzz"]
