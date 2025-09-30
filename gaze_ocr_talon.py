@@ -421,6 +421,7 @@ def reset_disambiguation():
         disambiguation_generator, \
         disambiguation_canvas, \
         debug_canvas
+    ctx.tags = []
     ambiguous_matches = None
     disambiguation_generator = None
     hide_canvas = disambiguation_canvas or debug_canvas
@@ -466,9 +467,16 @@ def show_disambiguation():
             "user.ocr_disambiguation_display_seconds"
         )
         if setting_ocr_disambiguation_display_seconds and disambiguation_canvas:
+            current_canvas = disambiguation_canvas
+
+            def timeout_disambiguation():
+                global disambiguation_canvas
+                if disambiguation_canvas and disambiguation_canvas == current_canvas:
+                    reset_disambiguation()
+
             cron.after(
                 f"{setting_ocr_disambiguation_display_seconds}s",
-                disambiguation_canvas.close,
+                timeout_disambiguation,
             )
 
     ctx.tags = ["user.gaze_ocr_disambiguation"]
@@ -789,18 +797,17 @@ class GazeOcrActions:
             else:
                 raise RuntimeError(f"Type not recognized: {type}")
             if debug_canvas and not persistent:
-                canvas_to_close = debug_canvas
+                current_canvas = debug_canvas
 
-                def close_debug_canvas():
+                def timeout_debug_canvas():
                     global debug_canvas
-                    if canvas_to_close:
-                        canvas_to_close.close()
-                        if debug_canvas == canvas_to_close:
-                            debug_canvas = None
+                    if debug_canvas and debug_canvas == current_canvas:
+                        debug_canvas.close()
+                        debug_canvas = None
 
                 cron.after(
                     f"{settings.get('user.ocr_debug_display_seconds')}s",
-                    close_debug_canvas,
+                    timeout_debug_canvas,
                 )
 
         # Increased size slightly for canvas to ensure everything will be inside canvas
@@ -856,7 +863,6 @@ class GazeOcrActions:
 
     def hide_gaze_ocr_options():
         """Hide the disambiguation UI."""
-        ctx.tags = []
         reset_disambiguation()
 
     #
