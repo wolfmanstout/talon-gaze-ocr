@@ -28,7 +28,11 @@ ignore = ["E501", "SIM105", "SIM116", "UP045"]
 
 [tool.pyright]
 pythonVersion = "3.11"
-# Talon classes don't use self so ignore the associated errors
+# Talon action class methods don't use self so ignore the associated errors and warnings
 reportGeneralTypeIssues = false
+reportSelfClsParameterName = false
 # Talon can't be installed in CI so ignore source errors
 reportMissingImports = false
+extraPaths = [".subtrees/gaze-ocr", ".subtrees/screen-ocr", ".subtrees/rapidfuzz/src"]
+# Override auto-exclude for owned subtrees, but keep rapidfuzz excluded
+exclude = [".subtrees/rapidfuzz"]

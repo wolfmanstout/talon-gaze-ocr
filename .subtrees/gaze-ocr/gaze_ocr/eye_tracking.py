@@ -75,6 +75,7 @@ class EyeTracker:
     def disconnect(self):
         if not self.is_connected:
             return
+        assert self._host is not None
         self._host.DisableConnection()
         self._host = None
         self._gaze_point = None
@@ -125,6 +126,8 @@ class EyeTracker:
 
     def get_gaze_point(self):
         if self.has_gaze_point():
+            assert self._gaze_point is not None
+            assert self._screen_scale is not None
             return (
                 self._gaze_point[0] * self._screen_scale[0],
                 self._gaze_point[1] * self._screen_scale[1],
@@ -142,6 +145,7 @@ class EyeTracker:
         if not self.has_gaze_point():
             print("No valid gaze point.")
             return
+        assert self._gaze_point is not None
         print(f"Gaze point: ({self._gaze_point[0]:f}, {self._gaze_point[1]:f})")
 
     def move_to_gaze_point(self, offset=(0, 0)):
