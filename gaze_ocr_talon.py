@@ -32,8 +32,8 @@ saved_path = sys.path.copy()
 try:
     sys.path.extend([path for path in package_paths if path not in sys.path])
     import gaze_ocr
-    import gaze_ocr.talon
     import screen_ocr  # dependency of gaze-ocr
+    from gaze_ocr import talon_adapter
 finally:
     # Restore the unmodified path.
     sys.path = saved_path.copy()
@@ -256,7 +256,7 @@ def get_knausj_homophones():
 def reload_backend(name, flags):
     # Initialize eye tracking and OCR.
     global tracker, ocr_reader, gaze_ocr_controller
-    tracker = gaze_ocr.talon.TalonEyeTracker()
+    tracker = talon_adapter.TalonEyeTracker()
     # Note: tracker is connected automatically in the constructor.
     if not settings.get("user.ocr_connect_tracker"):
         tracker.disconnect()
@@ -304,9 +304,9 @@ def reload_backend(name, flags):
     gaze_ocr_controller = gaze_ocr.Controller(
         ocr_reader,
         tracker,
-        mouse=gaze_ocr.talon.Mouse(),
-        keyboard=gaze_ocr.talon.Keyboard(),
-        app_actions=gaze_ocr.talon.AppActions(),
+        mouse=talon_adapter.Mouse(),
+        keyboard=talon_adapter.Keyboard(),
+        app_actions=talon_adapter.AppActions(),
         save_data_directory=settings.get("user.ocr_logging_dir"),
         gaze_box_padding=settings.get("user.ocr_gaze_box_padding"),
         fallback_when_no_eye_tracker=gaze_ocr.EyeTrackerFallback[

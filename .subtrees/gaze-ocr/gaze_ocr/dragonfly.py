@@ -1,3 +1,6 @@
+# Avoid type checker confusion with the module name matching this file name.
+# A cleaner fix would be to rename this file, but that would be a breaking change.
+# pyright: reportAttributeAccessIssue=false, reportCallIssue=false
 import dragonfly
 
 

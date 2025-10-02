@@ -7,10 +7,7 @@ from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import islice
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any, Optional
 
 try:
     from rapidfuzz import fuzz
@@ -62,9 +59,14 @@ except ImportError:
 # Represented as [left, top, right, bottom] pixel coordinates
 BoundingBox = tuple[int, int, int, int]
 
+# Callback function for debugging image processing steps.
+# Parameters: (name: str, image: Any)
+DebugImageCallback = Callable[[str, Any], None]
+
 if Rect:
 
-    def to_rect(bounding_box: BoundingBox) -> Rect:
+    def to_rect(bounding_box: BoundingBox) -> Any:
+        assert Rect is not None
         return Rect(
             x=bounding_box[0],
             y=bounding_box[1],
@@ -72,7 +74,7 @@ if Rect:
             height=bounding_box[3] - bounding_box[1],
         )
 
-    def to_bounding_box(rect_talon: Rect) -> BoundingBox:
+    def to_bounding_box(rect_talon: Any) -> BoundingBox:
         return (
             rect_talon.x,
             rect_talon.y,
@@ -115,15 +117,15 @@ class Reader:
     def create_reader(
         cls,
         backend: str | _base.OcrBackend,
-        tesseract_data_path=None,
-        tesseract_command=None,
-        threshold_function="local_otsu",
-        threshold_block_size=41,
-        correction_block_size=31,
-        convert_grayscale=True,
-        shift_channels=True,
-        debug_image_callback=None,
-        language_tag=None,
+        tesseract_data_path: Optional[str] = None,
+        tesseract_command: Optional[str] = None,
+        threshold_function: Optional[str | Callable[[Any], Any]] = "local_otsu",
+        threshold_block_size: Optional[int] = 41,
+        correction_block_size: Optional[int] = 31,
+        convert_grayscale: Optional[bool] = True,
+        shift_channels: Optional[bool] = True,
+        debug_image_callback: Optional[DebugImageCallback] = None,
+        language_tag: Optional[str] = None,
         **kwargs,
     ) -> "Reader":
         """Create reader with specified backend."""
@@ -134,6 +136,8 @@ class Reader:
                 raise ValueError(
                     "Tesseract backend unavailable. To install, run pip install screen-ocr[tesseract]."
                 )
+            assert convert_grayscale is not None
+            assert shift_channels is not None
             backend = _tesseract.TesseractBackend(
                 tesseract_data_path=tesseract_data_path,
                 tesseract_command=tesseract_command,
@@ -144,14 +148,14 @@ class Reader:
                 shift_channels=shift_channels,
                 debug_image_callback=debug_image_callback,
             )
-            defaults = {
+            tesseract_defaults: dict[str, Any] = {
                 "resize_factor": 2,
                 "margin": 50,
             }
             return cls(
                 backend,
                 debug_image_callback=debug_image_callback,
-                **dict(defaults, **kwargs),
+                **dict(tesseract_defaults, **kwargs),
             )
         if backend == "easyocr":
             if not _easyocr:
@@ -171,10 +175,11 @@ class Reader:
                 raise ValueError(
                     "WinRT backend unavailable. To install, run pip install screen-ocr[winrt]."
                 ) from e
+            winrt_defaults: dict[str, Any] = {"resize_factor": 2}
             return cls(
                 backend,
                 debug_image_callback=debug_image_callback,
-                **dict({"resize_factor": 2}, **kwargs),
+                **dict(winrt_defaults, **kwargs),
             )
         if backend == "talon":
             if not _talon:
@@ -191,7 +196,7 @@ class Reader:
         margin: int = 0,
         resize_factor: int = 1,
         resize_method=None,  # Pillow resize method
-        debug_image_callback: Optional[Callable[[str, Any], None]] = None,
+        debug_image_callback: Optional[DebugImageCallback] = None,
         confidence_threshold: float = 0.75,
         radius: int = 200,  # screenshot "radius"
         search_radius: int = 125,

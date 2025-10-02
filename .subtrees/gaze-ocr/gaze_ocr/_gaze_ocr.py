@@ -98,6 +98,7 @@ class OcrCache:
         ):
             # Assume that bounding box is a subset if the time range is a subset.
             # Don't update the cache, in case multiple subsets are requested.
+            assert self._last_screen_contents is not None
             if bounding_box:
                 return self._last_screen_contents.cropped(bounding_box)
             else:
@@ -602,6 +603,23 @@ class Controller:
                 click_offset_right=click_offset_right,
                 selection_position=self.SelectionPosition.NONE,
             )
+
+            location = yield from self._choose_cursor_location(
+                disambiguate=disambiguate,
+                matches=locations,
+            )
+            if not location:
+                return None
+            location.move_text_cursor()
+
+            whitespace_between_matches = whitespace_between_matches_list[
+                locations.index(location)
+            ]
+            if whitespace_between_matches and words[-suffix_length - 1] == " ":
+                return (prefix_length, len(words) - suffix_length - 1)
+            else:
+                return (prefix_length, len(words) - suffix_length)
+
         else:
             prefix_locations = self._plan_cursor_locations(
                 prefix_matches,
@@ -617,27 +635,21 @@ class Controller:
                 click_offset_right=click_offset_right,
                 selection_position=self.SelectionPosition.NONE,
             )
-            locations = list(prefix_locations) + list(suffix_locations)
-        location = yield from self._choose_cursor_location(
-            disambiguate=disambiguate,
-            matches=locations,
-        )
-        if not location:
-            return None
-        location.move_text_cursor()
-        if adjacent_prefix_matches:
-            whitespace_between_matches = whitespace_between_matches_list[
-                locations.index(location)
-            ]
-            if whitespace_between_matches and words[-suffix_length - 1] == " ":
-                return (prefix_length, len(words) - suffix_length - 1)
+            locations = [*prefix_locations, *suffix_locations]
+
+            location = yield from self._choose_cursor_location(
+                disambiguate=disambiguate,
+                matches=locations,
+            )
+            if not location:
+                return None
+            location.move_text_cursor()
+
+            if location in prefix_locations:
+                return (prefix_length, len(words))
             else:
-                return (prefix_length, len(words) - suffix_length)
-        elif location in prefix_locations:
-            return (prefix_length, len(words))
-        else:
-            assert location in suffix_locations
-            return (0, len(words) - suffix_length)
+                assert location in suffix_locations
+                return (0, len(words) - suffix_length)
 
     def select_text(
         self,
@@ -814,7 +826,7 @@ class Controller:
                     location[-1].end_coordinates,
                 )
         else:
-            filter_function = None
+            filter_function = None  # type: ignore[assignment]
         suffix_matches, suffix_length = screen_contents.find_longest_matching_suffix(
             words, filter_location_function=filter_function
         )

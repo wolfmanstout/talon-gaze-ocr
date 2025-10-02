@@ -1,6 +1,7 @@
 import asyncio
 import importlib.util
 from concurrent import futures
+from typing import Optional
 
 from . import _base
 
@@ -11,7 +12,7 @@ if not importlib.util.find_spec("winrt"):
 
 
 class WinRtBackend(_base.OcrBackend):
-    def __init__(self, language_tag: str = None):
+    def __init__(self, language_tag: Optional[str] = None):
         # Run all winrt interactions on a new thread to avoid
         # "RuntimeError: Cannot change thread mode after it is set."
         # from import winrt.
