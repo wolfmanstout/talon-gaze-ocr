@@ -15,30 +15,13 @@ class Mouse:
         actions.mouse_move(*coordinates)
 
     def click(self):
-        actions.mouse_click()
-
-    def click_down(self):
-        actions.mouse_drag()
-
-    def click_up(self):
-        actions.mouse_release()
-
-    def scroll_down(self, n=1):
-        for _ in range(n):
-            actions.user.mouse_scroll_down()
-
-    def scroll_up(self, n=1):
-        for _ in range(n):
-            actions.user.mouse_scroll_up()
+        actions.user.mouse_click_through()
 
 
 class Keyboard:
     def __init__(self):
         # shift:down won't affect future keystrokes on Mac, so we track it ourselves.
         self._shift = False
-
-    def type(self, text):
-        actions.insert(text)
 
     def shift_down(self):
         actions.key("shift:down")
@@ -140,22 +123,6 @@ class TalonEyeTracker:
 
     def get_gaze_point_or_default(self):
         return self.get_gaze_point() or tuple(ui.active_window().rect.center)
-
-    def get_gaze_point_at_timestamp(self, timestamp):
-        if not self._queue:
-            print("No gaze history available")
-            return None
-        frame_index = bisect.bisect_left(self._queue, timestamp, key=lambda f: f.ts)
-        if frame_index == len(self._queue):
-            frame_index -= 1
-        frame = self._queue[frame_index]
-        if abs(frame.ts - timestamp) > self.STALE_GAZE_THRESHOLD_SECONDS:
-            print(
-                f"No gaze history available at that time: {timestamp}. "
-                f"Range: [{self._queue[0].ts}, {self._queue[-1].ts}]"
-            )
-            return None
-        return self._gaze_to_pixels(frame.gaze)
 
     def get_gaze_bounds_during_time_range(self, start_timestamp, end_timestamp):
         if not self._queue:
