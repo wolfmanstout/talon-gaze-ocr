@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import numpy as np
-from talon import Context, Module, actions, app, cron, fs, screen, settings
+from talon import Context, Module, actions, app, cron, fs, screen, settings, ui
 from talon.canvas import Canvas, MouseEvent
 from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
@@ -667,6 +667,14 @@ def context_sensitive_insert(text: str):
 
 @mod.action_class
 class GazeOcrActions:
+    def mouse_click_through(button: int = 0, modifiers: str = ""):
+        """Click that ensures the window is focused on Mac before clicking."""
+        if modifiers:
+            actions.key(f"{modifiers}:down")
+        actions.mouse_click(button)
+        if modifiers:
+            actions.key(f"{modifiers}:up")
+
     #
     # Actions related to the eye tracker.
     #
@@ -915,47 +923,49 @@ class GazeOcrActions:
 
     def click_text(text: TimestampedText):
         """Click on the provided on-screen text."""
-        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(0))
+        actions.user.move_cursor_to_text_and_do(
+            text, lambda: actions.user.mouse_click_through()
+        )
 
     def click_text_without_disambiguation(text: TimestampedText):
         """Click on the provided on-screen text, choosing the best match if multiple are
         found."""
         actions.user.move_cursor_to_text_and_do(
-            text, lambda: actions.mouse_click(0), disambiguate=False
+            text, lambda: actions.user.mouse_click_through(), disambiguate=False
         )
 
     def double_click_text(text: TimestampedText):
         """Double-lick on the provided on-screen text."""
 
         def double_click() -> None:
-            actions.mouse_click(0)
-            actions.mouse_click(0)
+            actions.user.mouse_click_through()
+            actions.user.mouse_click_through()
 
         actions.user.move_cursor_to_text_and_do(text, double_click)
 
     def right_click_text(text: TimestampedText):
         """Right-click on the provided on-screen text."""
-        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(1))
+        actions.user.move_cursor_to_text_and_do(
+            text, lambda: actions.user.mouse_click_through(1)
+        )
 
     def middle_click_text(text: TimestampedText):
         """Middle-click on the provided on-screen text."""
-        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(2))
+        actions.user.move_cursor_to_text_and_do(
+            text, lambda: actions.user.mouse_click_through(2)
+        )
 
     def modifier_click_text(modifier: str, text: TimestampedText):
         """Control-click on the provided on-screen text."""
-
-        def modifier_click() -> None:
-            actions.key(f"{modifier}:down")
-            actions.mouse_click(0)
-            actions.key(f"{modifier}:up")
-
-        actions.user.move_cursor_to_text_and_do(text, modifier_click)
+        actions.user.move_cursor_to_text_and_do(
+            text, lambda: actions.user.mouse_click_through(0, modifier)
+        )
 
     def change_text_homophone(text: TimestampedText):
         """Switch the on-screen text to a different homophone."""
 
         def change_homophone() -> None:
-            actions.mouse_click(0)
+            actions.user.mouse_click_through()
             actions.edit.select_word()
             actions.user.homophones_show_selection()
 
@@ -1092,3 +1102,38 @@ class GazeOcrActions:
             context_sensitive_insert(insertion_text)
 
         begin_generator(run())
+
+
+# Mac-specific implementation that focuses windows before clicking
+ctx_mac = Context()
+ctx_mac.matches = "os: mac"
+
+
+@ctx_mac.action_class("user")
+class MacGazeOcrActions:
+    def mouse_click_through(button: int = 0, modifiers: str = ""):
+        """Click that ensures the window is focused on Mac before clicking."""
+        # Wait for mouse position to update
+        actions.sleep("5ms")
+        x = actions.mouse_x()
+        y = actions.mouse_y()
+
+        try:
+            element = ui.element_at(x, y)
+        except RuntimeError:
+            # No element at this position, just click normally
+            actions.next(button, modifiers)
+            return
+
+        window = element.window
+
+        # Only focus if the window is not already active
+        if ui.active_window() != window:
+            window.focus()
+            start_time = time.perf_counter()
+            while ui.active_window() != window:
+                if time.perf_counter() - start_time > 1:
+                    raise RuntimeError(f"Can't focus window: {window.title}")
+                actions.sleep(0.1)
+
+        actions.next(button, modifiers)
