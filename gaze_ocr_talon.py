@@ -1142,7 +1142,8 @@ class MacGazeOcrActions:
             start_time = time.perf_counter()
             while ui.active_window() != window:
                 if time.perf_counter() - start_time > 1:
-                    raise RuntimeError(f"Can't focus window: {window.title}")
+                    logging.warning(f"Can't focus window: {window.title}")
+                    break
                 actions.sleep(0.1)
 
         actions.next(button, modifiers)
