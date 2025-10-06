@@ -1123,12 +1123,18 @@ class MacGazeOcrActions:
 
         try:
             element = ui.element_at(x, y)
-        except RuntimeError:
+        except RuntimeError as e:
             # No element at this position, just click normally
+            logging.warning(f"No element at mouse position ({x}, {y}): {e!r}")
             actions.next(button, modifiers)
             return
 
-        window = element.window
+        try:
+            window = element.window
+        except ui.UIErr:
+            # Element has no window (e.g., desktop), just click normally
+            actions.next(button, modifiers)
+            return
 
         # Only focus if the window is not already active
         if ui.active_window() != window:
