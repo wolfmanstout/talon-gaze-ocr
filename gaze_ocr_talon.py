@@ -299,6 +299,7 @@ def reload_backend(name, flags):
         [
             ("ok", "okay", "0k"),
             ("ally", "a11y"),
+            ("AI", "Al"),
         ],
     )
     punctuation_table = str.maketrans(
