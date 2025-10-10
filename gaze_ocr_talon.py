@@ -285,6 +285,7 @@ def reload_backend(name, flags):
         [
             ("ok", "okay", "0k"),
             ("ally", "a11y"),
+            ("AI", "Al"),
         ],
     )
     setting_ocr_use_talon_backend = settings.get("user.ocr_use_talon_backend")
