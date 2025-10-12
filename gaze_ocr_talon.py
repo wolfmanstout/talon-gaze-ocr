@@ -1087,6 +1087,106 @@ class GazeOcrActions:
         begin_generator(run())
 
 
+def find_window_from_element(element):
+    """Try to find a window by matching accessibility element attributes with ui.apps() windows.
+
+    This is a fallback for when element.window fails with ui.UIErr.
+    Returns the matching window object, or None if no match found.
+    """
+    try:
+        # Get the AXWindow from the element
+        ax_window = element.AXWindow
+    except AttributeError:
+        logging.debug("Element has no AXWindow attribute")
+        return None
+
+    # Get window properties from accessibility element
+    try:
+        ax_parent = ax_window.AXParent
+    except AttributeError:
+        logging.debug("AXWindow has no AXParent attribute")
+        return None
+
+    # Get application title
+    try:
+        ax_app_title = ax_parent.AXTitle
+    except AttributeError:
+        ax_app_title = ""
+
+    # Get window title
+    try:
+        ax_window_title = ax_window.AXTitle
+    except AttributeError:
+        ax_window_title = ""
+
+    # Get window position
+    try:
+        ax_position = ax_window.AXPosition
+        ax_x = ax_position.x
+        ax_y = ax_position.y
+    except AttributeError:
+        ax_x = None
+        ax_y = None
+
+    # Get window size
+    try:
+        ax_size = ax_window.AXSize
+        ax_width = ax_size.width
+        ax_height = ax_size.height
+    except AttributeError:
+        ax_width = None
+        ax_height = None
+
+    # If we don't have position and size, we can't match
+    if ax_x is None or ax_y is None or ax_width is None or ax_height is None:
+        logging.debug("Could not get position/size from AXWindow")
+        return None
+
+    # Search through all apps and their windows
+    for running_app in ui.apps():
+        app_name = running_app.name
+
+        # Compare app name with AXApplication title (if we have one)
+        if ax_app_title and app_name != ax_app_title:
+            continue
+
+        # Search through windows in this app
+        windows = running_app.windows()
+
+        for window in windows:
+            window_title = window.title
+
+            # If we have an AXWindow title, it should match
+            if ax_window_title and window_title != ax_window_title:
+                continue
+
+            # Try to match position and dimensions
+            try:
+                window_rect = window.rect
+            except AttributeError:
+                continue
+
+            window_x = window_rect.x
+            window_y = window_rect.y
+            window_width = window_rect.width
+            window_height = window_rect.height
+
+            # Check if position and size match (allow small tolerance for floating point)
+            if (
+                abs(window_x - ax_x) < 1
+                and abs(window_y - ax_y) < 1
+                and abs(window_width - ax_width) < 1
+                and abs(window_height - ax_height) < 1
+            ):
+                logging.debug(
+                    f"Found matching window: {window_title} at ({window_x}, {window_y})"
+                )
+                return window
+
+    logging.debug("No matching window found in ui.apps()")
+    return None
+
+
 # Mac-specific implementation that focuses windows before clicking
 ctx_mac = Context()
 ctx_mac.matches = "os: mac"
@@ -1109,12 +1209,18 @@ class MacGazeOcrActions:
             actions.next(button, modifiers)
             return
 
+        window = None
         try:
             window = element.window
         except ui.UIErr:
-            # Element has no window (e.g., desktop), just click normally
-            actions.next(button, modifiers)
-            return
+            # Try fallback method using accessibility attributes
+            logging.debug("element.window failed, trying fallback method")
+            window = find_window_from_element(element)
+            if window is None:
+                # Element has no window (e.g., desktop), just click normally
+                logging.debug("No window found for element, clicking normally")
+                actions.next(button, modifiers)
+                return
 
         # Only focus if the window is not already active
         if ui.active_window() != window:
