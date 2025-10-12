@@ -1097,14 +1097,12 @@ def find_window_from_element(element):
         # Get the AXWindow from the element
         ax_window = element.AXWindow
     except AttributeError:
-        logging.debug("Element has no AXWindow attribute")
         return None
 
     # Get window properties from accessibility element
     try:
         ax_parent = ax_window.AXParent
     except AttributeError:
-        logging.debug("AXWindow has no AXParent attribute")
         return None
 
     # Get application title
@@ -1139,7 +1137,6 @@ def find_window_from_element(element):
 
     # If we don't have position and size, we can't match
     if ax_x is None or ax_y is None or ax_width is None or ax_height is None:
-        logging.debug("Could not get position/size from AXWindow")
         return None
 
     # Search through all apps and their windows
@@ -1178,12 +1175,8 @@ def find_window_from_element(element):
                 and abs(window_width - ax_width) < 1
                 and abs(window_height - ax_height) < 1
             ):
-                logging.debug(
-                    f"Found matching window: {window_title} at ({window_x}, {window_y})"
-                )
                 return window
 
-    logging.debug("No matching window found in ui.apps()")
     return None
 
 
@@ -1213,7 +1206,8 @@ class MacGazeOcrActions:
         try:
             window = element.window
         except ui.UIErr:
-            # Try fallback method using accessibility attributes
+            # Try fallback method using accessibility attributes.
+            # Needed for docked Chrome apps (e.g., Gmail) where element.window fails.
             logging.debug("element.window failed, trying fallback method")
             window = find_window_from_element(element)
             if window is None:
