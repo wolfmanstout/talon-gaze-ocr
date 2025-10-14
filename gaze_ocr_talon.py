@@ -1108,8 +1108,8 @@ class GazeOcrActions:
         begin_generator(run())
 
 
-def get_app_from_element(element):
-    """Gets the AXApplication element from an accessibility element."""
+def focus_element_window(element) -> bool:
+    """Focuses the window containing the accessibility element."""
     try:
         ax_window = element.AXWindow
     except AttributeError:
@@ -1119,12 +1119,20 @@ def get_app_from_element(element):
     try:
         ax_app = ax_window.AXParent
     except AttributeError:
-        return None
+        return False
 
     if ax_app.AXRole != "AXApplication":
-        return None
+        return False
 
-    return ax_app
+    # Raise the window to the top.
+    try:
+        ax_window.perform("AXRaise")
+    except Exception:
+        return False
+
+    # Focus the application.
+    ax_app.AXFrontmost = True
+    return True
 
 
 # Mac-specific implementation that focuses windows before clicking
@@ -1150,15 +1158,10 @@ class MacGazeOcrActions:
             actions.next(button, modifiers)
             return
 
-        ax_app = get_app_from_element(element)
-        if not ax_app:
+        if not focus_element_window(element):
+            # This can happen when clicking on the desktop or menu bar.
             logging.debug(
-                f"No window found for element {element}; will click without focusing."
+                f"Unable to focus window for element {element}; will click without focusing."
             )
-            actions.next(button, modifiers)
-            return
-
-        # Focus the app.
-        ax_app.AXFrontmost = True
 
         actions.next(button, modifiers)
