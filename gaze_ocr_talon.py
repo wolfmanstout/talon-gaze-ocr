@@ -1109,8 +1109,10 @@ def focus_element_window(element) -> bool:
     except Exception:
         return False
 
-    # Focus the application.
-    ax_app.AXFrontmost = True
+    # Focus the application. Check if it is already focused first to avoid
+    # unnecessary impact on window ordering.
+    if not ax_app.AXFrontmost:
+        ax_app.AXFrontmost = True
     return True
 
 
