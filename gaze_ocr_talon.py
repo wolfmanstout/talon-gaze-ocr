@@ -720,7 +720,8 @@ class GazeOcrActions:
                 cycle_time = elapsed_time % total_cycle_time
 
                 # Calculate alpha (0.0 to 1.0) based on cycle position
-                if elapsed_time > settings.get("user.ocr_debug_display_seconds"):
+                timeout = settings.get("user.ocr_debug_display_seconds")
+                if not persistent and elapsed_time > timeout:
                     # Ensure the animation does not overrun.
                     alpha = 0.0
                 elif cycle_time < fade_in_duration:
