@@ -11,25 +11,30 @@ import urllib.request
 from . import _base
 
 
-def is_server_running(port=8765):
-    """Check if EasyOCR server is responsive."""
+def _check_server_health(port=8765):
+    """Check if EasyOCR server is responsive and log status.
+
+    Args:
+        port: Port to check (default: 8765)
+
+    Returns:
+        True if server is running and responsive, False otherwise
+    """
     try:
         response = urllib.request.urlopen(f"http://localhost:{port}/health", timeout=1)
-        return response.status == 200
+        is_running = response.status == 200
     except (urllib.error.URLError, ConnectionRefusedError, OSError):
-        return False
+        is_running = False
 
-
-def start_server_process(port=8765):
-    """Check that EasyOCR server is running (user must start manually)."""
-    # Server is managed manually by the user
-    if not is_server_running(port):
+    if not is_running:
         logging.warning(
             f"EasyOCR server not running on port {port}. "
-            "Please start it manually with: uv run _easyocr_server.py --port {port}"
+            f"Start manually with: uv run _easyocr_server.py --port {port}"
         )
     else:
         logging.info("EasyOCR server is running")
+
+    return is_running
 
 
 class EasyOcrTalonBackend(_base.OcrBackend):
@@ -41,13 +46,11 @@ class EasyOcrTalonBackend(_base.OcrBackend):
         Args:
             port: Port for HTTP server (default: 8765)
         """
-        global _server_port
-        _server_port = port
         self.port = port
         self.server_url = f"http://localhost:{port}"
 
-        # Start server if not running
-        start_server_process(port)
+        # Check server health (server must be started manually)
+        _check_server_health(port)
 
     def run_ocr(self, image) -> _base.OcrResult:
         """Run OCR on a Talon image using the EasyOCR server.

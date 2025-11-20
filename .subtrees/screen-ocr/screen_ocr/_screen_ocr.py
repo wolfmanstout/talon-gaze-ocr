@@ -124,7 +124,6 @@ class Reader:
         backend: str | _base.OcrBackend,
         tesseract_data_path: Optional[str] = None,
         tesseract_command: Optional[str] = None,
-        easyocr_command: Optional[str] = None,
         threshold_function: Optional[str | Callable[[Any], Any]] = "local_otsu",
         threshold_block_size: Optional[int] = 41,
         correction_block_size: Optional[int] = 31,
