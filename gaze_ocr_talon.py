@@ -49,6 +49,12 @@ mod.setting(
     desc="If true, use Talon backend, otherwise use default fast backend from screen_ocr.",
 )
 mod.setting(
+    "ocr_easyocr_path",
+    type=str,
+    default="",
+    desc="Path to EasyOCR CLI executable. If set, uses EasyOCR CLI backend instead of other backends.",
+)
+mod.setting(
     "ocr_connect_tracker",
     type=bool,
     default=True,
@@ -309,8 +315,16 @@ def reload_backend(name, flags):
             if len(punctuation) == 1
         }
     )
+    setting_ocr_easyocr_path = settings.get("user.ocr_easyocr_path")
     setting_ocr_use_talon_backend = settings.get("user.ocr_use_talon_backend")
-    if setting_ocr_use_talon_backend and ocr:
+    if setting_ocr_easyocr_path:
+        ocr_reader = screen_ocr.Reader.create_reader(
+            backend="easyocr_talon",
+            easyocr_command=setting_ocr_easyocr_path,
+            radius=settings.get("user.ocr_gaze_point_padding"),
+            homophones=homophones,
+        )
+    elif setting_ocr_use_talon_backend and ocr:
         ocr_reader = screen_ocr.Reader.create_reader(
             backend="talon",
             radius=settings.get("user.ocr_gaze_point_padding"),

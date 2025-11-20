@@ -29,6 +29,10 @@ try:
 except ImportError:
     _easyocr = None
 try:
+    from . import _easyocr_talon
+except ImportError:
+    _easyocr_talon = None
+try:
     from . import _talon
 except ImportError:
     _talon = None
@@ -120,6 +124,7 @@ class Reader:
         backend: str | _base.OcrBackend,
         tesseract_data_path: Optional[str] = None,
         tesseract_command: Optional[str] = None,
+        easyocr_command: Optional[str] = None,
         threshold_function: Optional[str | Callable[[Any], Any]] = "local_otsu",
         threshold_block_size: Optional[int] = 41,
         correction_block_size: Optional[int] = 31,
@@ -164,6 +169,17 @@ class Reader:
                     "EasyOCR backend unavailable. To install, run pip install screen-ocr[easyocr]."
                 )
             backend = _easyocr.EasyOcrBackend()
+            return cls(backend, debug_image_callback=debug_image_callback, **kwargs)
+        if backend == "easyocr_talon":
+            if not _easyocr_talon:
+                raise ValueError(
+                    "EasyOCR Talon backend unavailable. Requires running in Talon."
+                )
+            if easyocr_command is None:
+                easyocr_command = "easyocr"
+            backend = _easyocr_talon.EasyOcrTalonBackend(
+                easyocr_command=easyocr_command
+            )
             return cls(backend, debug_image_callback=debug_image_callback, **kwargs)
         if backend == "winrt":
             if not _winrt:
@@ -310,7 +326,10 @@ class Reader:
 
     # TODO: Refactor methods into backend instead of using this.
     def _is_talon_backend(self):
-        return _talon and isinstance(self._backend, _talon.TalonBackend)
+        return (_talon and isinstance(self._backend, _talon.TalonBackend)) or (
+            _easyocr_talon
+            and isinstance(self._backend, _easyocr_talon.EasyOcrTalonBackend)
+        )
 
     def _clean_screenshot(
         self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
