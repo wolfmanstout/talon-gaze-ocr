@@ -175,11 +175,7 @@ class Reader:
                 raise ValueError(
                     "EasyOCR Talon backend unavailable. Requires running in Talon."
                 )
-            if easyocr_command is None:
-                easyocr_command = "easyocr"
-            backend = _easyocr_talon.EasyOcrTalonBackend(
-                easyocr_command=easyocr_command
-            )
+            backend = _easyocr_talon.EasyOcrTalonBackend()
             return cls(backend, debug_image_callback=debug_image_callback, **kwargs)
         if backend == "winrt":
             if not _winrt:
