@@ -497,7 +497,7 @@ def move_cursor_to_word_generator(text: TimestampedText, disambiguate: bool = Tr
         text.text,
         disambiguate=disambiguate,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
@@ -514,7 +514,7 @@ def move_text_cursor_to_word_generator(
         disambiguate=True,
         cursor_position=position,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not result:
@@ -533,7 +533,7 @@ def move_text_cursor_to_longest_prefix_generator(
         disambiguate=True,
         cursor_position=position,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not locations:
@@ -553,7 +553,7 @@ def move_text_cursor_to_longest_suffix_generator(
         disambiguate=True,
         cursor_position=position,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not locations:
@@ -567,7 +567,7 @@ def move_text_cursor_to_difference(text: TimestampedText):
         text.text,
         disambiguate=True,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
@@ -591,10 +591,10 @@ def select_text_generator(
         for_deletion=for_deletion,
         start_time_range=(start.start, start.end),
         end_time_range=(end.start, end.end) if end else None,
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         after_start=after_start,
         before_end=before_end,
-        select_pause_seconds=settings.get("user.ocr_select_pause_seconds"),
+        select_pause_seconds=lambda: settings.get("user.ocr_select_pause_seconds"),
     )
     if not result:
         actions.user.show_ocr_overlay_for_query(
@@ -608,8 +608,8 @@ def select_matching_text_generator(text: TimestampedText):
         text.text,
         disambiguate=True,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
-        select_pause_seconds=settings.get("user.ocr_select_pause_seconds"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
+        select_pause_seconds=lambda: settings.get("user.ocr_select_pause_seconds"),
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
@@ -648,7 +648,7 @@ def context_sensitive_insert(text: str):
 @mod.action_class
 class GazeOcrActions:
     def mouse_click_through(button: int = 0, modifiers: str = ""):
-        """Click that ensures the window is focused on Mac before clicking."""
+        """Click that ensures the window is focused before clicking."""
         if modifiers:
             actions.key(f"{modifiers}:down")
         actions.mouse_click(button)
@@ -1088,35 +1088,6 @@ class GazeOcrActions:
         begin_generator(run())
 
 
-def focus_element_window(element) -> bool:
-    """Focuses the window containing the accessibility element."""
-    try:
-        ax_window = element.AXWindow
-    except AttributeError:
-        # Assume the current element is the window.
-        ax_window = element
-
-    try:
-        ax_app = ax_window.AXParent
-    except AttributeError:
-        return False
-
-    if ax_app.AXRole != "AXApplication":
-        return False
-
-    # Raise the window to the top.
-    try:
-        ax_window.perform("AXRaise")
-    except Exception:
-        return False
-
-    # Focus the application. Check if it is already focused first to avoid
-    # unnecessary impact on window ordering.
-    if not ax_app.AXFrontmost:
-        ax_app.AXFrontmost = True
-    return True
-
-
 # Mac-specific implementation that focuses windows before clicking
 ctx_mac = Context()
 ctx_mac.matches = "os: mac"
@@ -1132,18 +1103,25 @@ class MacGazeOcrActions:
         y = actions.mouse_y()
 
         try:
-            element = ui.element_at(x, y)
+            window = ui.window_at(x, y)
         except RuntimeError:
-            logging.warning(
-                f"No element at mouse position ({x}, {y}); will click without focusing."
+            # No window at this position, just click normally
+            logging.debug(
+                f"No window at position ({x}, {y}); clicking without focusing."
             )
             actions.next(button, modifiers)
             return
 
-        if not focus_element_window(element):
-            # This can happen when clicking on the desktop or menu bar.
-            logging.debug(
-                f"Unable to focus window for element {element}; will click without focusing."
-            )
+        # Only focus if the window is not already active
+        if ui.active_window() != window:
+            window.focus()
+            start_time = time.perf_counter()
+            while ui.active_window() != window:
+                if time.perf_counter() - start_time > 1:
+                    logging.warning(
+                        f"Can't focus window: {window.title}. Clicking anyway."
+                    )
+                    break
+                actions.sleep(0.1)
 
         actions.next(button, modifiers)

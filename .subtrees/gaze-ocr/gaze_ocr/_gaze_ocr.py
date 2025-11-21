@@ -12,9 +12,11 @@ from collections.abc import Callable, Generator, Sequence
 from concurrent import futures
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Optional
+from typing import Any, Optional, TypeVar, cast
 
 from screen_ocr import Reader, ScreenContents, WordLocation
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -166,6 +168,11 @@ class Controller:
         self.shutdown(wait=True)
         return False
 
+    @staticmethod
+    def _resolve_value(value: Callable[[], T] | T) -> T:
+        """Resolve a value that may be a callable or direct value."""
+        return cast(T, value() if callable(value) else value)
+
     def start_reading_nearby(self) -> None:
         """Start OCR nearby the gaze point in a background thread."""
         gaze_point = (
@@ -249,7 +256,7 @@ class Controller:
         words: str,
         cursor_position: str = "middle",
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
     ) -> Optional[tuple[int, int]]:
         """Move the mouse cursor nearby the specified word or words.
 
@@ -277,7 +284,7 @@ class Controller:
         disambiguate: bool,
         cursor_position: str = "middle",
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[tuple[int, int]]]:
         """Same as move_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
@@ -301,7 +308,7 @@ class Controller:
             else:
                 raise ValueError(cursor_position)
             click_coordinates = self._apply_click_offset(
-                coordinates, click_offset_right
+                coordinates, self._resolve_value(click_offset_right)
             )
             cursor_locations.append(
                 CursorLocation(
@@ -335,7 +342,7 @@ class Controller:
         filter_location_function: Optional[WordLocationsPredicate] = None,
         include_whitespace: bool = False,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
     ) -> Optional[CursorLocation]:
         """Move the text cursor nearby the specified word or phrase.
 
@@ -370,7 +377,7 @@ class Controller:
         filter_location_function: Optional[WordLocationsPredicate] = None,
         include_whitespace: bool = False,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
         hold_shift: bool = False,
         selection_position: Optional[SelectionPosition] = None,
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation]]:
@@ -424,7 +431,7 @@ class Controller:
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
         hold_shift: bool = False,
     ) -> tuple[Optional[CursorLocation], int]:
         """Moves the text cursor to the longest prefix of the provided words that
@@ -448,7 +455,7 @@ class Controller:
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
         hold_shift: bool = False,
     ) -> Generator[
         Sequence[CursorLocation], CursorLocation, tuple[Optional[CursorLocation], int]
@@ -494,7 +501,7 @@ class Controller:
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
         hold_shift: bool = False,
     ) -> tuple[Optional[CursorLocation], int]:
         """Moves the text cursor to the longest suffix of the provided words that
@@ -518,7 +525,7 @@ class Controller:
         cursor_position: str = "middle",
         filter_location_function: Optional[WordLocationsPredicate] = None,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
         hold_shift: bool = False,
     ) -> Generator[
         Sequence[CursorLocation], CursorLocation, tuple[Optional[CursorLocation], int]
@@ -563,7 +570,7 @@ class Controller:
         words: str,
         disambiguate: bool,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[tuple[int, int]]]:
         """Finds onscreen text that matches the start and/or end of the provided words,
         and moves the text cursor to the start of where the words differ. Returns the
@@ -658,7 +665,7 @@ class Controller:
         for_deletion: bool = False,
         start_time_range: Optional[tuple[float, float]] = None,
         end_time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
         after_start: bool = False,
         before_end: bool = False,
     ) -> Optional[CursorLocation]:
@@ -699,10 +706,10 @@ class Controller:
         for_deletion: bool = False,
         start_time_range: Optional[tuple[float, float]] = None,
         end_time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
         after_start: bool = False,
         before_end: bool = False,
-        select_pause_seconds: float = 0.01,
+        select_pause_seconds: Callable[[], float] | float = 0.01,
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[CursorLocation]]:
         """Same as select_text, except it supports disambiguation through a generator.
         See header comment for details.
@@ -726,7 +733,7 @@ class Controller:
         if not start_location:
             return None
         start_location.move_text_cursor()
-        time.sleep(select_pause_seconds)
+        time.sleep(self._resolve_value(select_pause_seconds))
         if end_words:
             if end_time_range:
                 self.read_nearby(end_time_range)
@@ -771,7 +778,7 @@ class Controller:
         self,
         words: str,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
+        click_offset_right: Callable[[], int] | int = 0,
     ) -> Optional[tuple[int, int]]:
         """Selects onscreen text that matches the beginning and/or end of the provided
         text. Returns the start and end indices corresponding to the changed text, if
@@ -790,8 +797,8 @@ class Controller:
         words: str,
         disambiguate: bool,
         time_range: Optional[tuple[float, float]] = None,
-        click_offset_right: int = 0,
-        select_pause_seconds: float = 0.01,
+        click_offset_right: Callable[[], int] | int = 0,
+        select_pause_seconds: Callable[[], float] | float = 0.01,
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[tuple[int, int]]]:
         """Same as select_matching_text, except it supports disambiguation through a
         generator. See header comment for details."""
@@ -814,7 +821,7 @@ class Controller:
         )
         if before_prefix_location:
             before_prefix_location.move_text_cursor()
-            time.sleep(select_pause_seconds)
+            time.sleep(self._resolve_value(select_pause_seconds))
         if not time_range:
             self._read_nearby_if_gaze_moved()
             screen_contents = self.latest_screen_contents()
@@ -881,7 +888,7 @@ class Controller:
                 selection_position=self.SelectionPosition.LEFT,
             )
             before_suffix_location.move_text_cursor()
-            time.sleep(select_pause_seconds)
+            time.sleep(self._resolve_value(select_pause_seconds))
             self.keyboard.shift_down()
             try:
                 after_suffix_location.move_text_cursor()
@@ -960,7 +967,7 @@ class Controller:
         matches: Sequence[Sequence[WordLocation]],
         cursor_position: str,
         include_whitespace: bool,
-        click_offset_right: int,
+        click_offset_right: Callable[[], int] | int,
         selection_position: SelectionPosition,
     ) -> Sequence[CursorLocation]:
         return [
@@ -979,7 +986,7 @@ class Controller:
         locations: Sequence[WordLocation],
         cursor_position: str,
         include_whitespace: bool,
-        click_offset_right: int,
+        click_offset_right: Callable[[], int] | int,
         selection_position: SelectionPosition,
     ) -> CursorLocation:
         if cursor_position == "before":
@@ -1008,7 +1015,7 @@ class Controller:
                     int((locations[0].left + locations[-1].right) / 2),
                     int((locations[0].top + locations[-1].bottom) / 2),
                 ),
-                click_offset_right,
+                self._resolve_value(click_offset_right),
             )
             return CursorLocation(
                 click_coordinates=coordinates,
@@ -1046,7 +1053,7 @@ class Controller:
         self,
         start_coordinates: tuple[int, int],
         end_coordinates: tuple[int, int],
-        click_offset_right: int,
+        click_offset_right: Callable[[], int] | int,
         distance_from_left: int,
         distance_from_right: int,
         selection_position: SelectionPosition,
@@ -1078,7 +1085,7 @@ class Controller:
             start_from_left = False
         if start_from_left:
             coordinates = self._apply_click_offset(
-                start_coordinates, click_offset_right
+                start_coordinates, self._resolve_value(click_offset_right)
             )
             return CursorLocation(
                 click_coordinates=coordinates,
@@ -1094,7 +1101,9 @@ class Controller:
             )
         else:
             # Start from the right.
-            coordinates = self._apply_click_offset(end_coordinates, click_offset_right)
+            coordinates = self._apply_click_offset(
+                end_coordinates, self._resolve_value(click_offset_right)
+            )
             return CursorLocation(
                 click_coordinates=coordinates,
                 visual_coordinates=visual_coordinates,
