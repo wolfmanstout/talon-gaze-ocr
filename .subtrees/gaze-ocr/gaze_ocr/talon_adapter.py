@@ -15,7 +15,7 @@ class Mouse:
         actions.mouse_move(*coordinates)
 
     def click(self):
-        actions.user.mouse_click_through()
+        actions.mouse_click()
 
 
 class Keyboard:
@@ -50,6 +50,10 @@ class Keyboard:
 
 
 class AppActions:
+    def focus_at(self, x: int, y: int):
+        """Focus the window at the given coordinates."""
+        actions.user.focus_at(x, y)
+
     def peek_left(self) -> Optional[str]:
         try:
             return actions.user.dictation_peek(True, False)[0]

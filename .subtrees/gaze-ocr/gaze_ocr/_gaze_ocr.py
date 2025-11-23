@@ -21,7 +21,7 @@ T = TypeVar("T")
 
 @dataclass
 class CursorLocation:
-    click_coordinates: tuple[int, int]
+    base_coordinates: tuple[int, int]
     visual_coordinates: tuple[int, int]
     # Move cursor to the right if True, left if False.
     move_cursor_right: bool
@@ -29,16 +29,29 @@ class CursorLocation:
     move_past_whitespace_left: bool
     move_past_whitespace_right: bool
     text_height: int
+    # Lambda to get click offset (resolved after focus)
+    click_offset_right: Optional[Callable[[], int]]
 
     mouse: Any = field(repr=False, compare=False)
     keyboard: Any = field(repr=False, compare=False)
     app_actions: Any = field(repr=False, compare=False)
 
+    def _focus_and_get_final_coordinates(self) -> tuple[int, int]:
+        """Focus window and return coordinates with offset applied."""
+        # Focus at base coordinates before resolving offset
+        if self.app_actions:
+            self.app_actions.focus_at(*self.base_coordinates)
+        # Resolve offset after focus (to get correct app-specific offset)
+        offset = self.click_offset_right() if self.click_offset_right else 0
+        return (self.base_coordinates[0] + offset, self.base_coordinates[1])
+
     def move_mouse_cursor(self):
-        self.mouse.move(self.click_coordinates)
+        final_coordinates = self._focus_and_get_final_coordinates()
+        self.mouse.move(final_coordinates)
 
     def move_text_cursor(self):
-        self.mouse.move(self.click_coordinates)
+        final_coordinates = self._focus_and_get_final_coordinates()
+        self.mouse.move(final_coordinates)
         self.mouse.click()
         # Needed to avoid selection issues on Mac.
         time.sleep(0.01)
@@ -172,6 +185,13 @@ class Controller:
     def _resolve_value(value: Callable[[], T] | T) -> T:
         """Resolve a value that may be a callable or direct value."""
         return cast(T, value() if callable(value) else value)
+
+    @staticmethod
+    def _as_callable(value: Callable[[], T] | T) -> Callable[[], T]:
+        """Convert a value or callable to a callable."""
+        if callable(value):
+            return cast(Callable[[], T], value)
+        return lambda: cast(T, value)
 
     def start_reading_nearby(self) -> None:
         """Start OCR nearby the gaze point in a background thread."""
@@ -307,13 +327,10 @@ class Controller:
                 coordinates = locations[-1].end_coordinates
             else:
                 raise ValueError(cursor_position)
-            click_coordinates = self._apply_click_offset(
-                coordinates, self._resolve_value(click_offset_right)
-            )
             cursor_locations.append(
                 CursorLocation(
-                    click_coordinates=click_coordinates,
-                    visual_coordinates=click_coordinates,
+                    base_coordinates=coordinates,
+                    visual_coordinates=coordinates,
                     move_cursor_right=False,
                     move_distance=0,
                     move_past_whitespace_left=False,
@@ -322,6 +339,7 @@ class Controller:
                     mouse=self.mouse,
                     keyboard=self.keyboard,
                     app_actions=self.app_actions,
+                    click_offset_right=self._as_callable(click_offset_right),
                 )
             )
         location = yield from self._choose_cursor_location(
@@ -331,7 +349,7 @@ class Controller:
         if not location:
             return None
         location.move_mouse_cursor()
-        return location.click_coordinates
+        return location.base_coordinates
 
     move_cursor_to_word = move_cursor_to_words
 
@@ -742,7 +760,7 @@ class Controller:
 
             def filter_function(location):
                 return self._is_valid_selection(
-                    start_location.click_coordinates, location[-1].end_coordinates
+                    start_location.base_coordinates, location[-1].end_coordinates
                 )
 
             return (
@@ -829,7 +847,7 @@ class Controller:
 
             def filter_function(location):
                 return self._is_valid_selection(
-                    before_prefix_location.click_coordinates,
+                    before_prefix_location.base_coordinates,
                     location[-1].end_coordinates,
                 )
         else:
@@ -915,7 +933,7 @@ class Controller:
                 return None
         distance_to_words = [
             (
-                _distance_squared(location.click_coordinates, reference_point),
+                _distance_squared(location.base_coordinates, reference_point),
                 location,
             )
             for location in locations
@@ -1010,15 +1028,12 @@ class Controller:
         elif cursor_position == "middle":
             # Note: if it's helpful, we could change this to position the cursor
             # in the middle of the word.
-            coordinates = self._apply_click_offset(
-                (
-                    int((locations[0].left + locations[-1].right) / 2),
-                    int((locations[0].top + locations[-1].bottom) / 2),
-                ),
-                self._resolve_value(click_offset_right),
+            coordinates = (
+                int((locations[0].left + locations[-1].right) / 2),
+                int((locations[0].top + locations[-1].bottom) / 2),
             )
             return CursorLocation(
-                click_coordinates=coordinates,
+                base_coordinates=coordinates,
                 visual_coordinates=coordinates,
                 move_cursor_right=False,
                 move_distance=0,
@@ -1028,6 +1043,7 @@ class Controller:
                 mouse=self.mouse,
                 keyboard=self.keyboard,
                 app_actions=self.app_actions,
+                click_offset_right=self._as_callable(click_offset_right),
             )
         else:
             assert cursor_position == "after"
@@ -1084,11 +1100,8 @@ class Controller:
         else:
             start_from_left = False
         if start_from_left:
-            coordinates = self._apply_click_offset(
-                start_coordinates, self._resolve_value(click_offset_right)
-            )
             return CursorLocation(
-                click_coordinates=coordinates,
+                base_coordinates=start_coordinates,
                 visual_coordinates=visual_coordinates,
                 move_cursor_right=True,
                 move_distance=distance_from_left,
@@ -1098,14 +1111,12 @@ class Controller:
                 mouse=self.mouse,
                 keyboard=self.keyboard,
                 app_actions=self.app_actions,
+                click_offset_right=self._as_callable(click_offset_right),
             )
         else:
             # Start from the right.
-            coordinates = self._apply_click_offset(
-                end_coordinates, self._resolve_value(click_offset_right)
-            )
             return CursorLocation(
-                click_coordinates=coordinates,
+                base_coordinates=end_coordinates,
                 visual_coordinates=visual_coordinates,
                 move_cursor_right=False,
                 move_distance=distance_from_right,
@@ -1115,6 +1126,7 @@ class Controller:
                 mouse=self.mouse,
                 keyboard=self.keyboard,
                 app_actions=self.app_actions,
+                click_offset_right=self._as_callable(click_offset_right),
             )
 
     def _choose_cursor_location(
@@ -1139,10 +1151,6 @@ class Controller:
             raise AssertionError()
         except StopIteration as e:
             return e.value
-
-    @staticmethod
-    def _apply_click_offset(coordinates, offset_right):
-        return (coordinates[0] + offset_right, coordinates[1])
 
     def _write_data(self, screen_contents, word, word_locations):
         if not self.save_data_directory:
