@@ -1094,11 +1094,6 @@ ctx_mac.matches = "os: mac"
 class MacGazeOcrActions:
     def focus_at(x: int, y: int):
         """Focus the window at the given coordinates on Mac."""
-        # Move mouse to the target position
-        actions.mouse_move(x, y)
-        # Wait for mouse position to update
-        actions.sleep("5ms")
-
         try:
             window = ui.window_at(x, y)
         except RuntimeError:
