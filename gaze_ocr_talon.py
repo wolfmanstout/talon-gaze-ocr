@@ -72,6 +72,12 @@ mod.setting(
     desc="Adjust the pause between clicks when performing a selection.",
 )
 mod.setting(
+    "ocr_use_window_at_api",
+    type=bool,
+    default=False,
+    desc="Use ui.window_at() API for focusing windows (requires beta Talon). Falls back to accessibility API if disabled or unavailable.",
+)
+mod.setting(
     "ocr_debug_display_seconds",
     type=float,
     default=3,
@@ -497,7 +503,7 @@ def move_cursor_to_word_generator(text: TimestampedText, disambiguate: bool = Tr
         text.text,
         disambiguate=disambiguate,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
@@ -514,7 +520,7 @@ def move_text_cursor_to_word_generator(
         disambiguate=True,
         cursor_position=position,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not result:
@@ -533,7 +539,7 @@ def move_text_cursor_to_longest_prefix_generator(
         disambiguate=True,
         cursor_position=position,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not locations:
@@ -553,7 +559,7 @@ def move_text_cursor_to_longest_suffix_generator(
         disambiguate=True,
         cursor_position=position,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
     if not locations:
@@ -567,7 +573,7 @@ def move_text_cursor_to_difference(text: TimestampedText):
         text.text,
         disambiguate=True,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
@@ -591,10 +597,10 @@ def select_text_generator(
         for_deletion=for_deletion,
         start_time_range=(start.start, start.end),
         end_time_range=(end.start, end.end) if end else None,
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         after_start=after_start,
         before_end=before_end,
-        select_pause_seconds=settings.get("user.ocr_select_pause_seconds"),
+        select_pause_seconds=lambda: settings.get("user.ocr_select_pause_seconds"),
     )
     if not result:
         actions.user.show_ocr_overlay_for_query(
@@ -608,8 +614,8 @@ def select_matching_text_generator(text: TimestampedText):
         text.text,
         disambiguate=True,
         time_range=(text.start, text.end),
-        click_offset_right=settings.get("user.ocr_click_offset_right"),
-        select_pause_seconds=settings.get("user.ocr_select_pause_seconds"),
+        click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
+        select_pause_seconds=lambda: settings.get("user.ocr_select_pause_seconds"),
     )
     if not result:
         actions.user.show_ocr_overlay_for_query("text", f"{text.text}")
@@ -647,13 +653,14 @@ def context_sensitive_insert(text: str):
 
 @mod.action_class
 class GazeOcrActions:
-    def mouse_click_through(button: int = 0, modifiers: str = ""):
-        """Click that ensures the window is focused on Mac before clicking."""
-        if modifiers:
-            actions.key(f"{modifiers}:down")
-        actions.mouse_click(button)
-        if modifiers:
-            actions.key(f"{modifiers}:up")
+    def focus_at(x: int, y: int):
+        """Focus the window at the given coordinates."""
+        # Default implementation is a no-op Mac has a specific implementation that uses
+        # either ui.window_at() or ui.element_at()
+        # TODO: Implement for Windows/Linux once ui.window_at() is fixed on those
+        # platforms Need to have at least one action for Talon to recognize this as
+        # implemented
+        actions.sleep("0ms")
 
     #
     # Actions related to the eye tracker.
@@ -907,49 +914,47 @@ class GazeOcrActions:
 
     def click_text(text: TimestampedText):
         """Click on the provided on-screen text."""
-        actions.user.move_cursor_to_text_and_do(
-            text, lambda: actions.user.mouse_click_through()
-        )
+        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click())
 
     def click_text_without_disambiguation(text: TimestampedText):
         """Click on the provided on-screen text, choosing the best match if multiple are
         found."""
         actions.user.move_cursor_to_text_and_do(
-            text, lambda: actions.user.mouse_click_through(), disambiguate=False
+            text, lambda: actions.mouse_click(), disambiguate=False
         )
 
     def double_click_text(text: TimestampedText):
         """Double-lick on the provided on-screen text."""
 
         def double_click() -> None:
-            actions.user.mouse_click_through()
-            actions.user.mouse_click_through()
+            actions.mouse_click()
+            actions.mouse_click()
 
         actions.user.move_cursor_to_text_and_do(text, double_click)
 
     def right_click_text(text: TimestampedText):
         """Right-click on the provided on-screen text."""
-        actions.user.move_cursor_to_text_and_do(
-            text, lambda: actions.user.mouse_click_through(1)
-        )
+        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(1))
 
     def middle_click_text(text: TimestampedText):
         """Middle-click on the provided on-screen text."""
-        actions.user.move_cursor_to_text_and_do(
-            text, lambda: actions.user.mouse_click_through(2)
-        )
+        actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(2))
 
     def modifier_click_text(modifier: str, text: TimestampedText):
         """Control-click on the provided on-screen text."""
-        actions.user.move_cursor_to_text_and_do(
-            text, lambda: actions.user.mouse_click_through(0, modifier)
-        )
+
+        def click_with_modifier() -> None:
+            actions.key(f"{modifier}:down")
+            actions.mouse_click()
+            actions.key(f"{modifier}:up")
+
+        actions.user.move_cursor_to_text_and_do(text, click_with_modifier)
 
     def change_text_homophone(text: TimestampedText):
         """Switch the on-screen text to a different homophone."""
 
         def change_homophone() -> None:
-            actions.user.mouse_click_through()
+            actions.mouse_click()
             actions.edit.select_word()
             actions.user.homophones_show_selection()
 
@@ -1117,33 +1122,46 @@ def focus_element_window(element) -> bool:
     return True
 
 
-# Mac-specific implementation that focuses windows before clicking
+# Mac-specific implementation that focuses windows at coordinates
 ctx_mac = Context()
 ctx_mac.matches = "os: mac"
 
 
 @ctx_mac.action_class("user")
 class MacGazeOcrActions:
-    def mouse_click_through(button: int = 0, modifiers: str = ""):
-        """Click that ensures the window is focused on Mac before clicking."""
-        # Wait for mouse position to update
-        actions.sleep("5ms")
-        x = actions.mouse_x()
-        y = actions.mouse_y()
+    def focus_at(x: int, y: int):
+        """Focus the window at the given coordinates on Mac."""
+        use_window_at = settings.get("user.ocr_use_window_at_api")
+        if use_window_at:
+            # Use window_at API (requires beta Talon)
+            try:
+                window = ui.window_at(x, y)
+            except RuntimeError:
+                # No window at this position
+                logging.debug(f"No window at position ({x}, {y}); skipping focus.")
+                return
 
-        try:
-            element = ui.element_at(x, y)
-        except RuntimeError:
-            logging.warning(
-                f"No element at mouse position ({x}, {y}); will click without focusing."
-            )
-            actions.next(button, modifiers)
-            return
+            # Focus the window if not already active
+            if ui.active_window() != window:
+                window.focus()
+                start_time = time.perf_counter()
+                while ui.active_window() != window:
+                    if time.perf_counter() - start_time > 1:
+                        logging.warning(
+                            f"Can't focus window: {window.title}. Proceeding anyway."
+                        )
+                        break
+                    actions.sleep(0.1)
+        else:
+            # Use element_at API (works on older Talon versions)
+            try:
+                element = ui.element_at(x, y)
+            except RuntimeError:
+                logging.debug(f"No element at position ({x}, {y}); skipping focus.")
+                return
 
-        if not focus_element_window(element):
-            # This can happen when clicking on the desktop or menu bar.
-            logging.debug(
-                f"Unable to focus window for element {element}; will click without focusing."
-            )
-
-        actions.next(button, modifiers)
+            if not focus_element_window(element):
+                # This can happen when clicking on the desktop or menu bar.
+                logging.debug(
+                    f"Unable to focus window for element {element}; skipping focus."
+                )
