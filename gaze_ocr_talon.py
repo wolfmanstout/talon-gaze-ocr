@@ -72,6 +72,12 @@ mod.setting(
     desc="Adjust the pause between clicks when performing a selection.",
 )
 mod.setting(
+    "ocr_use_window_at_api",
+    type=bool,
+    default=False,
+    desc="Use ui.window_at() API for focusing windows (requires beta Talon). Falls back to accessibility API if disabled or unavailable.",
+)
+mod.setting(
     "ocr_debug_display_seconds",
     type=float,
     default=3,
@@ -648,10 +654,12 @@ def context_sensitive_insert(text: str):
 @mod.action_class
 class GazeOcrActions:
     def focus_at(x: int, y: int):
-        """Focus the window at the given coordinates (no-op on Windows/Linux)."""
-        # TODO: Implement for Windows/Linux once ui.window_at() is fixed
-        # Currently no-op because ui.window_at() is broken on these platforms
-        # Need to have at least one action for Talon to recognize this as implemented
+        """Focus the window at the given coordinates."""
+        # Default implementation is a no-op Mac has a specific implementation that uses
+        # either ui.window_at() or ui.element_at()
+        # TODO: Implement for Windows/Linux once ui.window_at() is fixed on those
+        # platforms Need to have at least one action for Talon to recognize this as
+        # implemented
         actions.sleep("0ms")
 
     #
@@ -1085,6 +1093,35 @@ class GazeOcrActions:
         begin_generator(run())
 
 
+def focus_element_window(element) -> bool:
+    """Focuses the window containing the accessibility element."""
+    try:
+        ax_window = element.AXWindow
+    except AttributeError:
+        # Assume the current element is the window.
+        ax_window = element
+
+    try:
+        ax_app = ax_window.AXParent
+    except AttributeError:
+        return False
+
+    if ax_app.AXRole != "AXApplication":
+        return False
+
+    # Raise the window to the top.
+    try:
+        ax_window.perform("AXRaise")
+    except Exception:
+        return False
+
+    # Focus the application. Check if it is already focused first to avoid
+    # unnecessary impact on window ordering.
+    if not ax_app.AXFrontmost:
+        ax_app.AXFrontmost = True
+    return True
+
+
 # Mac-specific implementation that focuses windows at coordinates
 ctx_mac = Context()
 ctx_mac.matches = "os: mac"
@@ -1094,21 +1131,37 @@ ctx_mac.matches = "os: mac"
 class MacGazeOcrActions:
     def focus_at(x: int, y: int):
         """Focus the window at the given coordinates on Mac."""
-        try:
-            window = ui.window_at(x, y)
-        except RuntimeError:
-            # No window at this position
-            logging.debug(f"No window at position ({x}, {y}); skipping focus.")
-            return
+        use_window_at = settings.get("user.ocr_use_window_at_api")
+        if use_window_at:
+            # Use window_at API (requires beta Talon)
+            try:
+                window = ui.window_at(x, y)
+            except RuntimeError:
+                # No window at this position
+                logging.debug(f"No window at position ({x}, {y}); skipping focus.")
+                return
 
-        # Only focus if the window is not already active
-        if ui.active_window() != window:
-            window.focus()
-            start_time = time.perf_counter()
-            while ui.active_window() != window:
-                if time.perf_counter() - start_time > 1:
-                    logging.warning(
-                        f"Can't focus window: {window.title}. Proceeding anyway."
-                    )
-                    break
-                actions.sleep(0.1)
+            # Focus the window if not already active
+            if ui.active_window() != window:
+                window.focus()
+                start_time = time.perf_counter()
+                while ui.active_window() != window:
+                    if time.perf_counter() - start_time > 1:
+                        logging.warning(
+                            f"Can't focus window: {window.title}. Proceeding anyway."
+                        )
+                        break
+                    actions.sleep(0.1)
+        else:
+            # Use element_at API (works on older Talon versions)
+            try:
+                element = ui.element_at(x, y)
+            except RuntimeError:
+                logging.debug(f"No element at position ({x}, {y}); skipping focus.")
+                return
+
+            if not focus_element_window(element):
+                # This can happen when clicking on the desktop or menu bar.
+                logging.debug(
+                    f"Unable to focus window for element {element}; skipping focus."
+                )
