@@ -120,6 +120,36 @@ mod.setting(
     default="MAIN_SCREEN",
     desc="Region to OCR when no data from the eye tracker",
 )
+mod.setting(
+    "ocr_scroll_indicator_enabled",
+    type=bool,
+    default=True,
+    desc="Enable visual indicator when scrolling.",
+)
+mod.setting(
+    "ocr_scroll_indicator_fade_seconds",
+    type=float,
+    default=1.5,
+    desc="Duration for scroll indicator line to fade out.",
+)
+mod.setting(
+    "ocr_scroll_indicator_color",
+    type=str,
+    default="ADD8E6",
+    desc="Color for scroll indicator line (hex RGB).",
+)
+mod.setting(
+    "ocr_scroll_wait_ms",
+    type=int,
+    default=200,
+    desc="Milliseconds to wait after scroll before capturing 'after' screenshot.",
+)
+mod.setting(
+    "ocr_scroll_debug_mode",
+    type=bool,
+    default=False,
+    desc="Show full debug visualization (red/green boxes) instead of just the line.",
+)
 
 mod.tag(
     "gaze_ocr_disambiguation",
@@ -359,6 +389,356 @@ def has_light_background(screenshot):
     return np.mean(grayscale) > 128
 
 
+# --- Scroll Detection Algorithm ---
+# Vertical Scrolling Detection using Global Projection
+# 1. Global vertical projection with correlation
+# 2. Constraint-aware density search (Kadane's algorithm variants)
+
+
+def get_best_1d_anchored(arr, anchor_idx):
+    """
+    Finds the max-sum subarray that MUST include arr[anchor_idx].
+    Complexity: O(N)
+    """
+    N = len(arr)
+    if anchor_idx < 0 or anchor_idx >= N:
+        return 0, 0, -np.inf
+
+    # Scan Left: Find max prefix sum ending at anchor
+    left_scan = np.cumsum(arr[anchor_idx::-1])
+    best_left = np.argmax(left_scan)
+    max_left = left_scan[best_left]
+    start = anchor_idx - best_left
+
+    # Scan Right: Find max suffix sum starting after anchor
+    max_right = 0
+    end = anchor_idx
+    if anchor_idx + 1 < N:
+        right_scan = np.cumsum(arr[anchor_idx + 1 :])
+        best_right = np.argmax(right_scan)
+        if right_scan[best_right] > 0:
+            max_right = right_scan[best_right]
+            end = (anchor_idx + 1) + best_right
+
+    return start, end, max_left + max_right
+
+
+def get_best_1d_unanchored(arr, offset=0):
+    """
+    Standard Kadane's Algorithm to find max-sum subarray anywhere.
+    Complexity: O(N)
+    """
+    if len(arr) == 0:
+        return 0, 0, -np.inf
+
+    max_so_far = -np.inf
+    max_ending_here = 0
+    start_idx = 0
+    best_start, best_end = 0, 0
+
+    for i, x in enumerate(arr):
+        max_ending_here += x
+        if max_ending_here > max_so_far:
+            max_so_far = max_ending_here
+            best_start = start_idx
+            best_end = i
+        if max_ending_here < 0:
+            max_ending_here = 0
+            start_idx = i + 1
+
+    return best_start + offset, best_end + offset, max_so_far
+
+
+def get_best_1d_range_constrained(arr, r_min, r_max):
+    """
+    Finds max-sum subarray that overlaps the interval [r_min, r_max].
+    Checks 3 topological cases: Inside, Crossing Top, Crossing Bottom.
+    """
+    candidates = []
+
+    # Case 1: Fully Inside [r_min, r_max]
+    if r_max >= r_min:
+        s, e, score = get_best_1d_unanchored(arr[r_min : r_max + 1], offset=r_min)
+        candidates.append((s, e, score))
+
+    # Case 2: Anchored to Top Boundary (r_min)
+    s, e, score = get_best_1d_anchored(arr, r_min)
+    candidates.append((s, e, score))
+
+    # Case 3: Anchored to Bottom Boundary (r_max)
+    if r_max != r_min:
+        s, e, score = get_best_1d_anchored(arr, r_max)
+        candidates.append((s, e, score))
+
+    return max(candidates, key=lambda x: x[2])
+
+
+def solve_constrained_box(
+    binary_map, target_col, target_y_range, threshold_vertical, threshold_horizontal
+):
+    """
+    Solves 2D max-density box using 2-pass projection.
+
+    Args:
+        binary_map: 2D boolean array (True = match, False = mismatch)
+        target_col: Column that must be included
+        target_y_range: (min, max) row range that must be overlapped
+        threshold_vertical: Minimum match density for vertical pass (row finding)
+        threshold_horizontal: Minimum match density for horizontal pass (column finding)
+
+    Returns:
+        (r1, c1, r2, c2) bounding box or None
+    """
+    H, W = binary_map.shape
+
+    r_min, r_max = target_y_range
+    r_min, r_max = max(0, r_min), min(H - 1, r_max)
+
+    # Pass 1: Vertical (Project Rows) -> Best Height
+    # Weight Transformation: Match=+ve, Mismatch=-ve
+    # Matches need to outweigh noise based on vertical threshold
+    weights_vertical = np.where(
+        binary_map, 1.0 - threshold_vertical, -threshold_vertical - 1e-5
+    )
+    row_prof = np.sum(weights_vertical, axis=1)
+    r1, r2, r_score = get_best_1d_range_constrained(row_prof, r_min, r_max)
+
+    if r_score <= 0:
+        return None
+
+    # Pass 2: Horizontal (Project Cols) -> Best Width
+    # Crop to the best rows found and apply horizontal threshold
+    weights_horizontal = np.where(
+        binary_map, 1.0 - threshold_horizontal, -threshold_horizontal - 1e-5
+    )
+    col_prof = np.sum(weights_horizontal[r1 : r2 + 1, :], axis=0)
+
+    if target_col < 0 or target_col >= W:
+        return None
+
+    # Anchored search (cursor must be included)
+    c1, c2, c_score = get_best_1d_anchored(col_prof, target_col)
+
+    if c_score <= 0:
+        return None
+
+    return (r1, c1, r2, c2)
+
+
+def detect_scroll(img_before, img_after, cursor_pos):
+    """
+    Detects vertical scrolling using strip-based voting and constraint-aware search.
+
+    Args:
+        img_before: Numpy array (H, W, 3) or (H, W) - image before scroll
+        img_after: Numpy array (H, W, 3) or (H, W) - image after scroll
+        cursor_pos: (x, y) tuple - cursor position
+
+    Returns:
+        Dictionary with:
+            - scroll_distance: Integer (pixels moved up)
+            - before_bbox: (x, y, w, h) of content in first image
+            - after_bbox: (x, y, w, h) of content in second image
+            - consensus_strength: Ratio of best vote to second-best (quality metric)
+        Returns None if no valid scroll is found.
+    """
+    # Algorithm configuration constants
+    MIN_SCROLL_DISTANCE = 100  # Minimum scroll distance to consider (pixels)
+    MIN_REGION_HEIGHT = 200  # Minimum overlap region after scroll
+    MIN_VIEWPORT_HEIGHT = 300  # Detected viewport must be at least this tall
+    MIN_VIEWPORT_WIDTH = 300  # Detected viewport must be at least this wide
+    PIXEL_MATCH_TOLERANCE = 15  # Max pixel difference to consider a match
+    DENSITY_THRESHOLD_VERTICAL = (
+        0.85  # Minimum match density for vertical pass (row finding)
+    )
+    DENSITY_THRESHOLD_HORIZONTAL = (
+        0.85  # Minimum match density for horizontal pass (column finding)
+    )
+
+    # Strip-based voting configuration
+    NUM_STRIPS = 16  # Number of vertical strips to divide image into
+
+    cx, cy = cursor_pos
+
+    # 1. Preprocessing (Vertical Sobel)
+    # We use gradient to focus on structure (text/lines) and ignore flat colors.
+    if img_before.ndim == 3:
+        # Grayscale conversion using ITU-R BT.709 coefficients
+        gb = (
+            img_before[..., 0] * 0.2126
+            + img_before[..., 1] * 0.7152
+            + img_before[..., 2] * 0.0722
+        )
+        ga = (
+            img_after[..., 0] * 0.2126
+            + img_after[..., 1] * 0.7152
+            + img_after[..., 2] * 0.0722
+        )
+    else:
+        gb, ga = img_before.astype(float), img_after.astype(float)
+
+    # Signed diff between rows (Vertical Edges)
+    # Using split-channel (half-wave rectification) processing:
+    # - Separates Dark->Light edges from Light->Dark edges
+    # - Prevents top edges from matching with bottom edges
+    # - More robust than simple signed gradients for dense UIs
+    raw_grad_b = gb[1:] - gb[:-1]
+    raw_grad_a = ga[1:] - ga[:-1]
+
+    # Split into Positive/Negative Channels (Rectification)
+    # Positive channel: Dark -> Light edges (top of elements)
+    # Negative channel: Light -> Dark edges (bottom of elements)
+    pos_b = np.maximum(0, raw_grad_b)
+    neg_b = np.maximum(0, -raw_grad_b)  # Invert to make positive for summing
+
+    pos_a = np.maximum(0, raw_grad_a)
+    neg_a = np.maximum(0, -raw_grad_a)
+
+    # 2. Find Distance 'd' using Strip-Based Voting
+    H, W = gb.shape
+    strip_width = W // NUM_STRIPS
+
+    # Initialize voting array for all possible scroll distances
+    zero_lag_idx = H - 2  # Length of gradient arrays is H-1
+    votes = np.zeros(2 * (H - 1) - 1)  # All possible lags from correlation
+
+    # Process each strip
+    for strip_idx in range(NUM_STRIPS):
+        x_start = strip_idx * strip_width
+        x_end = min(x_start + strip_width, W)
+
+        # Project this strip to 1D (sum across columns within strip)
+        strip_proj_b_pos = np.sum(pos_b[:, x_start:x_end], axis=1)
+        strip_proj_b_neg = np.sum(neg_b[:, x_start:x_end], axis=1)
+        strip_proj_a_pos = np.sum(pos_a[:, x_start:x_end], axis=1)
+        strip_proj_a_neg = np.sum(neg_a[:, x_start:x_end], axis=1)
+
+        # Dual Correlation for this strip
+        strip_corr_pos = np.correlate(strip_proj_a_pos, strip_proj_b_pos, mode="full")
+        strip_corr_neg = np.correlate(strip_proj_a_neg, strip_proj_b_neg, mode="full")
+        strip_corr = strip_corr_pos + strip_corr_neg
+
+        # Normalize by overlap height at each lag
+        # For correlation index idx, scroll distance d = zero_lag_idx - idx
+        # Overlap height = (H - 1) - d = (H - 1) - (zero_lag_idx - idx) = H - 1 - zero_lag_idx + idx
+        # Since zero_lag_idx = H - 2, this simplifies to: overlap_height = idx + 1
+        indices = np.arange(len(strip_corr))
+        overlap_heights = (H - 1) - np.abs(indices - zero_lag_idx)
+
+        # Normalize correlation by overlap height (avoid division by zero)
+        strip_normalized = np.where(
+            overlap_heights > 0, strip_corr / overlap_heights, 0
+        )
+
+        # This strip votes for its best offset with weight = normalized correlation strength
+        best_idx_in_strip = np.argmax(strip_normalized)
+        vote_weight = max(0, strip_normalized[best_idx_in_strip])  # Only positive votes
+        if vote_weight > 0:
+            votes[best_idx_in_strip] += vote_weight
+
+    # 3. Find winning scroll distance from votes
+    max_scroll = H - MIN_REGION_HEIGHT
+    if max_scroll < MIN_SCROLL_DISTANCE:
+        logging.info(
+            f"Scroll detection failed: Screen height ({H}) too small for minimum scroll distance "
+            f"(max_scroll={max_scroll}, required={MIN_SCROLL_DISTANCE})"
+        )
+        return None
+
+    # Define valid search range for scroll distances
+    # Index mapping: scroll distance d = zero_lag_idx - idx
+    # We want MIN_SCROLL_DISTANCE <= d <= max_scroll
+    search_start = max(0, zero_lag_idx - max_scroll)
+    search_end = zero_lag_idx - MIN_SCROLL_DISTANCE + 1  # Exclusive upper bound
+
+    # Find best and second-best votes in valid range
+    valid_votes = votes[search_start:search_end]
+    if len(valid_votes) == 0 or np.max(valid_votes) <= 0:
+        logging.info(
+            f"Scroll detection failed: No valid votes in search range "
+            f"(search_start={search_start}, search_end={search_end}, max_vote={np.max(valid_votes) if len(valid_votes) > 0 else 0:.2f})"
+        )
+        return None
+
+    best_idx_relative = np.argmax(valid_votes)
+    best_idx = search_start + best_idx_relative
+    best_vote = votes[best_idx]
+
+    # Calculate consensus strength for diagnostics (returned as quality metric)
+    sorted_votes = np.sort(valid_votes)
+    second_best_vote = sorted_votes[-2] if len(sorted_votes) > 1 else 0
+
+    if second_best_vote > 0:
+        consensus_ratio = best_vote / second_best_vote
+    else:
+        consensus_ratio = np.inf if best_vote > 0 else 1.0
+
+    d = zero_lag_idx - best_idx
+
+    # Log voting details for debugging
+    logging.info(
+        f"Scroll voting: best_distance={d}px, "
+        f"vote_strength={best_vote:.2f}, "
+        f"consensus_ratio={consensus_ratio:.2f}"
+    )
+
+    # 3. Viewport Extraction (Shift & Diff)
+    # Note: limit_h is guaranteed >= MIN_REGION_HEIGHT due to candidate filtering
+    limit_h = H - d
+
+    # Align After[0:limit] with Before[d:H]
+    rect_a = ga[:limit_h, :]
+    rect_b = gb[d:, :]
+
+    # Create Binary Map (Matches vs Mismatches)
+    diff = np.abs(rect_a - rect_b)
+    binary_map = diff < PIXEL_MATCH_TOLERANCE
+
+    # 4. Apply Geometric Constraints
+    # The viewport must overlap the path [y_cursor - d, y_cursor]
+    target_y_max = min(cy, limit_h - 1)
+    target_y_min = max(0, cy - d)
+
+    # Handle deep scrolling cursor edge case
+    if target_y_min > target_y_max:
+        target_y_min = target_y_max
+
+    bbox = solve_constrained_box(
+        binary_map,
+        target_col=cx,
+        target_y_range=(target_y_min, target_y_max),
+        threshold_vertical=DENSITY_THRESHOLD_VERTICAL,
+        threshold_horizontal=DENSITY_THRESHOLD_HORIZONTAL,
+    )
+
+    if not bbox:
+        logging.info(
+            f"Scroll detection failed: No viewport found meeting density thresholds "
+            f"(scroll_distance={d}, cursor={cursor_pos}, y_range=({target_y_min}, {target_y_max}), "
+            f"v_thresh={DENSITY_THRESHOLD_VERTICAL}, h_thresh={DENSITY_THRESHOLD_HORIZONTAL})"
+        )
+        return None
+
+    r1, c1, r2, c2 = bbox
+    h_box, w_box = r2 - r1, c2 - c1
+
+    # Final Feasibility Check
+    if h_box < MIN_VIEWPORT_HEIGHT or w_box < MIN_VIEWPORT_WIDTH:
+        logging.info(
+            f"Scroll detection failed: Viewport too small "
+            f"(detected: {w_box}x{h_box}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT}, "
+            f"scroll_distance={d})"
+        )
+        return None
+
+    return {
+        "scroll_distance": int(d),
+        "after_bbox": (int(c1), int(r1), int(w_box), int(h_box)),
+        "before_bbox": (int(c1), int(r1 + d), int(w_box), int(h_box)),
+        "consensus_strength": float(consensus_ratio),
+    }
+
+
 def get_debug_color(has_light_background: bool):
     return (
         settings.get("user.ocr_light_background_debug_color")
@@ -418,6 +798,7 @@ def calculate_optimal_text_size(
 
 disambiguation_canvas = None
 debug_canvas = None
+scroll_indicator_canvas = None
 ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
 disambiguation_generator = None
 
@@ -715,6 +1096,152 @@ class GazeOcrActions:
                 gaze_ocr_controller.read_nearby()
         actions.user.show_ocr_overlay_for_query(type, "", True)
 
+    def show_scroll_indicator(
+        line_y: int, line_x_start: int = 0, line_x_end: Optional[int] = None
+    ):
+        """Display fading horizontal line at scroll boundary.
+
+        Args:
+            line_y: Y-coordinate for the line
+            line_x_start: X-coordinate where line starts (default: 0)
+            line_x_end: X-coordinate where line ends (default: screen width)
+        """
+        global scroll_indicator_canvas
+
+        # Close existing canvas if any (handles rapid scrolls)
+        if scroll_indicator_canvas:
+            scroll_indicator_canvas.close()
+            scroll_indicator_canvas = None
+
+        screen_rect = screen.main().rect
+        if line_x_end is None:
+            line_x_end = screen_rect.width
+
+        # Type narrowing: line_x_end is guaranteed to be int here
+        assert line_x_end is not None
+        line_x_end_val = line_x_end
+
+        start_time = time.time()
+        fade_duration = settings.get("user.ocr_scroll_indicator_fade_seconds")
+
+        def on_draw(c):
+            elapsed = time.time() - start_time
+            alpha = max(0.0, 1.0 - (elapsed / fade_duration))
+
+            if alpha <= 0:
+                return
+
+            # Light blue: RGB(173, 216, 230) -> hex ADD8E6
+            alpha_byte = int(alpha * 255)
+            color = settings.get("user.ocr_scroll_indicator_color")
+            c.paint.color = f"{color}{alpha_byte:02X}"
+            c.paint.style = c.paint.Style.STROKE
+            c.paint.stroke_width = 2.0
+
+            # Draw horizontal line over viewport width
+            # Try draw_line first, fallback to draw_rect if not available
+            try:
+                c.draw_line(line_x_start, line_y, line_x_end_val, line_y)
+            except AttributeError:
+                # Fallback: use thin rectangle
+                line_width = line_x_end_val - line_x_start
+                c.draw_rect(
+                    rect.Rect(x=line_x_start, y=line_y, width=line_width, height=2)
+                )
+
+        scroll_indicator_canvas = Canvas.from_screen(screen.main())
+        scroll_indicator_canvas.blocks_mouse = False
+        scroll_indicator_canvas.allows_capture = (
+            False  # Prevent canvas from appearing in screenshots
+        )
+        scroll_indicator_canvas.register("draw", on_draw)
+
+        # Schedule cleanup - capture canvas reference to avoid race condition
+        canvas_to_cleanup = scroll_indicator_canvas
+
+        def cleanup_scroll_canvas():
+            global scroll_indicator_canvas
+            # Only close if it's still the same canvas we created
+            if scroll_indicator_canvas is canvas_to_cleanup:
+                canvas_to_cleanup.close()
+                scroll_indicator_canvas = None
+
+        # Convert to milliseconds since cron.after doesn't accept float seconds
+        cleanup_delay_ms = int((fade_duration + 0.1) * 1000)
+        cron.after(f"{cleanup_delay_ms}ms", cleanup_scroll_canvas)
+
+    def show_scroll_debug_boxes(
+        before_bbox: tuple[int, int, int, int],
+        after_bbox: tuple[int, int, int, int],
+        scroll_distance: int,
+    ):
+        """Display debug visualization of before/after bounding boxes."""
+        global scroll_indicator_canvas
+
+        # Close existing canvas if any
+        if scroll_indicator_canvas:
+            scroll_indicator_canvas.close()
+            scroll_indicator_canvas = None
+
+        screen_rect = screen.main().rect
+        start_time = time.time()
+        fade_duration = 5.0  # Long duration for debugging
+
+        bx, by, bw, bh = before_bbox
+        ax, ay, aw, ah = after_bbox
+
+        def on_draw(c):
+            elapsed = time.time() - start_time
+            if elapsed > fade_duration:
+                return
+
+            # Draw before bbox in red
+            c.paint.style = c.paint.Style.STROKE
+            c.paint.stroke_width = 3.0
+            c.paint.color = "FF0000FF"  # Red, full opacity
+            c.draw_rect(rect.Rect(x=bx, y=by, width=bw, height=bh))
+
+            # Draw after bbox in green
+            c.paint.color = "00FF00FF"  # Green, full opacity
+            c.draw_rect(rect.Rect(x=ax, y=ay, width=aw, height=ah))
+
+            # Draw horizontal line at bottom of after bbox (where indicator line would be)
+            c.paint.color = "ADD8E6FF"  # Light blue
+            c.paint.stroke_width = 2.0
+            line_y = ay + ah
+            try:
+                c.draw_line(0, line_y, screen_rect.width, line_y)
+            except AttributeError:
+                c.draw_rect(rect.Rect(x=0, y=line_y, width=screen_rect.width, height=2))
+
+            # Draw labels
+            c.paint.style = c.paint.Style.FILL
+            c.paint.color = "FF0000FF"
+            c.paint.textsize = 20
+            c.draw_text(f"BEFORE (scroll_dist={scroll_distance})", bx, by - 5)
+
+            c.paint.color = "00FF00FF"
+            c.draw_text("AFTER", ax, ay - 5)
+
+        scroll_indicator_canvas = Canvas.from_screen(screen.main())
+        scroll_indicator_canvas.blocks_mouse = False
+        scroll_indicator_canvas.allows_capture = (
+            False  # Prevent canvas from appearing in screenshots
+        )
+        scroll_indicator_canvas.register("draw", on_draw)
+
+        # Schedule cleanup - capture canvas reference to avoid race condition
+        canvas_to_cleanup = scroll_indicator_canvas
+
+        def cleanup_scroll_canvas():
+            global scroll_indicator_canvas
+            # Only close if it's still the same canvas we created
+            if scroll_indicator_canvas is canvas_to_cleanup:
+                canvas_to_cleanup.close()
+                scroll_indicator_canvas = None
+
+        cron.after(f"{int(fade_duration * 1000)}ms", cleanup_scroll_canvas)
+
     def show_ocr_overlay_for_query(
         type: str, query: str = "", persistent: bool = False
     ):
@@ -892,6 +1419,80 @@ class GazeOcrActions:
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
         """Moves mouse cursor to gaze location."""
         tracker.move_to_gaze_point((offset_right, offset_down))
+
+    def scroll_down_with_visualization(amount: float = 1.0):
+        """Scroll down and show visual indicator of content movement."""
+        global scroll_indicator_canvas
+
+        if not settings.get("user.ocr_scroll_indicator_enabled"):
+            actions.user.mouse_scroll_down(amount)
+            return
+
+        # Close any existing canvas before taking screenshot to prevent interference
+        hide_canvas = scroll_indicator_canvas
+        if scroll_indicator_canvas:
+            scroll_indicator_canvas.close()
+            scroll_indicator_canvas = None
+        if hide_canvas:
+            # Ensure canvas doesn't interfere with screenshot
+            actions.sleep("10ms")
+
+        # Get screen dimensions for full screenshot
+        screen_rect = screen.main().rect
+
+        # Capture before screenshot
+        img_before_pil = screen.capture_rect(screen_rect, retina=False)
+        img_before = np.array(img_before_pil)
+
+        # Get cursor position (after small sleep to let it settle)
+        actions.sleep("5ms")
+        cursor_pos = (actions.mouse_x(), actions.mouse_y())
+
+        # Perform scroll
+        actions.user.mouse_scroll_down(amount)
+
+        # Wait for scroll animation to complete
+        wait_ms = settings.get("user.ocr_scroll_wait_ms")
+        actions.sleep(f"{wait_ms}ms")
+
+        # Capture after screenshot
+        img_after_pil = screen.capture_rect(screen_rect, retina=False)
+        img_after = np.array(img_after_pil)
+
+        # Run scroll detection algorithm
+        result = detect_scroll(img_before, img_after, cursor_pos)
+
+        if result is None:
+            logging.info(
+                f"Scroll visualization skipped: detect_scroll returned None (cursor={cursor_pos})"
+            )
+            return
+
+        # Log successful detection
+        logging.info(
+            f"Scroll detected: distance={result['scroll_distance']}px, "
+            f"viewport={result['after_bbox'][2]}x{result['after_bbox'][3]}, "
+            f"position=({result['after_bbox'][0]}, {result['after_bbox'][1]}), "
+            f"consensus={result['consensus_strength']:.2f}"
+        )
+
+        # Show visualization based on debug mode setting
+        debug_mode = settings.get("user.ocr_scroll_debug_mode")
+
+        if debug_mode:
+            # Show full debug visualization with red/green bounding boxes
+            actions.user.show_scroll_debug_boxes(
+                result["before_bbox"],
+                result["after_bbox"],
+                result["scroll_distance"],
+            )
+        else:
+            # Show just the thin blue line over the viewport width
+            x, y, w, h = result["after_bbox"]
+            line_y = y + h
+            line_x_start = x
+            line_x_end = x + w
+            actions.user.show_scroll_indicator(line_y, line_x_start, line_x_end)
 
     #
     # Actions operating on a single point within onscreen text.
