@@ -492,7 +492,7 @@ def solve_constrained_box(
     H, W = binary_map.shape
 
     r_min, r_max = target_y_range
-    r_min, r_max = max(0, r_min), min(H - 1, r_max)
+    r_min, r_max = int(max(0, r_min)), int(min(H - 1, r_max))
 
     # Pass 1: Vertical (Project Rows) -> Best Height
     # Weight Transformation: Match=+ve, Mismatch=-ve
@@ -513,6 +513,7 @@ def solve_constrained_box(
     )
     col_prof = np.sum(weights_horizontal[r1 : r2 + 1, :], axis=0)
 
+    target_col = int(target_col)
     if target_col < 0 or target_col >= W:
         return None
 
