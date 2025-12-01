@@ -35,10 +35,10 @@ mode: user.dictation_command
     user.mouse_scroll_up(0.5)
 (eye | i) scroll down:
     user.move_cursor_to_gaze_point(0, -40)
-    user.mouse_scroll_down()
+    user.scroll_down_with_visualization()
 (eye | i) scroll down half:
     user.move_cursor_to_gaze_point(0, -40)
-    user.mouse_scroll_down(0.5)
+    user.scroll_down_with_visualization(0.5)
 (eye | i) scroll left:
     user.move_cursor_to_gaze_point(40, 0)
     user.mouse_scroll_left()
