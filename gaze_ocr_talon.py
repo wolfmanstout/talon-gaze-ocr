@@ -1154,6 +1154,11 @@ class MacGazeOcrActions:
         """Focus the window at the given coordinates on Mac."""
         use_window_at = settings.get("user.ocr_use_window_at_api")
         if use_window_at:
+            # Attempt to turn off HUD if talon_hud is installed.
+            try:
+                actions.user.hud_set_visibility(False, pause_seconds=0)
+            except Exception:
+                pass
             # Use window_at API (requires beta Talon)
             try:
                 window = ui.window_at(x, y)
@@ -1161,6 +1166,12 @@ class MacGazeOcrActions:
                 # No window at this position
                 logging.debug(f"No window at position ({x}, {y}); skipping focus.")
                 return
+            finally:
+                # Attempt to turn on HUD if talon_hud is installed.
+                try:
+                    actions.user.hud_set_visibility(True, pause_seconds=0)
+                except Exception:
+                    pass
 
             # Focus the window if not already active
             if ui.active_window() != window:
