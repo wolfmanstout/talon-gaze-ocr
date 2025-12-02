@@ -1,5 +1,7 @@
 import glob
+import json
 import logging
+import os
 import re
 import sys
 import time
@@ -740,6 +742,74 @@ def detect_scroll(img_before, img_after, cursor_pos):
     }
 
 
+def save_scroll_screenshots(
+    img_before_pil, img_after_pil, result, cursor_pos, logging_dir
+):
+    """Save before/after screenshots and metadata for scroll detection.
+
+    Args:
+        img_before_pil: PIL Image from screen.capture_rect() before scroll
+        img_after_pil: PIL Image from screen.capture_rect() after scroll
+        result: Dictionary from detect_scroll() or None if detection failed
+        cursor_pos: Tuple (x, y) of cursor position during scroll
+        logging_dir: Directory path from ocr_logging_dir setting
+    """
+    if not logging_dir:
+        return
+
+    timestamp = time.time()
+
+    # Determine file naming based on success/failure
+    if result is None:
+        file_prefix = f"scroll_failure_{timestamp:.2f}"
+        metadata = {
+            "status": "failure",
+            "timestamp": timestamp,
+            "cursor_position": {"x": cursor_pos[0], "y": cursor_pos[1]},
+        }
+    else:
+        distance = result["scroll_distance"]
+        file_prefix = f"scroll_success_{distance}px_{timestamp:.2f}"
+        metadata = {
+            "status": "success",
+            "timestamp": timestamp,
+            "scroll_distance_px": result["scroll_distance"],
+            "cursor_position": {"x": cursor_pos[0], "y": cursor_pos[1]},
+            "before_bbox": {
+                "x": result["before_bbox"][0],
+                "y": result["before_bbox"][1],
+                "width": result["before_bbox"][2],
+                "height": result["before_bbox"][3],
+            },
+            "after_bbox": {
+                "x": result["after_bbox"][0],
+                "y": result["after_bbox"][1],
+                "width": result["after_bbox"][2],
+                "height": result["after_bbox"][3],
+            },
+            "consensus_strength": result["consensus_strength"],
+        }
+
+    # Build file paths
+    before_path = os.path.join(logging_dir, f"{file_prefix}.png")
+    after_path = os.path.join(logging_dir, f"{file_prefix}_after.png")
+    json_path = os.path.join(logging_dir, f"{file_prefix}.json")
+
+    # Save screenshots (pattern from gaze_ocr._write_data)
+    if hasattr(img_before_pil, "save"):
+        img_before_pil.save(before_path)
+        img_after_pil.save(after_path)
+    else:
+        img_before_pil.write_file(before_path)
+        img_after_pil.write_file(after_path)
+
+    # Save metadata as JSON
+    with open(json_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    logging.info(f"Saved scroll screenshots to {file_prefix}*")
+
+
 def get_debug_color(has_light_background: bool):
     return (
         settings.get("user.ocr_light_background_debug_color")
@@ -1462,6 +1532,13 @@ class GazeOcrActions:
 
         # Run scroll detection algorithm
         result = detect_scroll(img_before, img_after, cursor_pos)
+
+        # Save screenshots if logging is enabled
+        logging_dir = settings.get("user.ocr_logging_dir")
+        if logging_dir:
+            save_scroll_screenshots(
+                img_before_pil, img_after_pil, result, cursor_pos, logging_dir
+            )
 
         if result is None:
             logging.info(
