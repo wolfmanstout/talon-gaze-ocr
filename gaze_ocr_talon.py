@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import time
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Literal, Optional
@@ -561,10 +562,21 @@ def detect_scroll(img_before, img_after, cursor_pos):
     # Strip-based voting configuration
     NUM_STRIPS = 16  # Number of vertical strips to divide image into
 
+    # Vertical tiling configuration (grid probes)
+    NUM_TILES = 16  # Number of vertical tiles per strip (determines tile size)
+    TILE_OVERLAP = 0.5  # Overlap between tiles (0.5 = 50%)
+
+    # Correlation and filtering thresholds
+    MIN_CORRELATION_SCORE = 0.35  # Minimum normalized correlation to consider
+    MIN_STRIP_GRADIENT = (
+        2.0  # Minimum mean gradient to consider strip/tile (skip flat regions)
+    )
+    PROBE_ENERGY_EPSILON = 1e-9  # Minimum probe energy to avoid division by zero
+    NCC_EXPONENT = 3  # Exponent to apply to NCC scores (amplifies strong correlations)
+
     cx, cy = cursor_pos
 
     # 1. Preprocessing (Vertical Sobel)
-    # We use gradient to focus on structure (text/lines) and ignore flat colors.
     if img_before.ndim == 3:
         # Grayscale conversion using ITU-R BT.709 coefficients
         gb = (
@@ -581,65 +593,100 @@ def detect_scroll(img_before, img_after, cursor_pos):
         gb, ga = img_before.astype(float), img_after.astype(float)
 
     # Signed diff between rows (Vertical Edges)
-    # Using split-channel (half-wave rectification) processing:
-    # - Separates Dark->Light edges from Light->Dark edges
-    # - Prevents top edges from matching with bottom edges
-    # - More robust than simple signed gradients for dense UIs
     raw_grad_b = gb[1:] - gb[:-1]
     raw_grad_a = ga[1:] - ga[:-1]
 
     # Split into Positive/Negative Channels (Rectification)
-    # Positive channel: Dark -> Light edges (top of elements)
-    # Negative channel: Light -> Dark edges (bottom of elements)
     pos_b = np.maximum(0, raw_grad_b)
-    neg_b = np.maximum(0, -raw_grad_b)  # Invert to make positive for summing
-
+    neg_b = np.maximum(0, -raw_grad_b)
     pos_a = np.maximum(0, raw_grad_a)
     neg_a = np.maximum(0, -raw_grad_a)
 
-    # 2. Find Distance 'd' using Strip-Based Voting
-    H, W = gb.shape
+    # Combine channels for correlation
+    grad_b = pos_b + neg_b
+    grad_a = pos_a + neg_a
+
+    # 2. Grid Probes: Find Distance 'd' using Strip-Based Voting with Vertical Tiling
+    H_grad, W = grad_b.shape
+    H = gb.shape[0]
     strip_width = W // NUM_STRIPS
 
-    # Initialize voting array for all possible scroll distances
-    zero_lag_idx = H - 2  # Length of gradient arrays is H-1
-    votes = np.zeros(2 * (H - 1) - 1)  # All possible lags from correlation
+    # Calculate tile parameters
+    tile_size = H_grad // NUM_TILES
+    step = int(tile_size * (1 - TILE_OVERLAP))
+
+    # Initialize voting dictionary
+    votes = defaultdict(float)
 
     # Process each strip
     for strip_idx in range(NUM_STRIPS):
         x_start = strip_idx * strip_width
         x_end = min(x_start + strip_width, W)
 
-        # Project this strip to 1D (sum across columns within strip)
-        strip_proj_b_pos = np.sum(pos_b[:, x_start:x_end], axis=1)
-        strip_proj_b_neg = np.sum(neg_b[:, x_start:x_end], axis=1)
-        strip_proj_a_pos = np.sum(pos_a[:, x_start:x_end], axis=1)
-        strip_proj_a_neg = np.sum(neg_a[:, x_start:x_end], axis=1)
+        # Extract full vertical strips
+        strip_b = grad_b[:, x_start:x_end]
+        strip_a = grad_a[:, x_start:x_end]
 
-        # Dual Correlation for this strip
-        strip_corr_pos = np.correlate(strip_proj_a_pos, strip_proj_b_pos, mode="full")
-        strip_corr_neg = np.correlate(strip_proj_a_neg, strip_proj_b_neg, mode="full")
-        strip_corr = strip_corr_pos + strip_corr_neg
+        # Skip flat strips (no content)
+        if np.mean(strip_b) < MIN_STRIP_GRADIENT:
+            continue
 
-        # Normalize by overlap height at each lag
-        # For correlation index idx, scroll distance d = zero_lag_idx - idx
-        # Overlap height = (H - 1) - d = (H - 1) - (zero_lag_idx - idx) = H - 1 - zero_lag_idx + idx
-        # Since zero_lag_idx = H - 2, this simplifies to: overlap_height = idx + 1
-        indices = np.arange(len(strip_corr))
-        overlap_heights = (H - 1) - np.abs(indices - zero_lag_idx)
+        # Project full 'After' strip (target)
+        proj_a = np.sum(strip_a, axis=1)
 
-        # Normalize correlation by overlap height (avoid division by zero)
-        strip_normalized = np.where(
-            overlap_heights > 0, strip_corr / overlap_heights, 0
-        )
+        # Precompute window energy outside inner loop (tile_size is constant)
+        target_sq = proj_a**2
+        window_energy = np.convolve(target_sq, np.ones(tile_size), mode="valid")
+        window_energy = np.sqrt(window_energy)
 
-        # This strip votes for its best offset with weight = normalized correlation strength
-        best_idx_in_strip = np.argmax(strip_normalized)
-        vote_weight = max(0, strip_normalized[best_idx_in_strip])  # Only positive votes
-        if vote_weight > 0:
-            votes[best_idx_in_strip] += vote_weight
+        # --- INNER LOOP: Vertical Tiles (Probes) ---
+        # Slide a window down the 'Before' strip to create probes
+        for y in range(0, H_grad - tile_size + 1, step):
+            # Extract probe (chunk of Before)
+            tile_b = strip_b[y : y + tile_size, :]
+
+            # Skip empty tiles
+            if np.mean(tile_b) < MIN_STRIP_GRADIENT:
+                continue
+
+            # Project probe
+            proj_b_tile = np.sum(tile_b, axis=1)
+
+            # Correlate probe against full target (mode='valid')
+            raw_corr = np.correlate(proj_a, proj_b_tile, mode="valid")
+
+            # Normalized Cross-Correlation (NCC)
+            # Probe energy (scalar, varies per tile)
+            probe_energy = np.sqrt(np.sum(proj_b_tile**2))
+
+            if probe_energy < PROBE_ENERGY_EPSILON:
+                continue
+
+            # Normalized correlation
+            norm_corr = raw_corr / (probe_energy * window_energy + PROBE_ENERGY_EPSILON)
+
+            # Find best match
+            best_idx = np.argmax(norm_corr)
+            score = norm_corr[best_idx]
+
+            # Apply exponent to amplify strong correlations
+            score_weighted = score**NCC_EXPONENT
+
+            # Calculate scroll distance
+            # The probe started at 'y' in Before and matches at 'best_idx' in After
+            # Scroll distance d = y - best_idx
+            d = y - best_idx
+
+            # Filter by score and minimum scroll distance
+            if score > MIN_CORRELATION_SCORE and abs(d) >= MIN_SCROLL_DISTANCE:
+                votes[d] += score_weighted
 
     # 3. Find winning scroll distance from votes
+    if not votes:
+        logging.info("Scroll detection failed: No votes from strip-based correlation")
+        return None
+
+    # Filter by minimum scroll distance and maximum scroll
     max_scroll = H - MIN_REGION_HEIGHT
     if max_scroll < MIN_SCROLL_DISTANCE:
         logging.info(
@@ -648,35 +695,27 @@ def detect_scroll(img_before, img_after, cursor_pos):
         )
         return None
 
-    # Define valid search range for scroll distances
-    # Index mapping: scroll distance d = zero_lag_idx - idx
-    # We want MIN_SCROLL_DISTANCE <= d <= max_scroll
-    search_start = max(0, zero_lag_idx - max_scroll)
-    search_end = zero_lag_idx - MIN_SCROLL_DISTANCE + 1  # Exclusive upper bound
+    valid_votes = {
+        d: v for d, v in votes.items() if MIN_SCROLL_DISTANCE <= d <= max_scroll
+    }
 
-    # Find best and second-best votes in valid range
-    valid_votes = votes[search_start:search_end]
-    if len(valid_votes) == 0 or np.max(valid_votes) <= 0:
+    if not valid_votes:
         logging.info(
-            f"Scroll detection failed: No valid votes in search range "
-            f"(search_start={search_start}, search_end={search_end}, max_vote={np.max(valid_votes) if len(valid_votes) > 0 else 0:.2f})"
+            f"Scroll detection failed: No valid votes in range "
+            f"(min_scroll={MIN_SCROLL_DISTANCE}, max_scroll={max_scroll}, total_votes={len(votes)})"
         )
         return None
 
-    best_idx_relative = np.argmax(valid_votes)
-    best_idx = search_start + best_idx_relative
-    best_vote = votes[best_idx]
+    # Get best and second-best
+    sorted_votes = sorted(valid_votes.items(), key=lambda x: x[1], reverse=True)
+    d, best_vote = sorted_votes[0]
+    second_best_vote = sorted_votes[1][1] if len(sorted_votes) > 1 else 0
 
-    # Calculate consensus strength for diagnostics (returned as quality metric)
-    sorted_votes = np.sort(valid_votes)
-    second_best_vote = sorted_votes[-2] if len(sorted_votes) > 1 else 0
-
+    # Calculate consensus strength
     if second_best_vote > 0:
         consensus_ratio = best_vote / second_best_vote
     else:
         consensus_ratio = np.inf if best_vote > 0 else 1.0
-
-    d = zero_lag_idx - best_idx
 
     # Log voting details for debugging
     logging.info(
@@ -685,8 +724,7 @@ def detect_scroll(img_before, img_after, cursor_pos):
         f"consensus_ratio={consensus_ratio:.2f}"
     )
 
-    # 3. Viewport Extraction (Shift & Diff)
-    # Note: limit_h is guaranteed >= MIN_REGION_HEIGHT due to candidate filtering
+    # 4. Viewport Extraction (Shift & Diff)
     limit_h = H - d
 
     # Align After[0:limit] with Before[d:H]
@@ -697,7 +735,7 @@ def detect_scroll(img_before, img_after, cursor_pos):
     diff = np.abs(rect_a - rect_b)
     binary_map = diff < PIXEL_MATCH_TOLERANCE
 
-    # 4. Apply Geometric Constraints
+    # 5. Apply Geometric Constraints
     # The viewport must overlap the path [y_cursor - d, y_cursor]
     target_y_max = min(cy, limit_h - 1)
     target_y_min = max(0, cy - d)
