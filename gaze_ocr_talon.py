@@ -576,7 +576,7 @@ def detect_scroll(img_before, img_after, cursor_pos):
 
     cx, cy = cursor_pos
 
-    # 1. Preprocessing (Vertical Sobel)
+    # 1. Preprocessing (Vertical Gradients)
     if img_before.ndim == 3:
         # Grayscale conversion using ITU-R BT.709 coefficients
         gb = (
@@ -592,19 +592,9 @@ def detect_scroll(img_before, img_after, cursor_pos):
     else:
         gb, ga = img_before.astype(float), img_after.astype(float)
 
-    # Signed diff between rows (Vertical Edges)
-    raw_grad_b = gb[1:] - gb[:-1]
-    raw_grad_a = ga[1:] - ga[:-1]
-
-    # Split into Positive/Negative Channels (Rectification)
-    pos_b = np.maximum(0, raw_grad_b)
-    neg_b = np.maximum(0, -raw_grad_b)
-    pos_a = np.maximum(0, raw_grad_a)
-    neg_a = np.maximum(0, -raw_grad_a)
-
-    # Combine channels for correlation
-    grad_b = pos_b + neg_b
-    grad_a = pos_a + neg_a
+    # Absolute vertical gradients (row differences)
+    grad_b = np.abs(gb[1:] - gb[:-1])
+    grad_a = np.abs(ga[1:] - ga[:-1])
 
     # 2. Grid Probes: Find Distance 'd' using Strip-Based Voting with Vertical Tiling
     H_grad, W = grad_b.shape
