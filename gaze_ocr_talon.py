@@ -144,7 +144,7 @@ mod.setting(
 mod.setting(
     "ocr_scroll_wait_ms",
     type=int,
-    default=200,
+    default=50,
     desc="Milliseconds to wait after scroll before capturing 'after' screenshot.",
 )
 mod.setting(
@@ -549,7 +549,7 @@ def detect_scroll(img_before, img_after, cursor_pos):
     # Algorithm configuration constants
     MIN_SCROLL_DISTANCE = 100  # Minimum scroll distance to consider (pixels)
     MIN_REGION_HEIGHT = 200  # Minimum overlap region after scroll
-    MIN_VIEWPORT_HEIGHT = 300  # Detected viewport must be at least this tall
+    MIN_VIEWPORT_HEIGHT = 150  # Detected viewport must be at least this tall
     MIN_VIEWPORT_WIDTH = 300  # Detected viewport must be at least this wide
     PIXEL_MATCH_TOLERANCE = 15  # Max pixel difference to consider a match
     DENSITY_THRESHOLD_VERTICAL = (
