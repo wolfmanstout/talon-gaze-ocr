@@ -1141,7 +1141,7 @@ class MacGazeOcrActions:
             # Use window_at API (requires beta Talon)
             try:
                 window = ui.window_at(x, y)
-            except RuntimeError:
+            except (RuntimeError, AttributeError):
                 # No window at this position
                 logging.debug(f"No window at position ({x}, {y}); skipping focus.")
                 return
