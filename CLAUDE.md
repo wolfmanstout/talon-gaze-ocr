@@ -82,4 +82,4 @@ Key settings are defined as Talon module settings:
 
 ## Talon documentation
 
-@~/dotfiles/claude/talon.md
+@~/.claude/talon.md
