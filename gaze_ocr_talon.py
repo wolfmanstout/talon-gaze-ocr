@@ -832,7 +832,6 @@ def perform_scroll_and_detect(
     cursor_pos: tuple[float, float],
     screen_rect,
     wait_ms: int,
-    logging_dir: str | None = None,
     phase_name: str = "",
 ) -> ScrollPhaseResult:
     """Perform a scroll, capture the result, and run scroll detection.
@@ -844,7 +843,6 @@ def perform_scroll_and_detect(
         cursor_pos: (x, y) cursor position
         screen_rect: Screen rectangle for capture
         wait_ms: Milliseconds to wait after scroll
-        logging_dir: If provided, save debug screenshots
         phase_name: Label for logging (e.g., "probe", "phase2")
 
     Returns:
@@ -868,11 +866,6 @@ def perform_scroll_and_detect(
         )
     elif phase_name:
         logging.info(f"Scroll {phase_name}: detection failed")
-
-    if logging_dir:
-        save_scroll_screenshots(
-            img_before_pil, img_after_pil, detection, cursor_pos, logging_dir
-        )
 
     return ScrollPhaseResult(
         detection=detection,
@@ -1619,7 +1612,6 @@ class GazeOcrActions:
             cursor_pos,
             screen_rect,
             wait_ms,
-            logging_dir,
             phase_name="probe",
         )
 
@@ -1632,6 +1624,7 @@ class GazeOcrActions:
         probe_viewport_h = probe.viewport[3]  # height
         total_desired_pixels = probe_viewport_h * viewport_fraction * amount
         remaining_pixels = max(0, total_desired_pixels - probe.scroll_distance)
+        phase2 = None
 
         if remaining_pixels > 0 and scroll_ratio > 0:
             remaining_wheel_units = remaining_pixels / scroll_ratio
@@ -1643,7 +1636,6 @@ class GazeOcrActions:
                 cursor_pos,
                 screen_rect,
                 wait_ms,
-                logging_dir,
                 phase_name="phase2",
             )
 
@@ -1673,6 +1665,24 @@ class GazeOcrActions:
             viewport_bbox=(vis_x, vis_y, vis_w, vis_h) if debug_mode else None,
             scroll_distance=int(total_scroll) if debug_mode else None,
         )
+
+        # Save screenshots after visualization is shown (deferred to avoid blocking)
+        if logging_dir:
+            save_scroll_screenshots(
+                img_before_pil,
+                probe.img_after_pil,
+                probe.detection,
+                cursor_pos,
+                logging_dir,
+            )
+            if phase2 is not None:
+                save_scroll_screenshots(
+                    probe.img_after_pil,
+                    phase2.img_after_pil,
+                    phase2.detection,
+                    cursor_pos,
+                    logging_dir,
+                )
 
     #
     # Actions operating on a single point within onscreen text.
