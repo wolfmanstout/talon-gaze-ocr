@@ -565,9 +565,8 @@ def detect_scroll(
 
     Returns:
         Dictionary with:
-            - scroll_distance: Integer (pixels moved up)
-            - before_bbox: (x, y, w, h) of content in first image
-            - after_bbox: (x, y, w, h) of content in second image
+            - scroll_distance: Integer pixels scrolled (content moved up by this amount)
+            - after_bbox: (x, y, w, h) overlap region in the after image
             - consensus_strength: Ratio of best vote to second-best (quality metric)
         Returns None if no valid scroll is found.
     """
@@ -733,8 +732,8 @@ def detect_scroll(
     else:
         consensus_ratio = np.inf if best_vote > 0 else 1.0
 
-    # Log voting details for debugging
-    logging.info(
+    # Log voting details for debugging (debug level - internal algorithm detail)
+    logging.debug(
         f"Scroll voting: best_distance={d}px, "
         f"vote_strength={best_vote:.2f}, "
         f"consensus_ratio={consensus_ratio:.2f}"
@@ -791,7 +790,6 @@ def detect_scroll(
     return {
         "scroll_distance": int(d),
         "after_bbox": (int(c1), int(r1), int(w_box), int(h_box)),
-        "before_bbox": (int(c1), int(r1 + d), int(w_box), int(h_box)),
         "consensus_strength": float(consensus_ratio),
     }
 
@@ -815,9 +813,15 @@ class ScrollPhaseResult:
 
     @property
     def viewport(self) -> tuple[int, int, int, int]:
-        """Returns (x, y, width, height) of detected viewport."""
+        """Returns (x, y, width, height) of the viewport.
+
+        The viewport is the full scrollable region, computed as the union of the
+        overlap regions in the before and after images. Since content scrolls by
+        scroll_distance pixels, viewport height = overlap height + scroll_distance.
+        """
         if self.detection:
-            return self.detection["after_bbox"]
+            x, y, w, h = self.detection["after_bbox"]
+            return (x, y, w, h + self.detection["scroll_distance"])
         return (0, 0, 0, 0)
 
 
@@ -829,6 +833,7 @@ def perform_scroll_and_detect(
     screen_rect,
     wait_ms: int,
     logging_dir: str | None = None,
+    phase_name: str = "",
 ) -> ScrollPhaseResult:
     """Perform a scroll, capture the result, and run scroll detection.
 
@@ -840,6 +845,7 @@ def perform_scroll_and_detect(
         screen_rect: Screen rectangle for capture
         wait_ms: Milliseconds to wait after scroll
         logging_dir: If provided, save debug screenshots
+        phase_name: Label for logging (e.g., "probe", "phase2")
 
     Returns:
         ScrollPhaseResult with detection results and images
@@ -851,6 +857,17 @@ def perform_scroll_and_detect(
     img_after = np.array(img_after_pil)
 
     detection = detect_scroll(img_before, img_after, cursor_pos)
+
+    # Log result with phase label
+    if detection and phase_name:
+        _, _, w, h = detection["after_bbox"]
+        viewport_h = h + detection["scroll_distance"]
+        logging.info(
+            f"Scroll {phase_name}: {detection['scroll_distance']}px, "
+            f"viewport={w}x{viewport_h}"
+        )
+    elif phase_name:
+        logging.info(f"Scroll {phase_name}: detection failed")
 
     if logging_dir:
         save_scroll_screenshots(
@@ -893,24 +910,16 @@ def save_scroll_screenshots(
         }
     else:
         distance = result["scroll_distance"]
+        x, y, w, h = result["after_bbox"]
         file_prefix = f"scroll_success_{distance}px_{timestamp:.2f}"
         metadata = {
             "status": "success",
             "timestamp": timestamp,
-            "scroll_distance_px": result["scroll_distance"],
+            "scroll_distance_px": distance,
             "cursor_position": {"x": cursor_pos[0], "y": cursor_pos[1]},
-            "before_bbox": {
-                "x": result["before_bbox"][0],
-                "y": result["before_bbox"][1],
-                "width": result["before_bbox"][2],
-                "height": result["before_bbox"][3],
-            },
-            "after_bbox": {
-                "x": result["after_bbox"][0],
-                "y": result["after_bbox"][1],
-                "width": result["after_bbox"][2],
-                "height": result["after_bbox"][3],
-            },
+            "after_bbox": {"x": x, "y": y, "width": w, "height": h},
+            # before_bbox is after_bbox shifted down by scroll_distance
+            "before_bbox": {"x": x, "y": y + distance, "width": w, "height": h},
             "consensus_strength": result["consensus_strength"],
         }
 
@@ -1611,10 +1620,10 @@ class GazeOcrActions:
             screen_rect,
             wait_ms,
             logging_dir,
+            phase_name="probe",
         )
 
         if not probe.succeeded:
-            logging.info("Probe scroll detection failed, aborting visualization")
             return
 
         scroll_ratio = probe.scroll_distance / PROBE_SCROLL_AMOUNT
@@ -1635,36 +1644,25 @@ class GazeOcrActions:
                 screen_rect,
                 wait_ms,
                 logging_dir,
+                phase_name="phase2",
             )
 
             if phase2.succeeded:
                 total_scroll = probe.scroll_distance + phase2.scroll_distance
                 vis_x, vis_y, vis_w, vis_h = phase2.viewport
-                line_y = vis_y + vis_h - phase2.scroll_distance
-                logging.info(
-                    f"Scroll phase 2: detected={phase2.scroll_distance}px, "
-                    f"total_actual={total_scroll}px"
-                )
             else:
                 # Detection failed (e.g., hit bottom of content) - use estimate
                 total_scroll = probe.scroll_distance + remaining_pixels
                 vis_x, vis_y, vis_w, vis_h = probe.viewport
-                line_y = vis_y + vis_h - remaining_pixels
-                logging.info(
-                    f"Scroll phase 2: detection failed, using estimate. "
-                    f"total_estimated={total_scroll:.0f}px"
-                )
         else:
             # No second scroll needed
             total_scroll = probe.scroll_distance
             vis_x, vis_y, vis_w, vis_h = probe.viewport
-            line_y = vis_y + vis_h
 
-        logging.info(
-            f"Scroll: probe={probe.scroll_distance}px, ratio={scroll_ratio:.2f}, "
-            f"viewport={vis_w}x{vis_h}, "
-            f"total={total_scroll:.0f}px"
-        )
+        # Line shows where content from before the scroll ends
+        line_y = vis_y + vis_h - total_scroll
+
+        logging.info(f"Scroll complete: total={total_scroll:.0f}px")
 
         # Show visualization using the viewport from whichever detection we're using
         debug_mode = settings.get("user.ocr_scroll_debug_mode")
