@@ -776,20 +776,22 @@ def detect_scroll(
         return None
 
     r1, c1, r2, c2 = bbox
-    h_box, w_box = r2 - r1, c2 - c1
+    h_overlap, w_box = r2 - r1, c2 - c1
+    # Viewport height = overlap height + scroll distance (union of before/after regions)
+    h_viewport = h_overlap + d
 
     # Final Feasibility Check
-    if h_box < MIN_VIEWPORT_HEIGHT or w_box < MIN_VIEWPORT_WIDTH:
+    if h_viewport < MIN_VIEWPORT_HEIGHT or w_box < MIN_VIEWPORT_WIDTH:
         logging.info(
             f"Scroll detection failed: Viewport too small "
-            f"(detected: {w_box}x{h_box}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT}, "
+            f"(detected: {w_box}x{h_viewport}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT}, "
             f"scroll_distance={d})"
         )
         return None
 
     return {
         "scroll_distance": int(d),
-        "after_bbox": (int(c1), int(r1), int(w_box), int(h_box)),
+        "after_bbox": (int(c1), int(r1), int(w_box), int(h_overlap)),
         "consensus_strength": float(consensus_ratio),
     }
 
@@ -1626,6 +1628,9 @@ class GazeOcrActions:
         remaining_pixels = max(0, total_desired_pixels - probe.scroll_distance)
         phase2 = None
 
+        # Always use probe's viewport (larger matching region = more accurate detection)
+        vis_x, vis_y, vis_w, vis_h = probe.viewport
+
         if remaining_pixels > 0 and scroll_ratio > 0:
             remaining_wheel_units = remaining_pixels / scroll_ratio
 
@@ -1640,23 +1645,24 @@ class GazeOcrActions:
             )
 
             if phase2.succeeded:
+                # Use phase2's scroll distance (more accurate for larger scrolls)
                 total_scroll = probe.scroll_distance + phase2.scroll_distance
-                vis_x, vis_y, vis_w, vis_h = phase2.viewport
             else:
                 # Detection failed (e.g., hit bottom of content) - use estimate
                 total_scroll = probe.scroll_distance + remaining_pixels
-                vis_x, vis_y, vis_w, vis_h = probe.viewport
         else:
             # No second scroll needed
             total_scroll = probe.scroll_distance
-            vis_x, vis_y, vis_w, vis_h = probe.viewport
 
         # Line shows where content from before the scroll ends
         line_y = vis_y + vis_h - total_scroll
 
-        logging.info(f"Scroll complete: total={total_scroll:.0f}px")
+        logging.info(
+            f"Scroll complete: total={total_scroll:.0f}px, "
+            f"viewport={vis_w}x{vis_h} (from probe)"
+        )
 
-        # Show visualization using the viewport from whichever detection we're using
+        # Show visualization using probe's viewport (larger matching region)
         debug_mode = settings.get("user.ocr_scroll_debug_mode")
         actions.user.show_scroll_indicator(
             int(line_y),
