@@ -150,7 +150,7 @@ mod.setting(
 mod.setting(
     "ocr_scroll_debug_mode",
     type=bool,
-    default=False,
+    default=True,
     desc="Show full debug visualization (red/green boxes) instead of just the line.",
 )
 mod.setting(
@@ -404,7 +404,7 @@ def has_light_background(screenshot):
 # 2. Constraint-aware density search (Kadane's algorithm variants)
 
 
-def get_best_1d_anchored(arr, anchor_idx):
+def get_best_1d_anchored(arr: np.ndarray, anchor_idx: int) -> tuple[int, int, float]:
     """
     Finds the max-sum subarray that MUST include arr[anchor_idx].
     Complexity: O(N)
@@ -432,7 +432,7 @@ def get_best_1d_anchored(arr, anchor_idx):
     return start, end, max_left + max_right
 
 
-def get_best_1d_unanchored(arr, offset=0):
+def get_best_1d_unanchored(arr: np.ndarray, offset: int = 0) -> tuple[int, int, float]:
     """
     Standard Kadane's Algorithm to find max-sum subarray anywhere.
     Complexity: O(N)
@@ -458,7 +458,9 @@ def get_best_1d_unanchored(arr, offset=0):
     return best_start + offset, best_end + offset, max_so_far
 
 
-def get_best_1d_range_constrained(arr, r_min, r_max):
+def get_best_1d_range_constrained(
+    arr: np.ndarray, r_min: int, r_max: int
+) -> tuple[int, int, float]:
     """
     Finds max-sum subarray that overlaps the interval [r_min, r_max].
     Checks 3 topological cases: Inside, Crossing Top, Crossing Bottom.
@@ -482,9 +484,17 @@ def get_best_1d_range_constrained(arr, r_min, r_max):
     return max(candidates, key=lambda x: x[2])
 
 
+# Width of vertical slice around cursor for row-finding pass
+ROW_SEARCH_SLICE_WIDTH = 100
+
+
 def solve_constrained_box(
-    binary_map, target_col, target_y_range, threshold_vertical, threshold_horizontal
-):
+    binary_map: np.ndarray,
+    target_col: int,
+    target_y_range: tuple[int, int],
+    threshold_vertical: float,
+    threshold_horizontal: float,
+) -> tuple[int, int, int, int] | None:
     """
     Solves 2D max-density box using 2-pass projection.
 
@@ -501,13 +511,20 @@ def solve_constrained_box(
     H, W = binary_map.shape
 
     r_min, r_max = target_y_range
-    r_min, r_max = int(max(0, r_min)), int(min(H - 1, r_max))
+    r_min, r_max = max(0, r_min), min(H - 1, r_max)
 
     # Pass 1: Vertical (Project Rows) -> Best Height
+    # Use a vertical slice around target_col to reduce noise from non-scrolled regions
+    half_slice = ROW_SEARCH_SLICE_WIDTH // 2
+    slice_left = max(0, target_col - half_slice)
+    slice_right = min(W, target_col + half_slice)
+
     # Weight Transformation: Match=+ve, Mismatch=-ve
     # Matches need to outweigh noise based on vertical threshold
     weights_vertical = np.where(
-        binary_map, 1.0 - threshold_vertical, -threshold_vertical - 1e-5
+        binary_map[:, slice_left:slice_right],
+        1.0 - threshold_vertical,
+        -threshold_vertical - 1e-5,
     )
     row_prof = np.sum(weights_vertical, axis=1)
     r1, r2, r_score = get_best_1d_range_constrained(row_prof, r_min, r_max)
@@ -522,7 +539,6 @@ def solve_constrained_box(
     )
     col_prof = np.sum(weights_horizontal[r1 : r2 + 1, :], axis=0)
 
-    target_col = int(target_col)
     if target_col < 0 or target_col >= W:
         return None
 
@@ -535,7 +551,9 @@ def solve_constrained_box(
     return (r1, c1, r2, c2)
 
 
-def detect_scroll(img_before, img_after, cursor_pos):
+def detect_scroll(
+    img_before: np.ndarray, img_after: np.ndarray, cursor_pos: tuple[float, float]
+) -> dict | None:
     """
     Detects vertical scrolling using strip-based voting and constraint-aware search.
 
@@ -580,7 +598,8 @@ def detect_scroll(img_before, img_after, cursor_pos):
     PROBE_ENERGY_EPSILON = 1e-9  # Minimum probe energy to avoid division by zero
     NCC_EXPONENT = 3  # Exponent to apply to NCC scores (amplifies strong correlations)
 
-    cx, cy = cursor_pos
+    # Convert cursor position to integers for array indexing
+    cx, cy = int(cursor_pos[0]), int(cursor_pos[1])
 
     # 1. Preprocessing (Vertical Gradients)
     if img_before.ndim == 3:
@@ -1202,7 +1221,11 @@ class GazeOcrActions:
         actions.user.show_ocr_overlay_for_query(type, "", True)
 
     def show_scroll_indicator(
-        line_y: int, line_x_start: int = 0, line_x_end: Optional[int] = None
+        line_y: int,
+        line_x_start: int = 0,
+        line_x_end: Optional[int] = None,
+        viewport_bbox: Optional[tuple[int, int, int, int]] = None,
+        scroll_distance: Optional[int] = None,
     ):
         """Display fading horizontal line at scroll boundary.
 
@@ -1210,6 +1233,8 @@ class GazeOcrActions:
             line_y: Y-coordinate for the line
             line_x_start: X-coordinate where line starts (default: 0)
             line_x_end: X-coordinate where line ends (default: screen width)
+            viewport_bbox: Optional (x, y, w, h) to show viewport outline in debug mode
+            scroll_distance: Optional scroll distance to show in debug label
         """
         global scroll_indicator_canvas
 
@@ -1227,7 +1252,12 @@ class GazeOcrActions:
         line_x_end_val = line_x_end
 
         start_time = time.time()
-        fade_duration = settings.get("user.ocr_scroll_indicator_fade_seconds")
+        # Use longer fade for debug mode
+        fade_duration = (
+            5.0
+            if viewport_bbox
+            else settings.get("user.ocr_scroll_indicator_fade_seconds")
+        )
 
         def on_draw(c):
             elapsed = time.time() - start_time
@@ -1236,19 +1266,35 @@ class GazeOcrActions:
             if alpha <= 0:
                 return
 
-            # Light blue: RGB(173, 216, 230) -> hex ADD8E6
             alpha_byte = int(alpha * 255)
+
+            # Draw viewport box in green if in debug mode
+            if viewport_bbox:
+                vx, vy, vw, vh = viewport_bbox
+                c.paint.style = c.paint.Style.STROKE
+                c.paint.stroke_width = 3.0
+                c.paint.color = f"00FF00{alpha_byte:02X}"  # Green with alpha
+                c.draw_rect(rect.Rect(x=vx, y=vy, width=vw, height=vh))
+
+                # Draw label
+                c.paint.style = c.paint.Style.FILL
+                c.paint.textsize = 20
+                label = (
+                    f"VIEWPORT (scroll={scroll_distance}px)"
+                    if scroll_distance
+                    else "VIEWPORT"
+                )
+                c.draw_text(label, vx, vy - 5)
+
+            # Draw scroll seam line in light blue
             color = settings.get("user.ocr_scroll_indicator_color")
             c.paint.color = f"{color}{alpha_byte:02X}"
             c.paint.style = c.paint.Style.STROKE
             c.paint.stroke_width = 2.0
 
-            # Draw horizontal line over viewport width
-            # Try draw_line first, fallback to draw_rect if not available
             try:
                 c.draw_line(line_x_start, line_y, line_x_end_val, line_y)
             except AttributeError:
-                # Fallback: use thin rectangle
                 line_width = line_x_end_val - line_x_start
                 c.draw_rect(
                     rect.Rect(x=line_x_start, y=line_y, width=line_width, height=2)
@@ -1274,78 +1320,6 @@ class GazeOcrActions:
         # Convert to milliseconds since cron.after doesn't accept float seconds
         cleanup_delay_ms = int((fade_duration + 0.1) * 1000)
         cron.after(f"{cleanup_delay_ms}ms", cleanup_scroll_canvas)
-
-    def show_scroll_debug_boxes(
-        before_bbox: tuple[int, int, int, int],
-        after_bbox: tuple[int, int, int, int],
-        scroll_distance: int,
-    ):
-        """Display debug visualization of before/after bounding boxes."""
-        global scroll_indicator_canvas
-
-        # Close existing canvas if any
-        if scroll_indicator_canvas:
-            scroll_indicator_canvas.close()
-            scroll_indicator_canvas = None
-
-        screen_rect = screen.main().rect
-        start_time = time.time()
-        fade_duration = 5.0  # Long duration for debugging
-
-        bx, by, bw, bh = before_bbox
-        ax, ay, aw, ah = after_bbox
-
-        def on_draw(c):
-            elapsed = time.time() - start_time
-            if elapsed > fade_duration:
-                return
-
-            # Draw before bbox in red
-            c.paint.style = c.paint.Style.STROKE
-            c.paint.stroke_width = 3.0
-            c.paint.color = "FF0000FF"  # Red, full opacity
-            c.draw_rect(rect.Rect(x=bx, y=by, width=bw, height=bh))
-
-            # Draw after bbox in green
-            c.paint.color = "00FF00FF"  # Green, full opacity
-            c.draw_rect(rect.Rect(x=ax, y=ay, width=aw, height=ah))
-
-            # Draw horizontal line at bottom of after bbox (where indicator line would be)
-            c.paint.color = "ADD8E6FF"  # Light blue
-            c.paint.stroke_width = 2.0
-            line_y = ay + ah
-            try:
-                c.draw_line(0, line_y, screen_rect.width, line_y)
-            except AttributeError:
-                c.draw_rect(rect.Rect(x=0, y=line_y, width=screen_rect.width, height=2))
-
-            # Draw labels
-            c.paint.style = c.paint.Style.FILL
-            c.paint.color = "FF0000FF"
-            c.paint.textsize = 20
-            c.draw_text(f"BEFORE (scroll_dist={scroll_distance})", bx, by - 5)
-
-            c.paint.color = "00FF00FF"
-            c.draw_text("AFTER", ax, ay - 5)
-
-        scroll_indicator_canvas = Canvas.from_screen(screen.main())
-        scroll_indicator_canvas.blocks_mouse = False
-        scroll_indicator_canvas.allows_capture = (
-            False  # Prevent canvas from appearing in screenshots
-        )
-        scroll_indicator_canvas.register("draw", on_draw)
-
-        # Schedule cleanup - capture canvas reference to avoid race condition
-        canvas_to_cleanup = scroll_indicator_canvas
-
-        def cleanup_scroll_canvas():
-            global scroll_indicator_canvas
-            # Only close if it's still the same canvas we created
-            if scroll_indicator_canvas is canvas_to_cleanup:
-                canvas_to_cleanup.close()
-                scroll_indicator_canvas = None
-
-        cron.after(f"{int(fade_duration * 1000)}ms", cleanup_scroll_canvas)
 
     def show_ocr_overlay_for_query(
         type: str, query: str = "", persistent: bool = False
@@ -1606,26 +1580,15 @@ class GazeOcrActions:
             f"total_expected={expected_total_scroll:.0f}px"
         )
 
-        # Show visualization based on expected total scroll
+        # Show visualization
         debug_mode = settings.get("user.ocr_scroll_debug_mode")
-        if debug_mode:
-            # For debug mode, show before/after boxes based on expected positions
-            # Content moves UP when scrolling down, so y position decreases
-            expected_after_bbox = (
-                viewport_x,
-                viewport_y - int(remaining_pixels),
-                viewport_w,
-                viewport_h,
-            )
-            actions.user.show_scroll_debug_boxes(
-                result["before_bbox"],
-                expected_after_bbox,
-                int(expected_total_scroll),
-            )
-        else:
-            actions.user.show_scroll_indicator(
-                int(expected_line_y), viewport_x, viewport_x + viewport_w
-            )
+        actions.user.show_scroll_indicator(
+            int(expected_line_y),
+            viewport_x,
+            viewport_x + viewport_w,
+            viewport_bbox=result["after_bbox"] if debug_mode else None,
+            scroll_distance=int(expected_total_scroll) if debug_mode else None,
+        )
 
         # Save probe scroll screenshots if logging enabled (for debugging detection)
         logging_dir = settings.get("user.ocr_logging_dir")
