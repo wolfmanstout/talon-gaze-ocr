@@ -153,6 +153,12 @@ mod.setting(
     default=False,
     desc="Show full debug visualization (red/green boxes) instead of just the line.",
 )
+mod.setting(
+    "ocr_scroll_viewport_fraction",
+    type=float,
+    default=0.8,
+    desc="Fraction of viewport height to scroll (0.0-1.0).",
+)
 
 mod.tag(
     "gaze_ocr_disambiguation",
@@ -547,7 +553,7 @@ def detect_scroll(img_before, img_after, cursor_pos):
         Returns None if no valid scroll is found.
     """
     # Algorithm configuration constants
-    MIN_SCROLL_DISTANCE = 100  # Minimum scroll distance to consider (pixels)
+    MIN_SCROLL_DISTANCE = 20  # Minimum scroll distance to consider (pixels)
     MIN_REGION_HEIGHT = 200  # Minimum overlap region after scroll
     MIN_VIEWPORT_HEIGHT = 150  # Detected viewport must be at least this tall
     MIN_VIEWPORT_WIDTH = 300  # Detected viewport must be at least this wide
@@ -1520,7 +1526,12 @@ class GazeOcrActions:
         tracker.move_to_gaze_point((offset_right, offset_down))
 
     def scroll_down_with_visualization(amount: float = 1.0):
-        """Scroll down and show visual indicator of content movement."""
+        """Scroll down and show visual indicator of content movement.
+
+        Uses a two-phase approach:
+        1. Probe scroll: Small scroll to detect viewport size and calibrate scroll ratio
+        2. Calibrated scroll: Complete remaining scroll based on detected viewport
+        """
         global scroll_indicator_canvas
 
         if not settings.get("user.ocr_scroll_indicator_enabled"):
@@ -1533,11 +1544,15 @@ class GazeOcrActions:
             scroll_indicator_canvas.close()
             scroll_indicator_canvas = None
         if hide_canvas:
-            # Ensure canvas doesn't interfere with screenshot
             actions.sleep("10ms")
 
         # Get screen dimensions for full screenshot
         screen_rect = screen.main().rect
+        wait_ms = settings.get("user.ocr_scroll_wait_ms")
+        viewport_fraction = settings.get("user.ocr_scroll_viewport_fraction")
+
+        # Phase 1: Probe scroll to detect viewport and calibrate
+        PROBE_SCROLL_AMOUNT = 50  # Wheel units (not pixels)
 
         # Capture before screenshot
         img_before_pil = screen.capture_rect(screen_rect, retina=False)
@@ -1547,11 +1562,10 @@ class GazeOcrActions:
         actions.sleep("5ms")
         cursor_pos = (actions.mouse_x(), actions.mouse_y())
 
-        # Perform scroll
-        actions.user.mouse_scroll_down(amount)
+        # Perform probe scroll
+        actions.mouse_scroll(PROBE_SCROLL_AMOUNT)
 
         # Wait for scroll animation to complete
-        wait_ms = settings.get("user.ocr_scroll_wait_ms")
         actions.sleep(f"{wait_ms}ms")
 
         # Capture after screenshot
@@ -1561,44 +1575,64 @@ class GazeOcrActions:
         # Run scroll detection algorithm
         result = detect_scroll(img_before, img_after, cursor_pos)
 
-        # Save screenshots if logging is enabled
+        if result is None:
+            # TODO: Consider adding fallback to complete scroll without visualization
+            logging.info("Probe scroll detection failed, aborting visualization")
+            return
+
+        # Extract scroll calibration ratio and viewport dimensions
+        actual_scroll = result["scroll_distance"]
+        scroll_ratio = actual_scroll / PROBE_SCROLL_AMOUNT  # e.g., 0.8
+        viewport_x, viewport_y, viewport_w, viewport_h = result["after_bbox"]
+
+        # Phase 2: Calculate and execute remaining scroll
+        total_desired_pixels = viewport_h * viewport_fraction * amount
+        remaining_pixels = max(0, total_desired_pixels - actual_scroll)
+
+        if remaining_pixels > 0 and scroll_ratio > 0:
+            remaining_wheel_units = remaining_pixels / scroll_ratio
+            actions.mouse_scroll(remaining_wheel_units)
+            actions.sleep(f"{wait_ms}ms")
+
+        # Calculate expected final viewport position for visualization.
+        # After scrolling, content moves UP, so the seam (bottom of old content) is at:
+        # viewport_bottom - remaining_scroll = viewport_y + viewport_h - remaining_pixels
+        expected_total_scroll = actual_scroll + remaining_pixels
+        expected_line_y = viewport_y + viewport_h - remaining_pixels
+
+        logging.info(
+            f"Scroll: probe={actual_scroll}px, ratio={scroll_ratio:.2f}, "
+            f"viewport={viewport_w}x{viewport_h}, "
+            f"total_expected={expected_total_scroll:.0f}px"
+        )
+
+        # Show visualization based on expected total scroll
+        debug_mode = settings.get("user.ocr_scroll_debug_mode")
+        if debug_mode:
+            # For debug mode, show before/after boxes based on expected positions
+            # Content moves UP when scrolling down, so y position decreases
+            expected_after_bbox = (
+                viewport_x,
+                viewport_y - int(remaining_pixels),
+                viewport_w,
+                viewport_h,
+            )
+            actions.user.show_scroll_debug_boxes(
+                result["before_bbox"],
+                expected_after_bbox,
+                int(expected_total_scroll),
+            )
+        else:
+            actions.user.show_scroll_indicator(
+                int(expected_line_y), viewport_x, viewport_x + viewport_w
+            )
+
+        # Save probe scroll screenshots if logging enabled (for debugging detection)
         logging_dir = settings.get("user.ocr_logging_dir")
         if logging_dir:
             save_scroll_screenshots(
                 img_before_pil, img_after_pil, result, cursor_pos, logging_dir
             )
-
-        if result is None:
-            logging.info(
-                f"Scroll visualization skipped: detect_scroll returned None (cursor={cursor_pos})"
-            )
-            return
-
-        # Log successful detection
-        logging.info(
-            f"Scroll detected: distance={result['scroll_distance']}px, "
-            f"viewport={result['after_bbox'][2]}x{result['after_bbox'][3]}, "
-            f"position=({result['after_bbox'][0]}, {result['after_bbox'][1]}), "
-            f"consensus={result['consensus_strength']:.2f}"
-        )
-
-        # Show visualization based on debug mode setting
-        debug_mode = settings.get("user.ocr_scroll_debug_mode")
-
-        if debug_mode:
-            # Show full debug visualization with red/green bounding boxes
-            actions.user.show_scroll_debug_boxes(
-                result["before_bbox"],
-                result["after_bbox"],
-                result["scroll_distance"],
-            )
-        else:
-            # Show just the thin blue line over the viewport width
-            x, y, w, h = result["after_bbox"]
-            line_y = y + h
-            line_x_start = x
-            line_x_end = x + w
-            actions.user.show_scroll_indicator(line_y, line_x_start, line_x_end)
 
     #
     # Actions operating on a single point within onscreen text.
