@@ -7,8 +7,9 @@ import sys
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 from talon import Context, Module, actions, app, cron, fs, screen, settings, ui
@@ -795,9 +796,82 @@ def detect_scroll(
     }
 
 
+@dataclass
+class ScrollPhaseResult:
+    """Result from a single scroll phase (probe or completion)."""
+
+    detection: dict | None  # Result from detect_scroll(), None if detection failed
+    img_before_pil: Any  # PIL Image before scroll
+    img_after_pil: Any  # PIL Image after scroll
+    img_after: np.ndarray  # Numpy array of after image (for chaining phases)
+
+    @property
+    def succeeded(self) -> bool:
+        return self.detection is not None
+
+    @property
+    def scroll_distance(self) -> int:
+        return self.detection["scroll_distance"] if self.detection else 0
+
+    @property
+    def viewport(self) -> tuple[int, int, int, int]:
+        """Returns (x, y, width, height) of detected viewport."""
+        if self.detection:
+            return self.detection["after_bbox"]
+        return (0, 0, 0, 0)
+
+
+def perform_scroll_and_detect(
+    img_before_pil,
+    img_before: np.ndarray,
+    scroll_amount: float,
+    cursor_pos: tuple[float, float],
+    screen_rect,
+    wait_ms: int,
+    logging_dir: str | None = None,
+) -> ScrollPhaseResult:
+    """Perform a scroll, capture the result, and run scroll detection.
+
+    Args:
+        img_before_pil: PIL Image from before the scroll
+        img_before: Numpy array of the before image
+        scroll_amount: Wheel units to scroll
+        cursor_pos: (x, y) cursor position
+        screen_rect: Screen rectangle for capture
+        wait_ms: Milliseconds to wait after scroll
+        logging_dir: If provided, save debug screenshots
+
+    Returns:
+        ScrollPhaseResult with detection results and images
+    """
+    actions.mouse_scroll(scroll_amount)
+    actions.sleep(f"{wait_ms}ms")
+
+    img_after_pil = screen.capture_rect(screen_rect, retina=False)
+    img_after = np.array(img_after_pil)
+
+    detection = detect_scroll(img_before, img_after, cursor_pos)
+
+    if logging_dir:
+        save_scroll_screenshots(
+            img_before_pil, img_after_pil, detection, cursor_pos, logging_dir
+        )
+
+    return ScrollPhaseResult(
+        detection=detection,
+        img_before_pil=img_before_pil,
+        img_after_pil=img_after_pil,
+        img_after=img_after,
+    )
+
+
 def save_scroll_screenshots(
-    img_before_pil, img_after_pil, result, cursor_pos, logging_dir
-):
+    img_before_pil,
+    img_after_pil,
+    result: dict | None,
+    cursor_pos: tuple[float, float],
+    logging_dir: str,
+) -> None:
     """Save before/after screenshots and metadata for scroll detection.
 
     Args:
@@ -807,9 +881,6 @@ def save_scroll_screenshots(
         cursor_pos: Tuple (x, y) of cursor position during scroll
         logging_dir: Directory path from ocr_logging_dir setting
     """
-    if not logging_dir:
-        return
-
     timestamp = time.time()
 
     # Determine file naming based on success/failure
@@ -1512,90 +1583,98 @@ class GazeOcrActions:
             actions.user.mouse_scroll_down(amount)
             return
 
-        # Close any existing canvas before taking screenshot to prevent interference
-        hide_canvas = scroll_indicator_canvas
+        # Close any existing canvas to prevent screenshot interference
         if scroll_indicator_canvas:
             scroll_indicator_canvas.close()
             scroll_indicator_canvas = None
-        if hide_canvas:
             actions.sleep("10ms")
 
-        # Get screen dimensions for full screenshot
+        # Configuration
         screen_rect = screen.main().rect
         wait_ms = settings.get("user.ocr_scroll_wait_ms")
         viewport_fraction = settings.get("user.ocr_scroll_viewport_fraction")
-
-        # Phase 1: Probe scroll to detect viewport and calibrate
+        logging_dir = settings.get("user.ocr_logging_dir")
         PROBE_SCROLL_AMOUNT = 50  # Wheel units (not pixels)
 
-        # Capture before screenshot
+        # Capture initial state
         img_before_pil = screen.capture_rect(screen_rect, retina=False)
         img_before = np.array(img_before_pil)
-
-        # Get cursor position (after small sleep to let it settle)
         actions.sleep("5ms")
         cursor_pos = (actions.mouse_x(), actions.mouse_y())
 
-        # Perform probe scroll
-        actions.mouse_scroll(PROBE_SCROLL_AMOUNT)
+        # Phase 1: Probe scroll to detect viewport and calibrate
+        probe = perform_scroll_and_detect(
+            img_before_pil,
+            img_before,
+            PROBE_SCROLL_AMOUNT,
+            cursor_pos,
+            screen_rect,
+            wait_ms,
+            logging_dir,
+        )
 
-        # Wait for scroll animation to complete
-        actions.sleep(f"{wait_ms}ms")
-
-        # Capture after screenshot
-        img_after_pil = screen.capture_rect(screen_rect, retina=False)
-        img_after = np.array(img_after_pil)
-
-        # Run scroll detection algorithm
-        result = detect_scroll(img_before, img_after, cursor_pos)
-
-        if result is None:
-            # TODO: Consider adding fallback to complete scroll without visualization
+        if not probe.succeeded:
             logging.info("Probe scroll detection failed, aborting visualization")
             return
 
-        # Extract scroll calibration ratio and viewport dimensions
-        actual_scroll = result["scroll_distance"]
-        scroll_ratio = actual_scroll / PROBE_SCROLL_AMOUNT  # e.g., 0.8
-        viewport_x, viewport_y, viewport_w, viewport_h = result["after_bbox"]
+        scroll_ratio = probe.scroll_distance / PROBE_SCROLL_AMOUNT
 
         # Phase 2: Calculate and execute remaining scroll
-        total_desired_pixels = viewport_h * viewport_fraction * amount
-        remaining_pixels = max(0, total_desired_pixels - actual_scroll)
+        probe_viewport_h = probe.viewport[3]  # height
+        total_desired_pixels = probe_viewport_h * viewport_fraction * amount
+        remaining_pixels = max(0, total_desired_pixels - probe.scroll_distance)
 
         if remaining_pixels > 0 and scroll_ratio > 0:
             remaining_wheel_units = remaining_pixels / scroll_ratio
-            actions.mouse_scroll(remaining_wheel_units)
-            actions.sleep(f"{wait_ms}ms")
 
-        # Calculate expected final viewport position for visualization.
-        # After scrolling, content moves UP, so the seam (bottom of old content) is at:
-        # viewport_bottom - remaining_scroll = viewport_y + viewport_h - remaining_pixels
-        expected_total_scroll = actual_scroll + remaining_pixels
-        expected_line_y = viewport_y + viewport_h - remaining_pixels
+            phase2 = perform_scroll_and_detect(
+                probe.img_after_pil,
+                probe.img_after,
+                remaining_wheel_units,
+                cursor_pos,
+                screen_rect,
+                wait_ms,
+                logging_dir,
+            )
+
+            if phase2.succeeded:
+                total_scroll = probe.scroll_distance + phase2.scroll_distance
+                vis_x, vis_y, vis_w, vis_h = phase2.viewport
+                line_y = vis_y + vis_h - phase2.scroll_distance
+                logging.info(
+                    f"Scroll phase 2: detected={phase2.scroll_distance}px, "
+                    f"total_actual={total_scroll}px"
+                )
+            else:
+                # Detection failed (e.g., hit bottom of content) - use estimate
+                total_scroll = probe.scroll_distance + remaining_pixels
+                vis_x, vis_y, vis_w, vis_h = probe.viewport
+                line_y = vis_y + vis_h - remaining_pixels
+                logging.info(
+                    f"Scroll phase 2: detection failed, using estimate. "
+                    f"total_estimated={total_scroll:.0f}px"
+                )
+        else:
+            # No second scroll needed
+            total_scroll = probe.scroll_distance
+            vis_x, vis_y, vis_w, vis_h = probe.viewport
+            line_y = vis_y + vis_h
 
         logging.info(
-            f"Scroll: probe={actual_scroll}px, ratio={scroll_ratio:.2f}, "
-            f"viewport={viewport_w}x{viewport_h}, "
-            f"total_expected={expected_total_scroll:.0f}px"
+            f"Scroll: probe={probe.scroll_distance}px, ratio={scroll_ratio:.2f}, "
+            f"viewport={vis_w}x{vis_h}, "
+            f"total={total_scroll:.0f}px"
         )
 
-        # Show visualization
+        # Show visualization using the viewport from whichever detection we're using
         debug_mode = settings.get("user.ocr_scroll_debug_mode")
         actions.user.show_scroll_indicator(
-            int(expected_line_y),
-            viewport_x,
-            viewport_x + viewport_w,
-            viewport_bbox=result["after_bbox"] if debug_mode else None,
-            scroll_distance=int(expected_total_scroll) if debug_mode else None,
+            int(line_y),
+            vis_x,
+            vis_x + vis_w,
+            viewport_bbox=(vis_x, vis_y, vis_w, vis_h) if debug_mode else None,
+            scroll_distance=int(total_scroll) if debug_mode else None,
         )
-
-        # Save probe scroll screenshots if logging enabled (for debugging detection)
-        logging_dir = settings.get("user.ocr_logging_dir")
-        if logging_dir:
-            save_scroll_screenshots(
-                img_before_pil, img_after_pil, result, cursor_pos, logging_dir
-            )
 
     #
     # Actions operating on a single point within onscreen text.
