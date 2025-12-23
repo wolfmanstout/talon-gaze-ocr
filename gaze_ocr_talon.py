@@ -5,7 +5,6 @@ import os
 import re
 import sys
 import time
-from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -400,9 +399,15 @@ def has_light_background(screenshot):
 
 
 # --- Scroll Detection Algorithm ---
-# Vertical Scrolling Detection using Global Projection
-# 1. Global vertical projection with correlation
-# 2. Constraint-aware density search (Kadane's algorithm variants)
+# Vertical Scrolling Detection using Three-Phase Approach
+#
+# A robust approach using:
+# 1. Initial viewport estimation (find changed pixels via binary diff + Kadane)
+# 2. Scroll distance calculation (strip-based NCC voting on gradient profiles)
+# 3. Viewport refinement (find matching pixels to refine bounds)
+
+
+# --- Kadane's Algorithm Variants (O(N) 1D Solvers) ---
 
 
 def get_best_1d_anchored(arr: np.ndarray, anchor_idx: int) -> tuple[int, int, float]:
@@ -485,123 +490,366 @@ def get_best_1d_range_constrained(
     return max(candidates, key=lambda x: x[2])
 
 
+# --- Phase 1: Initial Viewport Estimation ---
+# Find changed region via binary diff + 2-pass Kadane (looking at changed pixels)
+
+# Threshold ratio for mean-normalized weights in Phase 1
+# Lower value = less penalty for unchanged rows, allowing viewport to bridge gaps
+CHANGE_THRESHOLD_RATIO = 0.15
+
+
+def estimate_initial_viewport(
+    before: np.ndarray,
+    after: np.ndarray,
+    cursor_pos: tuple[int, int],
+    pixel_tolerance: int = 15,
+) -> tuple[int, int, int, int] | None:
+    """
+    Estimates the initial viewport by finding the largest region of changed pixels,
+    anchored at the cursor position.
+
+    Uses binary thresholding of pixel differences, then mean-normalized weights
+    to handle varying viewport sizes robustly.
+
+    Args:
+        before: Grayscale image before scroll (H, W)
+        after: Grayscale image after scroll (H, W)
+        cursor_pos: (x, y) cursor position
+        pixel_tolerance: Maximum difference to consider pixels unchanged
+
+    Returns:
+        (x, y, width, height) viewport bounds or None if detection fails
+    """
+    H, W = before.shape
+    cx, cy = cursor_pos
+
+    # Validate cursor position
+    if not (0 <= cx < W and 0 <= cy < H):
+        logging.debug(f"Initial viewport: cursor out of bounds ({cx}, {cy})")
+        return None
+
+    # Step 1-2: Compute diff and threshold to binary change map
+    diff = np.abs(after.astype(float) - before.astype(float))
+    changed = diff > pixel_tolerance
+
+    # Step 3-4: Sum changed pixels per row and normalize
+    row_sums = np.sum(changed, axis=1).astype(float)
+    active_rows = row_sums > 0
+
+    if not np.any(active_rows):
+        logging.debug("Initial viewport: no changed pixels detected")
+        return None
+
+    mean_row_activity = np.mean(row_sums[active_rows])
+    row_weights = row_sums - (CHANGE_THRESHOLD_RATIO * mean_row_activity)
+
+    # Step 5: Run anchored Kadane to find row range
+    r1, r2, r_score = get_best_1d_anchored(row_weights, cy)
+
+    if r_score <= 0 or r1 > r2:
+        logging.debug(f"Initial viewport: no valid row range (score={r_score:.2f})")
+        return None
+
+    # Step 6: Repeat for columns using found row range
+    changed_cropped = changed[r1 : r2 + 1, :]
+    col_sums = np.sum(changed_cropped, axis=0).astype(float)
+    active_cols = col_sums > 0
+
+    if not np.any(active_cols):
+        logging.debug("Initial viewport: no changed pixels in row range")
+        return None
+
+    mean_col_activity = np.mean(col_sums[active_cols])
+    col_weights = col_sums - (CHANGE_THRESHOLD_RATIO * mean_col_activity)
+
+    # Step 7: Run anchored Kadane to find column range
+    c1, c2, c_score = get_best_1d_anchored(col_weights, cx)
+
+    if c_score <= 0 or c1 > c2:
+        logging.debug(f"Initial viewport: no valid column range (score={c_score:.2f})")
+        return None
+
+    width = c2 - c1 + 1
+    height = r2 - r1 + 1
+
+    logging.debug(
+        f"Initial viewport: ({c1}, {r1}) {width}x{height}, "
+        f"row_score={r_score:.2f}, col_score={c_score:.2f}"
+    )
+
+    return (c1, r1, width, height)
+
+
+# --- Phase 2: Scroll Distance Estimation ---
+# Strip-based NCC voting on gradient profiles
+
+# Number of vertical strips for voting
+NUM_STRIPS = 8
+# Minimum mean gradient to consider a strip (skip flat/uniform strips)
+MIN_STRIP_GRADIENT = 1.0
+# Minimum NCC score to count a vote
+MIN_NCC_SCORE = 0.1
+# Exponent to amplify strong correlations in voting
+NCC_EXPONENT = 2
+
+
+def estimate_scroll_distance(
+    before: np.ndarray,
+    after: np.ndarray,
+    viewport: tuple[int, int, int, int],
+    min_distance: int = 20,
+    min_overlap: int = 150,
+) -> int | None:
+    """
+    Estimates scroll distance using strip-based NCC voting on gradient profiles.
+
+    Splits the viewport into vertical strips, computes NCC for each strip independently,
+    and aggregates votes to find consensus scroll distance. This is robust to uniform
+    regions (like sidebars) that would otherwise dominate single-profile correlation.
+
+    Args:
+        before: Grayscale image before scroll (H, W)
+        after: Grayscale image after scroll (H, W)
+        viewport: (x, y, width, height) viewport bounds
+        min_distance: Minimum scroll distance to consider valid
+        min_overlap: Minimum overlap height required (prevents edge effects)
+
+    Returns:
+        Scroll distance in pixels (positive = content scrolled up), or None
+    """
+    x, y, w, h = viewport
+
+    # Crop both images to viewport bounds
+    before_crop = before[y : y + h, x : x + w]
+    after_crop = after[y : y + h, x : x + w]
+
+    # Compute vertical gradients (row-to-row differences)
+    grad_before = np.diff(before_crop, axis=0)
+    grad_after = np.diff(after_crop, axis=0)
+
+    # Use gradient height for correlation (h - 1 due to diff)
+    h_grad = grad_before.shape[0]
+
+    # Constraint: overlap = h_grad - d >= min_overlap, so d <= h_grad - min_overlap
+    max_d = h_grad - min_overlap
+    if max_d <= min_distance:
+        logging.debug(
+            "Viewport too small for minimum scroll distance with required overlap"
+        )
+        return None
+
+    # Initialize vote accumulator
+    votes = {}
+    eps = 1e-9
+
+    # Process each vertical strip
+    strip_width = w // NUM_STRIPS
+    for strip_idx in range(NUM_STRIPS):
+        x_start = strip_idx * strip_width
+        x_end = x_start + strip_width if strip_idx < NUM_STRIPS - 1 else w
+
+        # Extract strip gradients
+        strip_grad_b = grad_before[:, x_start:x_end]
+        strip_grad_a = grad_after[:, x_start:x_end]
+
+        # Skip strips with low gradient activity (uniform regions)
+        if np.mean(np.abs(strip_grad_b)) < MIN_STRIP_GRADIENT:
+            continue
+
+        # Create 1D profiles for this strip
+        profile_b = np.sum(np.abs(strip_grad_b), axis=1).astype(float)
+        profile_a = np.sum(np.abs(strip_grad_a), axis=1).astype(float)
+
+        # Find best NCC for this strip
+        best_ncc = -1
+        best_d = min_distance
+
+        for d in range(min_distance, max_d + 1):
+            overlap_h = h_grad - d
+            b_seg = profile_b[d:]
+            a_seg = profile_a[:overlap_h]
+
+            # Normalized cross-correlation
+            dot_product = np.dot(b_seg, a_seg)
+            norm_b = np.linalg.norm(b_seg)
+            norm_a = np.linalg.norm(a_seg)
+
+            ncc = dot_product / (norm_b * norm_a + eps)
+
+            if ncc > best_ncc:
+                best_ncc = ncc
+                best_d = d
+
+        # Vote for best distance (weighted by NCC score)
+        if best_ncc >= MIN_NCC_SCORE:
+            vote_weight = best_ncc**NCC_EXPONENT
+            votes[best_d] = votes.get(best_d, 0) + vote_weight
+
+    # Find winning scroll distance
+    if not votes:
+        logging.debug("No strips voted for any scroll distance")
+        return None
+
+    # Get best voted distance
+    best_d = max(votes.keys(), key=lambda d: votes[d])
+    best_vote = votes[best_d]
+
+    logging.debug(
+        f"Scroll distance: {best_d}px (votes={best_vote:.4f}, num_votes={len(votes)})"
+    )
+    return int(best_d)
+
+
+# --- Phase 3: Viewport Refinement ---
+# Refine bounds of shifted region using matching pixels
+
 # Width of vertical slice around cursor for row-finding pass
 ROW_SEARCH_SLICE_WIDTH = 100
 
+# Density threshold for matching pixel detection
+DENSITY_THRESHOLD = 0.85
 
-def solve_constrained_box(
-    binary_map: np.ndarray,
-    target_col: int,
-    target_y_range: tuple[int, int],
-    threshold_vertical: float,
-    threshold_horizontal: float,
-) -> tuple[int, int, int, int] | None:
+
+def refine_viewport(
+    before: np.ndarray,
+    after: np.ndarray,
+    initial_viewport: tuple[int, int, int, int],
+    scroll_distance: int,
+    cursor_pos: tuple[int, int],
+    pixel_tolerance: int = 15,
+) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]] | None:
     """
-    Solves 2D max-density box using 2-pass projection.
+    Refines viewport bounds by finding matching pixels in aligned regions.
 
     Args:
-        binary_map: 2D boolean array (True = match, False = mismatch)
-        target_col: Column that must be included
-        target_y_range: (min, max) row range that must be overlapped
-        threshold_vertical: Minimum match density for vertical pass (row finding)
-        threshold_horizontal: Minimum match density for horizontal pass (column finding)
+        before: Grayscale image before scroll (H, W)
+        after: Grayscale image after scroll (H, W)
+        initial_viewport: (x, y, width, height) initial viewport estimate
+        scroll_distance: Detected scroll distance in pixels
+        cursor_pos: (x, y) cursor position
+        pixel_tolerance: Maximum difference to consider pixels matching
 
     Returns:
-        (r1, c1, r2, c2) bounding box or None
+        Tuple of (refined_viewport, after_bbox) or None if refinement fails.
+        refined_viewport: (x, y, width, height) refined viewport bounds
+        after_bbox: (x, y, width, height) overlap region in after image
     """
-    H, W = binary_map.shape
+    H, _ = before.shape
+    cx, cy = cursor_pos
+    init_x, _, init_w, _ = initial_viewport
+    d = scroll_distance
 
-    r_min, r_max = target_y_range
-    r_min, r_max = max(0, r_min), min(H - 1, r_max)
+    # Calculate aligned regions
+    # After content at [0 : H-d] corresponds to Before content at [d : H]
+    limit_h = H - d
+    if limit_h <= 0:
+        logging.debug(f"Viewport refinement: invalid limit_h={limit_h}")
+        return None
 
-    # Pass 1: Vertical (Project Rows) -> Best Height
-    # Use a vertical slice around target_col to reduce noise from non-scrolled regions
+    # Crop using initial viewport column range
+    c1_init = init_x
+    c2_init = init_x + init_w
+
+    after_region = after[:limit_h, c1_init:c2_init]
+    before_region = before[d:, c1_init:c2_init]
+
+    # Compute diff and create matching map
+    diff = np.abs(after_region.astype(float) - before_region.astype(float))
+    match_map = diff < pixel_tolerance
+
+    _, region_w = match_map.shape
+
+    # Compute cursor constraints (must overlap cursor's scroll path)
+    target_y_max = min(cy, limit_h - 1)
+    target_y_min = max(0, cy - d)
+    if target_y_min > target_y_max:
+        target_y_min = target_y_max
+
+    # Refine rows: apply weight transformation and run constrained Kadane
+    weights = np.where(match_map, 1.0 - DENSITY_THRESHOLD, -DENSITY_THRESHOLD - 1e-5)
+
+    # Use a vertical slice around cursor for row finding (reduce noise)
     half_slice = ROW_SEARCH_SLICE_WIDTH // 2
-    slice_left = max(0, target_col - half_slice)
-    slice_right = min(W, target_col + half_slice)
+    cursor_in_region = cx - c1_init
+    slice_left = max(0, cursor_in_region - half_slice)
+    slice_right = min(region_w, cursor_in_region + half_slice)
 
-    # Weight Transformation: Match=+ve, Mismatch=-ve
-    # Matches need to outweigh noise based on vertical threshold
-    weights_vertical = np.where(
-        binary_map[:, slice_left:slice_right],
-        1.0 - threshold_vertical,
-        -threshold_vertical - 1e-5,
+    row_weights = np.sum(weights[:, slice_left:slice_right], axis=1)
+    r1, r2, r_score = get_best_1d_range_constrained(
+        row_weights, target_y_min, target_y_max
     )
-    row_prof = np.sum(weights_vertical, axis=1)
-    r1, r2, r_score = get_best_1d_range_constrained(row_prof, r_min, r_max)
 
     if r_score <= 0:
+        logging.debug(f"Viewport refinement: no valid row range (score={r_score:.2f})")
         return None
 
-    # Pass 2: Horizontal (Project Cols) -> Best Width
-    # Crop to the best rows found and apply horizontal threshold
-    weights_horizontal = np.where(
-        binary_map, 1.0 - threshold_horizontal, -threshold_horizontal - 1e-5
-    )
-    col_prof = np.sum(weights_horizontal[r1 : r2 + 1, :], axis=0)
-
-    if target_col < 0 or target_col >= W:
-        return None
-
-    # Anchored search (cursor must be included)
-    c1, c2, c_score = get_best_1d_anchored(col_prof, target_col)
+    # Refine columns: use refined row range
+    col_weights = np.sum(weights[r1 : r2 + 1, :], axis=0)
+    c1_rel, c2_rel, c_score = get_best_1d_anchored(col_weights, cursor_in_region)
 
     if c_score <= 0:
+        logging.debug(
+            f"Viewport refinement: no valid column range (score={c_score:.2f})"
+        )
         return None
 
-    return (r1, c1, r2, c2)
+    # Convert back to absolute coordinates
+    c1 = c1_init + c1_rel
+    c2 = c1_init + c2_rel
+
+    # Compute final viewport
+    h_overlap = r2 - r1 + 1
+    w_refined = c2 - c1 + 1
+    h_viewport = h_overlap + d
+
+    after_bbox = (c1, r1, w_refined, h_overlap)
+    refined_viewport = (c1, r1, w_refined, h_viewport)
+
+    logging.debug(
+        f"Viewport refined: ({c1}, {r1}) {w_refined}x{h_viewport}, "
+        f"overlap_h={h_overlap}, r_score={r_score:.2f}, c_score={c_score:.2f}"
+    )
+
+    return (refined_viewport, after_bbox)
 
 
 def detect_scroll(
-    img_before: np.ndarray, img_after: np.ndarray, cursor_pos: tuple[float, float]
+    img_before: np.ndarray,
+    img_after: np.ndarray,
+    cursor_pos: tuple[float, float],
+    existing_viewport: tuple[int, int, int, int] | None = None,
 ) -> dict | None:
     """
-    Detects vertical scrolling using strip-based voting and constraint-aware search.
+    Detects vertical scrolling using a three-phase approach:
+    1. Initial viewport estimation (find changed region)
+    2. Scroll distance calculation (cross-correlation)
+    3. Viewport refinement (find matching pixels)
+
+    When existing_viewport is provided, skips Phase 1 and 3 (for second scroll detection).
 
     Args:
         img_before: Numpy array (H, W, 3) or (H, W) - image before scroll
         img_after: Numpy array (H, W, 3) or (H, W) - image after scroll
         cursor_pos: (x, y) tuple - cursor position
+        existing_viewport: Optional (x, y, w, h) viewport from previous detection
 
     Returns:
         Dictionary with:
             - scroll_distance: Integer pixels scrolled (content moved up by this amount)
             - after_bbox: (x, y, w, h) overlap region in the after image
-            - consensus_strength: Ratio of best vote to second-best (quality metric)
+            - viewport: (x, y, w, h) refined viewport bounds
         Returns None if no valid scroll is found.
     """
     # Algorithm configuration constants
     MIN_SCROLL_DISTANCE = 20  # Minimum scroll distance to consider (pixels)
-    MIN_REGION_HEIGHT = 200  # Minimum overlap region after scroll
     MIN_VIEWPORT_HEIGHT = 150  # Detected viewport must be at least this tall
-    MIN_VIEWPORT_WIDTH = 300  # Detected viewport must be at least this wide
+    MIN_VIEWPORT_WIDTH = 150  # Detected viewport must be at least this wide
     PIXEL_MATCH_TOLERANCE = 15  # Max pixel difference to consider a match
-    DENSITY_THRESHOLD_VERTICAL = (
-        0.85  # Minimum match density for vertical pass (row finding)
-    )
-    DENSITY_THRESHOLD_HORIZONTAL = (
-        0.85  # Minimum match density for horizontal pass (column finding)
-    )
-
-    # Strip-based voting configuration
-    NUM_STRIPS = 16  # Number of vertical strips to divide image into
-
-    # Vertical tiling configuration (grid probes)
-    NUM_TILES = 16  # Number of vertical tiles per strip (determines tile size)
-    TILE_OVERLAP = 0.5  # Overlap between tiles (0.5 = 50%)
-
-    # Correlation and filtering thresholds
-    MIN_CORRELATION_SCORE = 0.35  # Minimum normalized correlation to consider
-    MIN_STRIP_GRADIENT = (
-        2.0  # Minimum mean gradient to consider strip/tile (skip flat regions)
-    )
-    PROBE_ENERGY_EPSILON = 1e-9  # Minimum probe energy to avoid division by zero
-    NCC_EXPONENT = 3  # Exponent to apply to NCC scores (amplifies strong correlations)
 
     # Convert cursor position to integers for array indexing
     cx, cy = int(cursor_pos[0]), int(cursor_pos[1])
 
-    # 1. Preprocessing (Vertical Gradients)
+    # Preprocessing: Convert to grayscale
     if img_before.ndim == 3:
         # Grayscale conversion using ITU-R BT.709 coefficients
         gb = (
@@ -617,182 +865,94 @@ def detect_scroll(
     else:
         gb, ga = img_before.astype(float), img_after.astype(float)
 
-    # Absolute vertical gradients (row differences)
-    grad_b = np.abs(gb[1:] - gb[:-1])
-    grad_a = np.abs(ga[1:] - ga[:-1])
+    H, _ = gb.shape
 
-    # 2. Grid Probes: Find Distance 'd' using Strip-Based Voting with Vertical Tiling
-    H_grad, W = grad_b.shape
-    H = gb.shape[0]
-    strip_width = W // NUM_STRIPS
-
-    # Calculate tile parameters
-    tile_size = H_grad // NUM_TILES
-    step = int(tile_size * (1 - TILE_OVERLAP))
-
-    # Initialize voting dictionary
-    votes = defaultdict(float)
-
-    # Process each strip
-    for strip_idx in range(NUM_STRIPS):
-        x_start = strip_idx * strip_width
-        x_end = min(x_start + strip_width, W)
-
-        # Extract full vertical strips
-        strip_b = grad_b[:, x_start:x_end]
-        strip_a = grad_a[:, x_start:x_end]
-
-        # Skip flat strips (no content)
-        if np.mean(strip_b) < MIN_STRIP_GRADIENT:
-            continue
-
-        # Project full 'After' strip (target)
-        proj_a = np.sum(strip_a, axis=1)
-
-        # Precompute window energy outside inner loop (tile_size is constant)
-        target_sq = proj_a**2
-        window_energy = np.convolve(target_sq, np.ones(tile_size), mode="valid")
-        window_energy = np.sqrt(window_energy)
-
-        # --- INNER LOOP: Vertical Tiles (Probes) ---
-        # Slide a window down the 'Before' strip to create probes
-        for y in range(0, H_grad - tile_size + 1, step):
-            # Extract probe (chunk of Before)
-            tile_b = strip_b[y : y + tile_size, :]
-
-            # Skip empty tiles
-            if np.mean(tile_b) < MIN_STRIP_GRADIENT:
-                continue
-
-            # Project probe
-            proj_b_tile = np.sum(tile_b, axis=1)
-
-            # Correlate probe against full target (mode='valid')
-            raw_corr = np.correlate(proj_a, proj_b_tile, mode="valid")
-
-            # Normalized Cross-Correlation (NCC)
-            # Probe energy (scalar, varies per tile)
-            probe_energy = np.sqrt(np.sum(proj_b_tile**2))
-
-            if probe_energy < PROBE_ENERGY_EPSILON:
-                continue
-
-            # Normalized correlation
-            norm_corr = raw_corr / (probe_energy * window_energy + PROBE_ENERGY_EPSILON)
-
-            # Find best match
-            best_idx = np.argmax(norm_corr)
-            score = norm_corr[best_idx]
-
-            # Apply exponent to amplify strong correlations
-            score_weighted = score**NCC_EXPONENT
-
-            # Calculate scroll distance
-            # The probe started at 'y' in Before and matches at 'best_idx' in After
-            # Scroll distance d = y - best_idx
-            d = y - best_idx
-
-            # Filter by score and minimum scroll distance
-            if score > MIN_CORRELATION_SCORE and abs(d) >= MIN_SCROLL_DISTANCE:
-                votes[d] += score_weighted
-
-    # 3. Find winning scroll distance from votes
-    if not votes:
-        logging.info("Scroll detection failed: No votes from strip-based correlation")
-        return None
-
-    # Filter by minimum scroll distance and maximum scroll
-    max_scroll = H - MIN_REGION_HEIGHT
-    if max_scroll < MIN_SCROLL_DISTANCE:
-        logging.info(
-            f"Scroll detection failed: Screen height ({H}) too small for minimum scroll distance "
-            f"(max_scroll={max_scroll}, required={MIN_SCROLL_DISTANCE})"
-        )
-        return None
-
-    valid_votes = {
-        d: v for d, v in votes.items() if MIN_SCROLL_DISTANCE <= d <= max_scroll
-    }
-
-    if not valid_votes:
-        logging.info(
-            f"Scroll detection failed: No valid votes in range "
-            f"(min_scroll={MIN_SCROLL_DISTANCE}, max_scroll={max_scroll}, total_votes={len(votes)})"
-        )
-        return None
-
-    # Get best and second-best
-    sorted_votes = sorted(valid_votes.items(), key=lambda x: x[1], reverse=True)
-    d, best_vote = sorted_votes[0]
-    second_best_vote = sorted_votes[1][1] if len(sorted_votes) > 1 else 0
-
-    # Calculate consensus strength
-    if second_best_vote > 0:
-        consensus_ratio = best_vote / second_best_vote
+    # --- Phase 1: Initial Viewport Estimation ---
+    if existing_viewport is not None:
+        # Use provided viewport (skip Phase 1)
+        viewport = existing_viewport
+        logging.debug(f"Using existing viewport: {viewport}")
     else:
-        consensus_ratio = np.inf if best_vote > 0 else 1.0
+        # Estimate initial viewport by finding changed pixels
+        viewport = estimate_initial_viewport(
+            gb, ga, (cx, cy), pixel_tolerance=PIXEL_MATCH_TOLERANCE
+        )
+        if viewport is None:
+            logging.info("Scroll detection failed: Could not estimate initial viewport")
+            return None
 
-    # Log voting details for debugging (debug level - internal algorithm detail)
-    logging.debug(
-        f"Scroll voting: best_distance={d}px, "
-        f"vote_strength={best_vote:.2f}, "
-        f"consensus_ratio={consensus_ratio:.2f}"
-    )
-
-    # 4. Viewport Extraction (Shift & Diff)
-    limit_h = H - d
-
-    # Align After[0:limit] with Before[d:H]
-    rect_a = ga[:limit_h, :]
-    rect_b = gb[d:, :]
-
-    # Create Binary Map (Matches vs Mismatches)
-    diff = np.abs(rect_a - rect_b)
-    binary_map = diff < PIXEL_MATCH_TOLERANCE
-
-    # 5. Apply Geometric Constraints
-    # The viewport must overlap the path [y_cursor - d, y_cursor]
-    target_y_max = min(cy, limit_h - 1)
-    target_y_min = max(0, cy - d)
-
-    # Handle deep scrolling cursor edge case
-    if target_y_min > target_y_max:
-        target_y_min = target_y_max
-
-    bbox = solve_constrained_box(
-        binary_map,
-        target_col=cx,
-        target_y_range=(target_y_min, target_y_max),
-        threshold_vertical=DENSITY_THRESHOLD_VERTICAL,
-        threshold_horizontal=DENSITY_THRESHOLD_HORIZONTAL,
-    )
-
-    if not bbox:
+    # Validate viewport size
+    _, _, vp_w, vp_h = viewport
+    if vp_h < MIN_VIEWPORT_HEIGHT or vp_w < MIN_VIEWPORT_WIDTH:
         logging.info(
-            f"Scroll detection failed: No viewport found meeting density thresholds "
-            f"(scroll_distance={d}, cursor={cursor_pos}, y_range=({target_y_min}, {target_y_max}), "
-            f"v_thresh={DENSITY_THRESHOLD_VERTICAL}, h_thresh={DENSITY_THRESHOLD_HORIZONTAL})"
+            f"Scroll detection failed: Initial viewport too small "
+            f"(detected: {vp_w}x{vp_h}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT})"
         )
         return None
 
-    r1, c1, r2, c2 = bbox
-    h_overlap, w_box = r2 - r1, c2 - c1
-    # Viewport height = overlap height + scroll distance (union of before/after regions)
-    h_viewport = h_overlap + d
+    # --- Phase 2: Scroll Distance Estimation ---
+    scroll_distance = estimate_scroll_distance(
+        gb,
+        ga,
+        viewport,
+        min_distance=MIN_SCROLL_DISTANCE,
+        min_overlap=MIN_VIEWPORT_HEIGHT,
+    )
+    if scroll_distance is None:
+        logging.info("Scroll detection failed: Could not estimate scroll distance")
+        return None
+
+    # Validate scroll distance against image bounds
+    if scroll_distance >= H - MIN_VIEWPORT_HEIGHT:
+        logging.info(
+            f"Scroll detection failed: Scroll distance too large "
+            f"(d={scroll_distance}, max={H - MIN_VIEWPORT_HEIGHT})"
+        )
+        return None
+
+    # --- Phase 3: Viewport Refinement ---
+    if existing_viewport is not None:
+        # Skip refinement when using existing viewport (second scroll)
+        # Use existing viewport as refined viewport
+        refined_viewport = existing_viewport
+        # Compute after_bbox from viewport and scroll distance
+        x, y, w, h = existing_viewport
+        h_overlap = h - scroll_distance
+        if h_overlap <= 0:
+            logging.info(
+                f"Scroll detection failed: Invalid overlap height ({h_overlap})"
+            )
+            return None
+        after_bbox = (x, y, w, h_overlap)
+    else:
+        # Refine viewport by finding matching pixels
+        result = refine_viewport(
+            gb,
+            ga,
+            viewport,
+            scroll_distance,
+            (cx, cy),
+            pixel_tolerance=PIXEL_MATCH_TOLERANCE,
+        )
+        if result is None:
+            logging.info("Scroll detection failed: Could not refine viewport")
+            return None
+
+        refined_viewport, after_bbox = result
 
     # Final Feasibility Check
-    if h_viewport < MIN_VIEWPORT_HEIGHT or w_box < MIN_VIEWPORT_WIDTH:
+    _, _, rv_w, rv_h = refined_viewport
+    if rv_h < MIN_VIEWPORT_HEIGHT or rv_w < MIN_VIEWPORT_WIDTH:
         logging.info(
-            f"Scroll detection failed: Viewport too small "
-            f"(detected: {w_box}x{h_viewport}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT}, "
-            f"scroll_distance={d})"
+            f"Scroll detection failed: Refined viewport too small "
+            f"(detected: {rv_w}x{rv_h}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT})"
         )
         return None
 
     return {
-        "scroll_distance": int(d),
-        "after_bbox": (int(c1), int(r1), int(w_box), int(h_overlap)),
-        "consensus_strength": float(consensus_ratio),
+        "scroll_distance": int(scroll_distance),
+        "after_bbox": after_bbox,
+        "viewport": refined_viewport,
     }
 
 
@@ -815,15 +975,9 @@ class ScrollPhaseResult:
 
     @property
     def viewport(self) -> tuple[int, int, int, int]:
-        """Returns (x, y, width, height) of the viewport.
-
-        The viewport is the full scrollable region, computed as the union of the
-        overlap regions in the before and after images. Since content scrolls by
-        scroll_distance pixels, viewport height = overlap height + scroll_distance.
-        """
+        """Returns (x, y, width, height) of the refined viewport."""
         if self.detection:
-            x, y, w, h = self.detection["after_bbox"]
-            return (x, y, w, h + self.detection["scroll_distance"])
+            return self.detection["viewport"]
         return (0, 0, 0, 0)
 
 
@@ -835,6 +989,7 @@ def perform_scroll_and_detect(
     screen_rect,
     wait_ms: int,
     phase_name: str = "",
+    existing_viewport: tuple[int, int, int, int] | None = None,
 ) -> ScrollPhaseResult:
     """Perform a scroll, capture the result, and run scroll detection.
 
@@ -846,6 +1001,8 @@ def perform_scroll_and_detect(
         screen_rect: Screen rectangle for capture
         wait_ms: Milliseconds to wait after scroll
         phase_name: Label for logging (e.g., "probe", "phase2")
+        existing_viewport: Optional (x, y, w, h) viewport from previous detection
+            (for second scroll, skips viewport detection/refinement)
 
     Returns:
         ScrollPhaseResult with detection results and images
@@ -856,15 +1013,13 @@ def perform_scroll_and_detect(
     img_after_pil = screen.capture_rect(screen_rect, retina=False)
     img_after = np.array(img_after_pil)
 
-    detection = detect_scroll(img_before, img_after, cursor_pos)
+    detection = detect_scroll(img_before, img_after, cursor_pos, existing_viewport)
 
     # Log result with phase label
     if detection and phase_name:
-        _, _, w, h = detection["after_bbox"]
-        viewport_h = h + detection["scroll_distance"]
+        _, _, w, h = detection["viewport"]
         logging.info(
-            f"Scroll {phase_name}: {detection['scroll_distance']}px, "
-            f"viewport={w}x{viewport_h}"
+            f"Scroll {phase_name}: {detection['scroll_distance']}px, viewport={w}x{h}"
         )
     elif phase_name:
         logging.info(f"Scroll {phase_name}: detection failed")
@@ -904,8 +1059,8 @@ def save_scroll_screenshots(
             "cursor_position": {"x": cursor_pos[0], "y": cursor_pos[1]},
         }
     else:
-        distance = result["scroll_distance"]
-        x, y, w, h = result["after_bbox"]
+        distance = int(result["scroll_distance"])
+        x, y, w, h = [int(v) for v in result["after_bbox"]]
         file_prefix = f"scroll_success_{distance}px_{timestamp:.2f}"
         metadata = {
             "status": "success",
@@ -915,7 +1070,6 @@ def save_scroll_screenshots(
             "after_bbox": {"x": x, "y": y, "width": w, "height": h},
             # before_bbox is after_bbox shifted down by scroll_distance
             "before_bbox": {"x": x, "y": y + distance, "width": w, "height": h},
-            "consensus_strength": result["consensus_strength"],
         }
 
     # Build file paths
@@ -1634,6 +1788,7 @@ class GazeOcrActions:
         if remaining_pixels > 0 and scroll_ratio > 0:
             remaining_wheel_units = remaining_pixels / scroll_ratio
 
+            # Pass probe's viewport to skip viewport detection in phase2
             phase2 = perform_scroll_and_detect(
                 probe.img_after_pil,
                 probe.img_after,
@@ -1642,6 +1797,7 @@ class GazeOcrActions:
                 screen_rect,
                 wait_ms,
                 phase_name="phase2",
+                existing_viewport=probe.viewport,
             )
 
             if phase2.succeeded:
