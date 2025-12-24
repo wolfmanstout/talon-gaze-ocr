@@ -12,24 +12,6 @@ import logging
 
 import numpy as np
 
-# --- Algorithm Configuration Constants ---
-
-# Phase 1: Initial viewport estimation
-# Threshold ratio for mean-normalized weights
-# Lower value = less penalty for unchanged rows, allowing viewport to bridge gaps
-CHANGE_THRESHOLD_RATIO = 0.15
-
-# Phase 2: Scroll distance estimation
-NUM_STRIPS = 8  # Number of vertical strips for voting
-MIN_STRIP_GRADIENT = 1.0  # Minimum mean gradient to consider a strip
-MIN_NCC_SCORE = 0.1  # Minimum NCC score to count a vote
-NCC_EXPONENT = 2  # Exponent to amplify strong correlations in voting
-
-# Phase 3: Viewport refinement
-ROW_SEARCH_SLICE_WIDTH = 100  # Width of vertical slice around cursor
-DENSITY_THRESHOLD = 0.85  # Density threshold for matching pixel detection
-
-
 # --- Kadane's Algorithm Variants (O(N) 1D Solvers) ---
 
 
@@ -138,6 +120,10 @@ def estimate_initial_viewport(
     Returns:
         (x, y, width, height) viewport bounds or None if detection fails
     """
+    # Threshold ratio for mean-normalized weights
+    # Lower value = less penalty for unchanged rows, allowing viewport to bridge gaps
+    CHANGE_THRESHOLD_RATIO = 0.15
+
     H, W = before.shape
     cx, cy = cursor_pos
 
@@ -205,8 +191,6 @@ def estimate_scroll_distance(
     before: np.ndarray,
     after: np.ndarray,
     viewport: tuple[int, int, int, int],
-    min_distance: int = 20,
-    min_overlap: int = 150,
 ) -> int | None:
     """
     Estimates scroll distance using strip-based NCC voting on gradient profiles.
@@ -219,28 +203,33 @@ def estimate_scroll_distance(
         before: Grayscale image before scroll (H, W)
         after: Grayscale image after scroll (H, W)
         viewport: (x, y, width, height) viewport bounds
-        min_distance: Minimum scroll distance to consider valid
-        min_overlap: Minimum overlap height required (prevents edge effects)
 
     Returns:
         Scroll distance in pixels (positive = content scrolled up), or None
     """
+    MIN_SCROLL_DISTANCE = 20  # Minimum scroll distance to consider (pixels)
+    MIN_OVERLAP_HEIGHT = 100  # Minimum overlap height required (prevents edge effects)
+    NUM_STRIPS = 8  # Number of vertical strips for voting
+    MIN_STRIP_GRADIENT = 1.0  # Minimum mean gradient to consider a strip
+    MIN_NCC_SCORE = 0.1  # Minimum NCC score to count a vote
+    NCC_EXPONENT = 2  # Exponent to amplify strong correlations in voting
+
     x, y, w, h = viewport
 
     # Crop both images to viewport bounds
     before_crop = before[y : y + h, x : x + w]
     after_crop = after[y : y + h, x : x + w]
 
-    # Compute vertical gradients (row-to-row differences)
-    grad_before = np.diff(before_crop, axis=0)
-    grad_after = np.diff(after_crop, axis=0)
+    # Compute vertical gradients (row-to-row differences) with abs applied immediately
+    grad_before = np.abs(np.diff(before_crop, axis=0))
+    grad_after = np.abs(np.diff(after_crop, axis=0))
 
     # Use gradient height for correlation (h - 1 due to diff)
     h_grad = grad_before.shape[0]
 
-    # Constraint: overlap = h_grad - d >= min_overlap, so d <= h_grad - min_overlap
-    max_d = h_grad - min_overlap
-    if max_d <= min_distance:
+    # Constraint: overlap = h_grad - d >= MIN_OVERLAP_HEIGHT
+    max_d = h_grad - MIN_OVERLAP_HEIGHT
+    if max_d <= MIN_SCROLL_DISTANCE:
         logging.debug(
             "Viewport too small for minimum scroll distance with required overlap"
         )
@@ -261,18 +250,18 @@ def estimate_scroll_distance(
         strip_grad_a = grad_after[:, x_start:x_end]
 
         # Skip strips with low gradient activity (uniform regions)
-        if np.mean(np.abs(strip_grad_b)) < MIN_STRIP_GRADIENT:
+        if np.mean(strip_grad_b) < MIN_STRIP_GRADIENT:
             continue
 
         # Create 1D profiles for this strip
-        profile_b = np.sum(np.abs(strip_grad_b), axis=1).astype(float)
-        profile_a = np.sum(np.abs(strip_grad_a), axis=1).astype(float)
+        profile_b = np.sum(strip_grad_b, axis=1).astype(float)
+        profile_a = np.sum(strip_grad_a, axis=1).astype(float)
 
         # Find best NCC for this strip
         best_ncc = -1
-        best_d = min_distance
+        best_d = MIN_SCROLL_DISTANCE
 
-        for d in range(min_distance, max_d + 1):
+        for d in range(MIN_SCROLL_DISTANCE, max_d + 1):
             overlap_h = h_grad - d
             b_seg = profile_b[d:]
             a_seg = profile_a[:overlap_h]
@@ -335,6 +324,8 @@ def refine_viewport(
         refined_viewport: (x, y, width, height) refined viewport bounds
         after_bbox: (x, y, width, height) overlap region in after image
     """
+    DENSITY_THRESHOLD = 0.85  # Density threshold for matching pixel detection
+
     H, _ = before.shape
     cx, cy = cursor_pos
     init_x, _, init_w, _ = initial_viewport
@@ -358,8 +349,6 @@ def refine_viewport(
     diff = np.abs(after_region.astype(float) - before_region.astype(float))
     match_map = diff < pixel_tolerance
 
-    _, region_w = match_map.shape
-
     # Compute cursor constraints (must overlap cursor's scroll path)
     target_y_max = min(cy, limit_h - 1)
     target_y_min = max(0, cy - d)
@@ -369,13 +358,8 @@ def refine_viewport(
     # Refine rows: apply weight transformation and run constrained Kadane
     weights = np.where(match_map, 1.0 - DENSITY_THRESHOLD, -DENSITY_THRESHOLD - 1e-5)
 
-    # Use a vertical slice around cursor for row finding (reduce noise)
-    half_slice = ROW_SEARCH_SLICE_WIDTH // 2
     cursor_in_region = cx - c1_init
-    slice_left = max(0, cursor_in_region - half_slice)
-    slice_right = min(region_w, cursor_in_region + half_slice)
-
-    row_weights = np.sum(weights[:, slice_left:slice_right], axis=1)
+    row_weights = np.sum(weights, axis=1)
     r1, r2, r_score = get_best_1d_range_constrained(
         row_weights, target_y_min, target_y_max
     )
@@ -445,7 +429,6 @@ def detect_scroll(
         Returns None if no valid scroll is found.
     """
     # Algorithm configuration constants
-    MIN_SCROLL_DISTANCE = 20  # Minimum scroll distance to consider (pixels)
     MIN_VIEWPORT_HEIGHT = 150  # Detected viewport must be at least this tall
     MIN_VIEWPORT_WIDTH = 150  # Detected viewport must be at least this wide
     PIXEL_MATCH_TOLERANCE = 15  # Max pixel difference to consider a match
@@ -495,13 +478,7 @@ def detect_scroll(
         return None
 
     # --- Phase 2: Scroll Distance Estimation ---
-    scroll_distance = estimate_scroll_distance(
-        gb,
-        ga,
-        viewport,
-        min_distance=MIN_SCROLL_DISTANCE,
-        min_overlap=MIN_VIEWPORT_HEIGHT,
-    )
+    scroll_distance = estimate_scroll_distance(gb, ga, viewport)
     if scroll_distance is None:
         logging.info("Scroll detection failed: Could not estimate scroll distance")
         return None
