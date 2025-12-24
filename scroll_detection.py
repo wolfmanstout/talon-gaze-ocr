@@ -353,32 +353,36 @@ def refine_viewport(
         logging.debug(f"Viewport refinement: invalid limit_h={limit_h}")
         return None
 
-    # Crop using initial viewport column range
+    # Initial viewport column range (used for row refinement only)
     c1_init = init_x
     c2_init = init_x + init_w
 
-    # Aligned regions for scroll matching
-    after_region = after[:limit_h, c1_init:c2_init]
-    before_shifted = before[d:, c1_init:c2_init]
+    # --- Row refinement: use initial viewport columns ---
+    after_region_init = after[:limit_h, c1_init:c2_init]
+    before_shifted_init = before[d:, c1_init:c2_init]
+    before_same_pos_init = before[:limit_h, c1_init:c2_init]
 
-    # Static detection: compare same screen positions before/after
-    before_same_pos = before[:limit_h, c1_init:c2_init]
+    # Compute match maps for initial column range
+    overlap_diff_init = np.abs(
+        after_region_init.astype(float) - before_shifted_init.astype(float)
+    )
+    overlap_match_init = overlap_diff_init < pixel_tolerance
 
-    # Compute match maps
-    # overlap_match: pixels that match when aligned by scroll distance
-    overlap_diff = np.abs(after_region.astype(float) - before_shifted.astype(float))
-    overlap_match = overlap_diff < pixel_tolerance
+    static_diff_init = np.abs(
+        after_region_init.astype(float) - before_same_pos_init.astype(float)
+    )
+    static_match_init = static_diff_init < pixel_tolerance
 
-    # static_match: pixels that are identical at the same screen position (didn't scroll)
-    static_diff = np.abs(after_region.astype(float) - before_same_pos.astype(float))
-    static_match = static_diff < pixel_tolerance
+    # Three categories for row refinement
+    dynamic_match_init = overlap_match_init & ~static_match_init
+    static_in_overlap_init = overlap_match_init & static_match_init
 
-    # Three categories:
-    # 1. Dynamic match: matches in overlap AND changed position (useful for scroll detection)
-    # 2. Static match: matches in overlap AND same at original position (static content)
-    # 3. Non-match: doesn't match in overlap (penalized)
-    dynamic_match = overlap_match & ~static_match
-    static_in_overlap = overlap_match & static_match
+    # Build weights for row refinement
+    weights_init = np.full_like(
+        overlap_match_init, -DENSITY_THRESHOLD - 1e-5, dtype=float
+    )
+    weights_init[dynamic_match_init] = 1.0 - DENSITY_THRESHOLD
+    weights_init[static_in_overlap_init] = STATIC_EPSILON
 
     # Compute cursor constraints (must overlap cursor's scroll path)
     target_y_max = min(cy, limit_h - 1)
@@ -386,16 +390,7 @@ def refine_viewport(
     if target_y_min > target_y_max:
         target_y_min = target_y_max
 
-    # Build weights array with three categories
-    # Start with non-match penalty everywhere
-    weights = np.full_like(overlap_match, -DENSITY_THRESHOLD - 1e-5, dtype=float)
-    # Dynamic matches get full positive weight
-    weights[dynamic_match] = 1.0 - DENSITY_THRESHOLD
-    # Static matches get small epsilon (slight reward, but much less than dynamic)
-    weights[static_in_overlap] = STATIC_EPSILON
-
-    cursor_in_region = cx - c1_init
-    row_weights = np.sum(weights, axis=1)
+    row_weights = np.sum(weights_init, axis=1)
     r1, r2, r_score = get_best_1d_range_constrained(
         row_weights, target_y_min, target_y_max
     )
@@ -404,19 +399,41 @@ def refine_viewport(
         logging.debug(f"Viewport refinement: no valid row range (score={r_score:.2f})")
         return None
 
-    # Refine columns: use refined row range
-    col_weights = np.sum(weights[r1 : r2 + 1, :], axis=0)
-    c1_rel, c2_rel, c_score = get_best_1d_anchored(col_weights, cursor_in_region)
+    # --- Column refinement: use full image width with refined rows ---
+    after_region_full = after[r1 : r2 + 1, :]
+    before_shifted_full = before[r1 + d : r2 + 1 + d, :]
+    before_same_pos_full = before[r1 : r2 + 1, :]
+
+    # Compute match maps for full width
+    overlap_diff_full = np.abs(
+        after_region_full.astype(float) - before_shifted_full.astype(float)
+    )
+    overlap_match_full = overlap_diff_full < pixel_tolerance
+
+    static_diff_full = np.abs(
+        after_region_full.astype(float) - before_same_pos_full.astype(float)
+    )
+    static_match_full = static_diff_full < pixel_tolerance
+
+    # Three categories for column refinement
+    dynamic_match_full = overlap_match_full & ~static_match_full
+    static_in_overlap_full = overlap_match_full & static_match_full
+
+    # Build weights for column refinement
+    weights_full = np.full_like(
+        overlap_match_full, -DENSITY_THRESHOLD - 1e-5, dtype=float
+    )
+    weights_full[dynamic_match_full] = 1.0 - DENSITY_THRESHOLD
+    weights_full[static_in_overlap_full] = STATIC_EPSILON
+
+    col_weights = np.sum(weights_full, axis=0)
+    c1, c2, c_score = get_best_1d_anchored(col_weights, cx)
 
     if c_score <= 0:
         logging.debug(
             f"Viewport refinement: no valid column range (score={c_score:.2f})"
         )
         return None
-
-    # Convert back to absolute coordinates
-    c1 = c1_init + c1_rel
-    c2 = c1_init + c2_rel
 
     # Compute final viewport
     h_overlap = r2 - r1 + 1
