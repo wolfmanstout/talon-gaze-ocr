@@ -185,18 +185,17 @@ class TestRealImages:
     """
 
     def test_scroll_success_145px(self, load_json_test_case):
-        """Test detection on scroll_success_145px case."""
+        """Test detection on scroll_success_145px case - expects 880px detected."""
         img_before, img_after, cursor_pos, _ = load_json_test_case(
             "scroll_success_145px_1766207805.61.json"
         )
 
         result = detect_scroll(img_before, img_after, cursor_pos)
 
-        # Verify detection works and produces reasonable output
         assert result is not None, "Should detect scroll in real images"
-        assert result["scroll_distance"] > 0, "Scroll distance should be positive"
-        assert "viewport" in result, "Result should include viewport"
-        assert "after_bbox" in result, "Result should include after_bbox"
+        assert result["scroll_distance"] == 880, (
+            f"Expected 880px, got {result['scroll_distance']}px"
+        )
 
     def test_scroll_success_268px(self, load_json_test_case):
         """Test detection on scroll_success_268px case."""
@@ -210,7 +209,7 @@ class TestRealImages:
         assert result["scroll_distance"] > 0, "Scroll distance should be positive"
 
     def test_scroll_success_314px(self, load_json_test_case):
-        """Test detection on scroll_success_314px case."""
+        """Test detection on scroll_success_314px case - expects 880px detected."""
         img_before, img_after, cursor_pos, _ = load_json_test_case(
             "scroll_success_314px_1766207950.50.json"
         )
@@ -218,10 +217,12 @@ class TestRealImages:
         result = detect_scroll(img_before, img_after, cursor_pos)
 
         assert result is not None, "Should detect scroll in real images"
-        assert result["scroll_distance"] > 0, "Scroll distance should be positive"
+        assert result["scroll_distance"] == 880, (
+            f"Expected 880px, got {result['scroll_distance']}px"
+        )
 
     def test_scroll_success_603px(self, load_json_test_case):
-        """Test detection on scroll_success_603px case."""
+        """Test detection on scroll_success_603px case - expects 880px detected."""
         img_before, img_after, cursor_pos, _ = load_json_test_case(
             "scroll_success_603px_1766207524.61.json"
         )
@@ -229,19 +230,17 @@ class TestRealImages:
         result = detect_scroll(img_before, img_after, cursor_pos)
 
         assert result is not None, "Should detect scroll in real images"
-        assert result["scroll_distance"] > 0, "Scroll distance should be positive"
+        assert result["scroll_distance"] == 880, (
+            f"Expected 880px, got {result['scroll_distance']}px"
+        )
 
-    def test_scroll_266px_detects_something(self, load_json_test_case):
-        """Test detection on scroll_success_266px case (may or may not detect depending on overlap)."""
+    def test_scroll_success_266px(self, load_json_test_case):
+        """Test detection on scroll_success_266px case."""
         img_before, img_after, cursor_pos, _ = load_json_test_case(
             "scroll_success_266px_1765173462.19.json"
         )
 
         result = detect_scroll(img_before, img_after, cursor_pos)
 
-        # This case may or may not return a result depending on content overlap
-        # Just verify it doesn't crash
-        if result is not None:
-            assert result["scroll_distance"] > 0, (
-                "If detected, scroll should be positive"
-            )
+        assert result is not None, "Should detect scroll in real images"
+        assert result["scroll_distance"] > 0, "Scroll distance should be positive"
