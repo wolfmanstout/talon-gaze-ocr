@@ -1168,7 +1168,14 @@ class GazeOcrActions:
     #
 
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
-        """Moves mouse cursor to gaze location."""
+        """Moves mouse cursor to gaze location.
+
+        If no gaze data available, leaves cursor at current position.
+        """
+        # TODO: Remove this check before merging to beta/main - for testing
+        # scroll visualization without eye tracker, we want cursor to stay put.
+        if not tracker.has_gaze_point():
+            return
         tracker.move_to_gaze_point((offset_right, offset_down))
 
     def scroll_down_with_visualization(amount: float = 1.0):
