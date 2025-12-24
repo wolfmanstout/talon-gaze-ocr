@@ -320,6 +320,11 @@ def refine_viewport(
     """
     Refines viewport bounds by finding matching pixels in aligned regions.
 
+    Uses three-category weighting to handle static content:
+    - Dynamic match: pixels that match in overlap but changed position (full positive weight)
+    - Static match: pixels that match but were already identical before scroll (epsilon weight)
+    - Non-match: pixels that don't align in overlap (negative weight)
+
     Args:
         before: Grayscale image before scroll (H, W)
         after: Grayscale image after scroll (H, W)
@@ -333,7 +338,8 @@ def refine_viewport(
         refined_viewport: (x, y, width, height) refined viewport bounds
         after_bbox: (x, y, width, height) overlap region in after image
     """
-    DENSITY_THRESHOLD = 0.85  # Density threshold for matching pixel detection
+    DENSITY_THRESHOLD = 0.5  # Density threshold for matching pixel detection
+    STATIC_EPSILON = 1e-6  # Small positive weight for static pixels
 
     H, _ = before.shape
     cx, cy = cursor_pos
@@ -351,12 +357,28 @@ def refine_viewport(
     c1_init = init_x
     c2_init = init_x + init_w
 
+    # Aligned regions for scroll matching
     after_region = after[:limit_h, c1_init:c2_init]
-    before_region = before[d:, c1_init:c2_init]
+    before_shifted = before[d:, c1_init:c2_init]
 
-    # Compute diff and create matching map
-    diff = np.abs(after_region.astype(float) - before_region.astype(float))
-    match_map = diff < pixel_tolerance
+    # Static detection: compare same screen positions before/after
+    before_same_pos = before[:limit_h, c1_init:c2_init]
+
+    # Compute match maps
+    # overlap_match: pixels that match when aligned by scroll distance
+    overlap_diff = np.abs(after_region.astype(float) - before_shifted.astype(float))
+    overlap_match = overlap_diff < pixel_tolerance
+
+    # static_match: pixels that are identical at the same screen position (didn't scroll)
+    static_diff = np.abs(after_region.astype(float) - before_same_pos.astype(float))
+    static_match = static_diff < pixel_tolerance
+
+    # Three categories:
+    # 1. Dynamic match: matches in overlap AND changed position (useful for scroll detection)
+    # 2. Static match: matches in overlap AND same at original position (static content)
+    # 3. Non-match: doesn't match in overlap (penalized)
+    dynamic_match = overlap_match & ~static_match
+    static_in_overlap = overlap_match & static_match
 
     # Compute cursor constraints (must overlap cursor's scroll path)
     target_y_max = min(cy, limit_h - 1)
@@ -364,8 +386,13 @@ def refine_viewport(
     if target_y_min > target_y_max:
         target_y_min = target_y_max
 
-    # Refine rows: apply weight transformation and run constrained Kadane
-    weights = np.where(match_map, 1.0 - DENSITY_THRESHOLD, -DENSITY_THRESHOLD - 1e-5)
+    # Build weights array with three categories
+    # Start with non-match penalty everywhere
+    weights = np.full_like(overlap_match, -DENSITY_THRESHOLD - 1e-5, dtype=float)
+    # Dynamic matches get full positive weight
+    weights[dynamic_match] = 1.0 - DENSITY_THRESHOLD
+    # Static matches get small epsilon (slight reward, but much less than dynamic)
+    weights[static_in_overlap] = STATIC_EPSILON
 
     cursor_in_region = cx - c1_init
     row_weights = np.sum(weights, axis=1)

@@ -124,13 +124,13 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
     This mirrors the algorithm with instrumentation to collect
     intermediate values for visualization.
     """
-    # Unpack parameters
-    MIN_SCROLL_DISTANCE = params.get("min_scroll_distance", 20)
-    MIN_VIEWPORT_HEIGHT = params.get("min_viewport_height", 150)
-    MIN_VIEWPORT_WIDTH = params.get("min_viewport_width", 300)
-    PIXEL_MATCH_TOLERANCE = params.get("pixel_match_tolerance", 15)
-    CHANGE_THRESHOLD_RATIO = params.get("change_threshold_ratio", 0.15)
-    DENSITY_THRESHOLD = params.get("density_threshold", 0.85)
+    # Unpack parameters (all have CLI defaults)
+    MIN_SCROLL_DISTANCE = params["min_scroll_distance"]
+    MIN_VIEWPORT_HEIGHT = params["min_viewport_height"]
+    MIN_VIEWPORT_WIDTH = params["min_viewport_width"]
+    PIXEL_MATCH_TOLERANCE = params["pixel_match_tolerance"]
+    CHANGE_THRESHOLD_RATIO = params["change_threshold_ratio"]
+    DENSITY_THRESHOLD = params["density_threshold"]
 
     # Initialize debug data
     debug = DebugData(
@@ -235,8 +235,8 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
             return debug
 
     # === Phase 2: Scroll Distance Estimation (Summed Strip Correlation with NCC) ===
-    NUM_STRIPS = params.get("num_strips", 64)
-    MIN_OVERLAP_HEIGHT = params.get("min_overlap_height", 100)
+    NUM_STRIPS = params["num_strips"]
+    MIN_OVERLAP_HEIGHT = 100  # Not configurable via CLI
 
     x, y, w, h = debug.initial_viewport
 
@@ -369,19 +369,42 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
     c1_init = init_x
     c2_init = init_x + init_w
 
+    # Aligned regions for scroll matching
     after_region = ga[:limit_h, c1_init:c2_init]
-    before_region = gb[d:, c1_init:c2_init]
+    before_shifted = gb[d:, c1_init:c2_init]
 
-    diff_aligned = np.abs(after_region.astype(float) - before_region.astype(float))
-    match_map = diff_aligned < PIXEL_MATCH_TOLERANCE
-    debug.match_map = match_map
+    # Static detection: compare same screen positions before/after
+    before_same_pos = gb[:limit_h, c1_init:c2_init]
+
+    # Compute match maps
+    # overlap_match: pixels that match when aligned by scroll distance
+    overlap_diff = np.abs(after_region.astype(float) - before_shifted.astype(float))
+    overlap_match = overlap_diff < PIXEL_MATCH_TOLERANCE
+
+    # static_match: pixels that are identical at the same screen position (didn't scroll)
+    static_diff = np.abs(after_region.astype(float) - before_same_pos.astype(float))
+    static_match = static_diff < PIXEL_MATCH_TOLERANCE
+
+    # Three categories:
+    # 1. Dynamic match: matches in overlap AND changed position (useful for scroll detection)
+    # 2. Static match: matches in overlap AND same at original position (static content)
+    # 3. Non-match: doesn't match in overlap (penalized)
+    dynamic_match = overlap_match & ~static_match
+    static_in_overlap = overlap_match & static_match
+
+    # Store for visualization (overlap_match for backward compatibility)
+    debug.match_map = overlap_match
 
     target_y_max = min(cy, limit_h - 1)
     target_y_min = max(0, cy - d)
     if target_y_min > target_y_max:
         target_y_min = target_y_max
 
-    weights = np.where(match_map, 1.0 - DENSITY_THRESHOLD, -DENSITY_THRESHOLD - 1e-5)
+    # Build weights array with three categories
+    STATIC_EPSILON = 1e-6
+    weights = np.full_like(overlap_match, -DENSITY_THRESHOLD - 1e-5, dtype=float)
+    weights[dynamic_match] = 1.0 - DENSITY_THRESHOLD
+    weights[static_in_overlap] = STATIC_EPSILON
 
     cursor_in_region = cx - c1_init
     row_weights_p3 = np.sum(weights, axis=1)
@@ -537,6 +560,7 @@ def render_row_weights_phase1(ax, debug_data, cursor_pos):
         )
 
     ax.invert_yaxis()
+    ax.margins(y=0)
     ax.set_xlabel("Weight")
     ax.set_ylabel("Row")
     ax.set_title("Phase 1: Row Weights")
@@ -573,6 +597,7 @@ def render_col_weights_phase1(ax, debug_data, cursor_pos):
             x=cursor_pos[0], color="red", linestyle=":", linewidth=1.5, label="Cursor"
         )
 
+    ax.margins(x=0)
     ax.set_xlabel("Column")
     ax.set_ylabel("Weight")
     ax.set_title("Phase 1: Column Weights")
@@ -762,6 +787,7 @@ def render_row_weights_phase3(ax, debug_data, cursor_pos):
         ax.axhspan(r1, r2, alpha=0.2, color="lime")
 
     ax.invert_yaxis()
+    ax.margins(y=0)
     ax.set_xlabel("Weight")
     ax.set_ylabel("Row")
     ax.set_title("Phase 3: Refined Row Weights")
@@ -792,6 +818,7 @@ def render_col_weights_phase3(ax, debug_data, cursor_pos):
         ax.axvline(x=c2, color="lime", linewidth=2)
         ax.axvspan(c1, c2, alpha=0.2, color="lime")
 
+    ax.margins(x=0)
     ax.set_xlabel("Column (relative)")
     ax.set_ylabel("Weight")
     ax.set_title("Phase 3: Refined Column Weights")
@@ -833,7 +860,7 @@ def compute_pixel_match(debug_data, candidate_distance):
     d = candidate_distance
     gray_b = debug_data.gray_b
     gray_a = debug_data.gray_a
-    tolerance = debug_data.params.get("pixel_match_tolerance", 15)
+    tolerance = debug_data.params["pixel_match_tolerance"]
 
     if debug_data.initial_viewport:
         vx, vy, vw, vh = debug_data.initial_viewport
@@ -1032,7 +1059,7 @@ def print_summary(debug_data, cursor_pos, output_path, params):
     help="Threshold ratio for Phase 1 weights (lower = bridge more gaps)",
 )
 @click.option(
-    "--density-threshold", default=0.85, help="Density threshold for Phase 3 weights"
+    "--density-threshold", default=0.5, help="Density threshold for Phase 3 weights"
 )
 @click.option(
     "--num-strips", default=16, help="Number of vertical strips for correlation"
