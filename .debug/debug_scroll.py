@@ -58,14 +58,20 @@ class DebugData:
     col_range_phase1: tuple | None = None  # (c1, c2) column range found
     initial_viewport: tuple | None = None  # (x, y, w, h)
 
-    # Phase 2: Scroll distance estimation (strip voting)
+    # Phase 2: Scroll distance estimation (summed strip correlation)
     profile_before: np.ndarray | None = None  # Row-summed profile (full width, for viz)
     profile_after: np.ndarray | None = None
-    correlation: np.ndarray | None = None  # NCC curve (for viz)
-    votes: dict = field(default_factory=dict)  # Vote counts per distance
-    strip_results: list = field(default_factory=list)  # Per-strip voting info
+    correlation_curve: np.ndarray | None = (
+        None  # Summed correlation normalized by overlap
+    )
+    strip_correlations: np.ndarray | None = (
+        None  # Per-strip correlations (strips x distances)
+    )
     peak_idx: int | None = None
     scroll_distance: int | None = None
+    peak_value: float | None = None  # Correlation value at detected peak
+    second_peak_idx: int | None = None  # Index of second highest peak
+    second_peak_value: float | None = None  # Value of second highest peak
 
     # Phase 3: Viewport refinement
     match_map: np.ndarray | None = None  # Aligned regions match
@@ -125,7 +131,6 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
     PIXEL_MATCH_TOLERANCE = params.get("pixel_match_tolerance", 15)
     CHANGE_THRESHOLD_RATIO = params.get("change_threshold_ratio", 0.15)
     DENSITY_THRESHOLD = params.get("density_threshold", 0.85)
-    ROW_SEARCH_SLICE_WIDTH = params.get("row_search_slice_width", 100)
 
     # Initialize debug data
     debug = DebugData(
@@ -162,89 +167,97 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
     H, W = gb.shape
 
     # === Phase 1: Initial Viewport Estimation ===
-    diff = np.abs(ga.astype(float) - gb.astype(float))
-    changed = diff > PIXEL_MATCH_TOLERANCE
-    debug.change_map = changed
+    existing_viewport = params.get("existing_viewport")
 
-    row_sums = np.sum(changed, axis=1).astype(float)
-    debug.row_sums_phase1 = row_sums
-    active_rows = row_sums > 0
+    if existing_viewport is not None:
+        # Skip Phase 1 - use provided viewport
+        debug.initial_viewport = existing_viewport
+        # Still compute change map for visualization
+        diff = np.abs(ga.astype(float) - gb.astype(float))
+        changed = diff > PIXEL_MATCH_TOLERANCE
+        debug.change_map = changed
+    else:
+        diff = np.abs(ga.astype(float) - gb.astype(float))
+        changed = diff > PIXEL_MATCH_TOLERANCE
+        debug.change_map = changed
 
-    if not np.any(active_rows):
-        debug.failure_phase = 1
-        debug.failure_reason = "No changed pixels detected"
-        return debug
+        row_sums = np.sum(changed, axis=1).astype(float)
+        debug.row_sums_phase1 = row_sums
+        active_rows = row_sums > 0
 
-    mean_row_activity = np.mean(row_sums[active_rows])
-    row_weights = row_sums - (CHANGE_THRESHOLD_RATIO * mean_row_activity)
-    debug.row_weights_phase1 = row_weights
+        if not np.any(active_rows):
+            debug.failure_phase = 1
+            debug.failure_reason = "No changed pixels detected"
+            return debug
 
-    r1, r2, r_score = get_best_1d_anchored(row_weights, cy)
-    debug.row_range_phase1 = (r1, r2)
+        mean_row_activity = np.mean(row_sums[active_rows])
+        row_weights = row_sums - (CHANGE_THRESHOLD_RATIO * mean_row_activity)
+        debug.row_weights_phase1 = row_weights
 
-    if r_score <= 0 or r1 > r2:
-        debug.failure_phase = 1
-        debug.failure_reason = f"No valid row range (score={r_score:.2f})"
-        return debug
+        r1, r2, r_score = get_best_1d_anchored(row_weights, cy)
+        debug.row_range_phase1 = (r1, r2)
 
-    changed_cropped = changed[r1 : r2 + 1, :]
-    col_sums = np.sum(changed_cropped, axis=0).astype(float)
-    debug.col_sums_phase1 = col_sums
-    active_cols = col_sums > 0
+        if r_score <= 0 or r1 > r2:
+            debug.failure_phase = 1
+            debug.failure_reason = f"No valid row range (score={r_score:.2f})"
+            return debug
 
-    if not np.any(active_cols):
-        debug.failure_phase = 1
-        debug.failure_reason = "No changed pixels in row range"
-        return debug
+        changed_cropped = changed[r1 : r2 + 1, :]
+        col_sums = np.sum(changed_cropped, axis=0).astype(float)
+        debug.col_sums_phase1 = col_sums
+        active_cols = col_sums > 0
 
-    mean_col_activity = np.mean(col_sums[active_cols])
-    col_weights = col_sums - (CHANGE_THRESHOLD_RATIO * mean_col_activity)
-    debug.col_weights_phase1 = col_weights
+        if not np.any(active_cols):
+            debug.failure_phase = 1
+            debug.failure_reason = "No changed pixels in row range"
+            return debug
 
-    c1, c2, c_score = get_best_1d_anchored(col_weights, cx)
-    debug.col_range_phase1 = (c1, c2)
+        mean_col_activity = np.mean(col_sums[active_cols])
+        col_weights = col_sums - (CHANGE_THRESHOLD_RATIO * mean_col_activity)
+        debug.col_weights_phase1 = col_weights
 
-    if c_score <= 0 or c1 > c2:
-        debug.failure_phase = 1
-        debug.failure_reason = f"No valid column range (score={c_score:.2f})"
-        return debug
+        c1, c2, c_score = get_best_1d_anchored(col_weights, cx)
+        debug.col_range_phase1 = (c1, c2)
 
-    width = c2 - c1 + 1
-    height = r2 - r1 + 1
-    debug.initial_viewport = (c1, r1, width, height)
+        if c_score <= 0 or c1 > c2:
+            debug.failure_phase = 1
+            debug.failure_reason = f"No valid column range (score={c_score:.2f})"
+            return debug
 
-    # Validate viewport size
-    if height < MIN_VIEWPORT_HEIGHT or width < MIN_VIEWPORT_WIDTH:
-        debug.failure_phase = 1
-        debug.failure_reason = f"Viewport too small ({width}x{height})"
-        return debug
+        width = c2 - c1 + 1
+        height = r2 - r1 + 1
+        debug.initial_viewport = (c1, r1, width, height)
 
-    # === Phase 2: Scroll Distance Estimation (Strip-based NCC Voting) ===
-    NUM_STRIPS = params.get("num_strips", 8)
-    MIN_STRIP_GRADIENT = params.get("min_strip_gradient", 5.0)
-    MIN_NCC_SCORE = params.get("min_ncc_score", 0.3)
-    NCC_EXPONENT = params.get("ncc_exponent", 2)
+        # Validate viewport size
+        if height < MIN_VIEWPORT_HEIGHT or width < MIN_VIEWPORT_WIDTH:
+            debug.failure_phase = 1
+            debug.failure_reason = f"Viewport too small ({width}x{height})"
+            return debug
+
+    # === Phase 2: Scroll Distance Estimation (Summed Strip Correlation with NCC) ===
+    NUM_STRIPS = params.get("num_strips", 64)
+    MIN_OVERLAP_HEIGHT = params.get("min_overlap_height", 100)
 
     x, y, w, h = debug.initial_viewport
 
     before_crop = gb[y : y + h, x : x + w]
     after_crop = ga[y : y + h, x : x + w]
 
-    # Compute vertical gradients (row-to-row differences)
-    grad_before = np.diff(before_crop, axis=0)
-    grad_after = np.diff(after_crop, axis=0)
+    # Compute vertical gradients (row-to-row differences) with abs applied immediately
+    grad_before = np.abs(np.diff(before_crop, axis=0))
+    grad_after = np.abs(np.diff(after_crop, axis=0))
 
     # Store full-width profiles for visualization
-    profile_before = np.sum(np.abs(grad_before), axis=1).astype(float)
-    profile_after = np.sum(np.abs(grad_after), axis=1).astype(float)
+    profile_before = np.sum(grad_before, axis=1).astype(float)
+    profile_after = np.sum(grad_after, axis=1).astype(float)
     debug.profile_before = profile_before
     debug.profile_after = profile_after
 
     # Use gradient height for correlation (h - 1 due to diff)
     h_grad = grad_before.shape[0]
 
-    # Constraint: overlap = h_grad - d >= MIN_VIEWPORT_HEIGHT
-    max_d = h_grad - MIN_VIEWPORT_HEIGHT
+    # Constraint: overlap = h_grad - d >= MIN_OVERLAP_HEIGHT
+    max_d = h_grad - MIN_OVERLAP_HEIGHT
     if max_d <= MIN_SCROLL_DISTANCE:
         debug.failure_phase = 2
         debug.failure_reason = (
@@ -252,95 +265,91 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
         )
         return debug
 
-    # Strip-based voting
-    votes = {}
-    strip_results = []
-    eps = 1e-9
+    # Initialize arrays for NCC computation
+    raw_corr = np.zeros(h_grad)
+    norm_b_sq = np.zeros(h_grad)
+    norm_a_sq = np.zeros(h_grad)
+    strip_correlations = np.zeros((NUM_STRIPS, h_grad))  # strips x distances (raw)
     strip_width = w // NUM_STRIPS
 
     for strip_idx in range(NUM_STRIPS):
         x_start = strip_idx * strip_width
         x_end = x_start + strip_width if strip_idx < NUM_STRIPS - 1 else w
 
-        # Extract strip gradients
-        strip_grad_b = grad_before[:, x_start:x_end]
-        strip_grad_a = grad_after[:, x_start:x_end]
+        # Extract strip gradients and create 1D profiles
+        profile_b = np.sum(grad_before[:, x_start:x_end], axis=1).astype(float)
+        profile_a = np.sum(grad_after[:, x_start:x_end], axis=1).astype(float)
 
-        mean_grad = np.mean(np.abs(strip_grad_b))
-        strip_info = {
-            "idx": strip_idx,
-            "x_start": x_start,
-            "x_end": x_end,
-            "mean_grad": mean_grad,
-            "voted": False,
-            "best_d": None,
-            "best_ncc": None,
-        }
+        # Use numpy correlate - 'full' mode gives correlation at all lags
+        strip_corr = np.correlate(profile_b, profile_a, mode="full")
 
-        # Skip strips with low gradient activity (uniform regions)
-        if mean_grad < MIN_STRIP_GRADIENT:
-            strip_results.append(strip_info)
-            continue
+        # Extract positive lags [1, h_grad-1] which correspond to scroll distances
+        positive_lags = strip_corr[h_grad:]  # lags 1 to h_grad-1
 
-        # Create 1D profiles for this strip
-        profile_b = np.sum(np.abs(strip_grad_b), axis=1).astype(float)
-        profile_a = np.sum(np.abs(strip_grad_a), axis=1).astype(float)
+        # Store per-strip raw correlations
+        strip_correlations[strip_idx, 1 : len(positive_lags) + 1] = positive_lags
 
-        # Find best NCC for this strip
-        best_ncc = -1
-        best_d = MIN_SCROLL_DISTANCE
+        # Add to raw correlation sum
+        raw_corr[1 : len(positive_lags) + 1] += positive_lags
 
-        for d_val in range(MIN_SCROLL_DISTANCE, max_d + 1):
+        # Compute cumulative sums of squares for efficient norm calculation
+        b_sq = profile_b**2
+        a_sq = profile_a**2
+        cumsum_b = np.cumsum(b_sq)
+        total_b_sq = cumsum_b[-1]
+        cumsum_a = np.cumsum(a_sq)
+
+        # Accumulate squared norms for each distance
+        for d_val in range(1, h_grad):
             overlap_h = h_grad - d_val
-            b_seg = profile_b[d_val:]
-            a_seg = profile_a[:overlap_h]
+            if overlap_h > 0:
+                b_seg_sq = total_b_sq - cumsum_b[d_val - 1] if d_val > 0 else total_b_sq
+                a_seg_sq = cumsum_a[overlap_h - 1]
+                norm_b_sq[d_val] += b_seg_sq
+                norm_a_sq[d_val] += a_seg_sq
 
-            dot_product = np.dot(b_seg, a_seg)
-            norm_b = np.linalg.norm(b_seg)
-            norm_a = np.linalg.norm(a_seg)
+    # Compute NCC: ncc[d] = raw_corr[d] / sqrt(norm_b_sq[d] * norm_a_sq[d])
+    ncc = np.zeros(h_grad)
+    for d_val in range(1, h_grad):
+        denom = np.sqrt(norm_b_sq[d_val] * norm_a_sq[d_val])
+        if denom > 0:
+            ncc[d_val] = raw_corr[d_val] / denom
 
-            ncc = dot_product / (norm_b * norm_a + eps)
+    # Also compute per-strip NCC for visualization (normalize each strip)
+    for strip_idx in range(NUM_STRIPS):
+        for d_val in range(1, h_grad):
+            denom = np.sqrt(norm_b_sq[d_val] * norm_a_sq[d_val])
+            if denom > 0:
+                strip_correlations[strip_idx, d_val] /= denom
 
-            if ncc > best_ncc:
-                best_ncc = ncc
-                best_d = d_val
+    debug.correlation_curve = ncc
+    debug.strip_correlations = strip_correlations
 
-        strip_info["best_d"] = best_d
-        strip_info["best_ncc"] = best_ncc
-
-        # Vote for best distance (weighted by NCC score)
-        if best_ncc >= MIN_NCC_SCORE:
-            strip_info["voted"] = True
-            vote_weight = best_ncc**NCC_EXPONENT
-            votes[best_d] = votes.get(best_d, 0) + vote_weight
-
-        strip_results.append(strip_info)
-
-    debug.votes = votes
-    debug.strip_results = strip_results
-
-    # Find winning scroll distance
-    if not votes:
+    # Find best distance (argmax of NCC)
+    valid_range = ncc[MIN_SCROLL_DISTANCE : max_d + 1]
+    if len(valid_range) == 0 or np.max(valid_range) <= 0:
         debug.failure_phase = 2
-        debug.failure_reason = "No strips voted for any scroll distance"
+        debug.failure_reason = "No positive correlation found"
         return debug
 
-    # Get best voted distance
-    best_d = max(votes.keys(), key=lambda d: votes[d])
+    best_d = int(np.argmax(valid_range) + MIN_SCROLL_DISTANCE)
     debug.peak_idx = best_d
     debug.scroll_distance = best_d
+    debug.peak_value = ncc[best_d]
 
-    # Also compute full-width NCC for visualization
-    ncc_full = np.zeros(max_d + 1)
-    for d_val in range(MIN_SCROLL_DISTANCE, max_d + 1):
-        overlap_h = h_grad - d_val
-        b_seg = profile_before[d_val:]
-        a_seg = profile_after[:overlap_h]
-        dot_product = np.dot(b_seg, a_seg)
-        norm_b = np.linalg.norm(b_seg)
-        norm_a = np.linalg.norm(a_seg)
-        ncc_full[d_val] = dot_product / (norm_b * norm_a + eps)
-    debug.correlation = ncc_full
+    # Find second highest peak (at least 20px away from the best peak)
+    min_peak_separation = 20
+    valid_range_copy = valid_range.copy()
+    # Zero out region around the best peak
+    best_idx_in_range = best_d - MIN_SCROLL_DISTANCE
+    left = max(0, best_idx_in_range - min_peak_separation)
+    right = min(len(valid_range_copy), best_idx_in_range + min_peak_separation + 1)
+    valid_range_copy[left:right] = 0
+
+    if np.max(valid_range_copy) > 0:
+        second_best_idx = int(np.argmax(valid_range_copy))
+        debug.second_peak_idx = second_best_idx + MIN_SCROLL_DISTANCE
+        debug.second_peak_value = valid_range_copy[second_best_idx]
 
     if best_d >= H - MIN_VIEWPORT_HEIGHT:
         debug.failure_phase = 2
@@ -367,8 +376,6 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
     match_map = diff_aligned < PIXEL_MATCH_TOLERANCE
     debug.match_map = match_map
 
-    _, region_w = match_map.shape
-
     target_y_max = min(cy, limit_h - 1)
     target_y_min = max(0, cy - d)
     if target_y_min > target_y_max:
@@ -376,12 +383,8 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
 
     weights = np.where(match_map, 1.0 - DENSITY_THRESHOLD, -DENSITY_THRESHOLD - 1e-5)
 
-    half_slice = ROW_SEARCH_SLICE_WIDTH // 2
     cursor_in_region = cx - c1_init
-    slice_left = max(0, cursor_in_region - half_slice)
-    slice_right = min(region_w, cursor_in_region + half_slice)
-
-    row_weights_p3 = np.sum(weights[:, slice_left:slice_right], axis=1)
+    row_weights_p3 = np.sum(weights, axis=1)
     debug.row_weights_phase3 = row_weights_p3
 
     r1_p3, r2_p3, r_score_p3 = get_best_1d_range_constrained(
@@ -577,11 +580,10 @@ def render_col_weights_phase1(ax, debug_data, cursor_pos):
 
 
 def render_correlation_curve(ax, debug_data):
-    """Render the vote histogram and NCC curve from Phase 2."""
-    votes = debug_data.votes
-    ncc = debug_data.correlation
+    """Render the correlation curve from Phase 2."""
+    corr = debug_data.correlation_curve
 
-    if not votes and ncc is None:
+    if corr is None:
         ax.text(
             0.5,
             0.5,
@@ -590,44 +592,86 @@ def render_correlation_curve(ax, debug_data):
             va="center",
             transform=ax.transAxes,
         )
-        ax.set_title("Phase 2: Strip Voting")
+        ax.set_title("Phase 2: Correlation Curve")
         return
 
-    # Create secondary axis for NCC curve
-    ax2 = ax.twinx()
+    # Plot NCC curve
+    x_vals = np.arange(len(corr))
+    ax.plot(x_vals, corr, "b-", linewidth=1, label="NCC")
+    ax.fill_between(x_vals, 0, corr, alpha=0.3, color="blue")
+    ax.set_ylabel("NCC (Normalized Cross-Correlation)")
 
-    # Plot vote histogram
-    if votes:
-        distances = sorted(votes.keys())
-        vote_counts = [votes[d] for d in distances]
-        ax.bar(distances, vote_counts, width=5, alpha=0.6, color="green", label="Votes")
-        ax.set_ylabel("Vote Weight", color="green")
-        ax.tick_params(axis="y", labelcolor="green")
-
-    # Plot NCC curve on secondary axis
-    if ncc is not None:
-        x_vals = np.arange(len(ncc))
-        ax2.plot(x_vals, ncc, "b-", linewidth=1, alpha=0.5, label="Full-width NCC")
-        ax2.set_ylabel("NCC", color="blue")
-        ax2.tick_params(axis="y", labelcolor="blue")
-
-    # Mark winning distance
+    # Mark winning distance with triangle at top
     if debug_data.scroll_distance is not None:
         peak_d = debug_data.scroll_distance
-        ax.axvline(
-            x=peak_d, color="red", linestyle="--", linewidth=2, label=f"d={peak_d}px"
-        )
+        peak_val = corr[peak_d] if peak_d < len(corr) else 0
+        # Triangle marker at top of plot area
+        ax.plot(peak_d, peak_val, "rv", markersize=10, label=f"d={peak_d}px")
 
     ax.set_xlabel("Scroll Distance (pixels)")
 
-    # Count voting strips
-    n_voted = sum(1 for s in debug_data.strip_results if s.get("voted", False))
-    n_total = len(debug_data.strip_results)
-    ax.set_title(
-        f"Phase 2: Strip Voting ({n_voted}/{n_total} strips voted)\nDetected: {debug_data.scroll_distance}px"
-    )
-    ax.legend(loc="upper left")
+    # Build title with confidence ratio if available
+    title = f"Phase 2: NCC\nDetected: {debug_data.scroll_distance}px"
+    if (
+        debug_data.peak_value is not None
+        and debug_data.second_peak_value is not None
+        and debug_data.second_peak_value > 0
+    ):
+        confidence = debug_data.peak_value / debug_data.second_peak_value
+        title += f" (confidence: {confidence:.2f}x)"
+    ax.set_title(title)
+    ax.legend(loc="upper right")
     ax.grid(True, alpha=0.3)
+
+
+def render_strip_correlation_heatmap(ax, debug_data):
+    """Render heatmap of per-strip correlations (strip index vs scroll distance)."""
+    strip_corr = debug_data.strip_correlations
+
+    if strip_corr is None:
+        ax.text(
+            0.5,
+            0.5,
+            "No strip correlation data",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+        ax.set_title("Phase 2: Strip Correlations")
+        return
+
+    # Transpose so x-axis is scroll distance, y-axis is strip index
+    # Only show the valid range (skip first 20 pixels which are below MIN_SCROLL_DISTANCE)
+    min_d = 20
+    heatmap_data = strip_corr[:, min_d:]
+
+    im = ax.imshow(
+        heatmap_data,
+        aspect="auto",
+        cmap="viridis",
+        origin="lower",
+        extent=[min_d, min_d + heatmap_data.shape[1], 0, heatmap_data.shape[0]],
+    )
+
+    # Mark detected scroll distance with a small triangle at top
+    if debug_data.scroll_distance is not None:
+        ax.plot(
+            debug_data.scroll_distance,
+            heatmap_data.shape[0],
+            "rv",
+            markersize=8,
+            clip_on=False,
+        )
+
+    ax.set_xlabel("Scroll Distance (pixels)")
+    ax.set_ylabel("Strip Index")
+    title = "Phase 2: Per-Strip Correlation Heatmap"
+    if debug_data.scroll_distance is not None:
+        title += f" (detected: {debug_data.scroll_distance}px)"
+    ax.set_title(title)
+
+    # Add colorbar
+    plt.colorbar(im, ax=ax, label="Correlation / Overlap")
 
 
 def render_profiles(ax, debug_data):
@@ -911,7 +955,13 @@ def print_summary(debug_data, cursor_pos, output_path, params):
     print("-" * 40)
     if debug_data.scroll_distance is not None:
         print(f"  Scroll distance: {debug_data.scroll_distance}px")
-        print(f"  Correlation peak index: {debug_data.peak_idx}")
+        print(f"  Peak correlation: {debug_data.peak_value:.2f}")
+        if debug_data.second_peak_value is not None:
+            ratio = debug_data.peak_value / debug_data.second_peak_value
+            print(
+                f"  Second peak: {debug_data.second_peak_idx}px ({debug_data.second_peak_value:.2f})"
+            )
+            print(f"  Confidence ratio: {ratio:.2f}x")
     else:
         print("  Failed to estimate scroll distance")
     print()
@@ -984,6 +1034,16 @@ def print_summary(debug_data, cursor_pos, output_path, params):
 @click.option(
     "--density-threshold", default=0.85, help="Density threshold for Phase 3 weights"
 )
+@click.option(
+    "--num-strips", default=16, help="Number of vertical strips for correlation"
+)
+@click.option(
+    "--viewport",
+    nargs=4,
+    type=int,
+    default=None,
+    help="Override viewport as X Y WIDTH HEIGHT (skips Phase 1)",
+)
 def main(
     before_image,
     after_image,
@@ -997,6 +1057,8 @@ def main(
     pixel_match_tolerance,
     change_threshold_ratio,
     density_threshold,
+    num_strips,
+    viewport,
 ):
     """Generate debug visualization for scroll detection (Three-Phase Algorithm).
 
@@ -1035,6 +1097,8 @@ def main(
         "pixel_match_tolerance": pixel_match_tolerance,
         "change_threshold_ratio": change_threshold_ratio,
         "density_threshold": density_threshold,
+        "num_strips": num_strips,
+        "existing_viewport": tuple(viewport) if viewport else None,
     }
 
     # Run instrumented detection
@@ -1056,50 +1120,82 @@ def main(
     has_candidates = len(candidates) > 0
     n_cols = max(3, len(candidates)) if has_candidates else 3
 
-    fig_height = 30 if has_candidates else 18
+    fig_height = 24 if has_candidates else 16
     fig_width = max(18, 6 * n_cols)
 
     fig = plt.figure(figsize=(fig_width, fig_height))
 
     if has_candidates:
-        gs_main = GridSpec(2, 1, figure=fig, height_ratios=[3, 2], hspace=0.3)
+        gs_main = GridSpec(
+            2,
+            1,
+            figure=fig,
+            height_ratios=[2, 1],
+            hspace=0.1,
+            top=0.95,
+            bottom=0.04,
+            left=0.05,
+            right=0.97,
+        )
         gs_top = GridSpecFromSubplotSpec(
-            3, 3, subplot_spec=gs_main[0], hspace=0.3, wspace=0.3
+            4, 3, subplot_spec=gs_main[0], hspace=0.35, wspace=0.2
         )
         gs_bottom = GridSpecFromSubplotSpec(
-            2, len(candidates), subplot_spec=gs_main[1], hspace=0.3, wspace=0.3
+            2, len(candidates), subplot_spec=gs_main[1], hspace=0.15, wspace=0.2
         )
     else:
-        gs_top = GridSpec(3, 3, figure=fig, hspace=0.3, wspace=0.3)
+        gs_top = GridSpec(
+            4,
+            3,
+            figure=fig,
+            hspace=0.35,
+            wspace=0.2,
+            top=0.95,
+            bottom=0.04,
+            left=0.05,
+            right=0.97,
+        )
         gs_bottom = None
 
-    # Row 0: Original images + Change map
+    # Row 0: Summary - Original images
     ax_before = fig.add_subplot(gs_top[0, 0])
     ax_after = fig.add_subplot(gs_top[0, 1])
-    ax_change = fig.add_subplot(gs_top[0, 2])
 
     render_original_images(ax_before, ax_after, debug_data, cursor)
+
+    # Empty third column - could add summary text later
+    ax_summary = fig.add_subplot(gs_top[0, 2])
+    ax_summary.axis("off")
+
+    # === Phase 1: Initial Viewport Estimation ===
+    # Row 1: Change map + Phase 1 weights
+    ax_change = fig.add_subplot(gs_top[1, 0])
+    ax_row_p1 = fig.add_subplot(gs_top[1, 1])
+    ax_col_p1 = fig.add_subplot(gs_top[1, 2])
+
     render_change_map(ax_change, debug_data, cursor)
-
-    # Row 1: Phase 1 weights + Phase 2 correlation
-    ax_row_p1 = fig.add_subplot(gs_top[1, 0])
-    ax_col_p1 = fig.add_subplot(gs_top[1, 1])
-    ax_corr = fig.add_subplot(gs_top[1, 2])
-
     render_row_weights_phase1(ax_row_p1, debug_data, cursor)
     render_col_weights_phase1(ax_col_p1, debug_data, cursor)
-    render_correlation_curve(ax_corr, debug_data)
 
-    # Row 2: Phase 3 match map + Phase 3 weights
-    ax_match = fig.add_subplot(gs_top[2, 0])
-    ax_row_p3 = fig.add_subplot(gs_top[2, 1])
-    ax_col_p3 = fig.add_subplot(gs_top[2, 2])
+    # === Phase 2: Scroll Distance Estimation ===
+    # Row 2: Correlation curve + Heatmap
+    ax_corr = fig.add_subplot(gs_top[2, 0])
+    ax_heatmap = fig.add_subplot(gs_top[2, 1:])
+
+    render_correlation_curve(ax_corr, debug_data)
+    render_strip_correlation_heatmap(ax_heatmap, debug_data)
+
+    # === Phase 3: Viewport Refinement ===
+    # Row 3: Match map + Phase 3 weights
+    ax_match = fig.add_subplot(gs_top[3, 0])
+    ax_row_p3 = fig.add_subplot(gs_top[3, 1])
+    ax_col_p3 = fig.add_subplot(gs_top[3, 2])
 
     render_match_map(ax_match, debug_data, cursor)
     render_row_weights_phase3(ax_row_p3, debug_data, cursor)
     render_col_weights_phase3(ax_col_p3, debug_data, cursor)
 
-    # Rows 3-4: Per-candidate gradient correlation and pixel match
+    # Rows 4-5: Per-candidate gradient correlation and pixel match
     if has_candidates and gs_bottom is not None:
         for i, cand_d in enumerate(candidates):
             is_detected = cand_d == detected_d
@@ -1129,8 +1225,7 @@ def main(
         title += f" | Distance: {debug_data.scroll_distance}px"
     fig.suptitle(title, fontsize=12)
 
-    plt.tight_layout()
-    plt.savefig(output, dpi=200, bbox_inches="tight")
+    plt.savefig(output, dpi=200)
     plt.close()
 
     print_summary(debug_data, cursor, output, params)

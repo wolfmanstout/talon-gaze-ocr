@@ -193,11 +193,11 @@ def estimate_scroll_distance(
     viewport: tuple[int, int, int, int],
 ) -> int | None:
     """
-    Estimates scroll distance using strip-based NCC voting on gradient profiles.
+    Estimates scroll distance using summed strip correlations with NCC normalization.
 
-    Splits the viewport into vertical strips, computes NCC for each strip independently,
-    and aggregates votes to find consensus scroll distance. This is robust to uniform
-    regions (like sidebars) that would otherwise dominate single-profile correlation.
+    Splits the viewport into vertical strips, computes correlation for each strip
+    at each candidate distance, sums across strips, and normalizes using NCC
+    (Normalized Cross-Correlation). The distance with maximum NCC is returned.
 
     Args:
         before: Grayscale image before scroll (H, W)
@@ -209,10 +209,7 @@ def estimate_scroll_distance(
     """
     MIN_SCROLL_DISTANCE = 20  # Minimum scroll distance to consider (pixels)
     MIN_OVERLAP_HEIGHT = 100  # Minimum overlap height required (prevents edge effects)
-    NUM_STRIPS = 8  # Number of vertical strips for voting
-    MIN_STRIP_GRADIENT = 1.0  # Minimum mean gradient to consider a strip
-    MIN_NCC_SCORE = 0.1  # Minimum NCC score to count a vote
-    NCC_EXPONENT = 2  # Exponent to amplify strong correlations in voting
+    NUM_STRIPS = 16  # Number of vertical strips for correlation
 
     x, y, w, h = viewport
 
@@ -235,66 +232,78 @@ def estimate_scroll_distance(
         )
         return None
 
-    # Initialize vote accumulator
-    votes = {}
-    eps = 1e-9
+    # Initialize arrays for NCC computation
+    # raw_corr[d] = sum of dot products across strips at distance d
+    # norm_b_sq[d] = sum of squared norms for before segments at distance d
+    # norm_a_sq[d] = sum of squared norms for after segments at distance d
+    raw_corr = np.zeros(h_grad)
+    norm_b_sq = np.zeros(h_grad)
+    norm_a_sq = np.zeros(h_grad)
 
     # Process each vertical strip
     strip_width = w // NUM_STRIPS
+
     for strip_idx in range(NUM_STRIPS):
         x_start = strip_idx * strip_width
         x_end = x_start + strip_width if strip_idx < NUM_STRIPS - 1 else w
 
-        # Extract strip gradients
-        strip_grad_b = grad_before[:, x_start:x_end]
-        strip_grad_a = grad_after[:, x_start:x_end]
+        # Extract strip gradients and create 1D profiles
+        profile_b = np.sum(grad_before[:, x_start:x_end], axis=1).astype(float)
+        profile_a = np.sum(grad_after[:, x_start:x_end], axis=1).astype(float)
 
-        # Skip strips with low gradient activity (uniform regions)
-        if np.mean(strip_grad_b) < MIN_STRIP_GRADIENT:
-            continue
+        # Use numpy correlate - 'full' mode gives correlation at all lags
+        strip_corr = np.correlate(profile_b, profile_a, mode="full")
 
-        # Create 1D profiles for this strip
-        profile_b = np.sum(strip_grad_b, axis=1).astype(float)
-        profile_a = np.sum(strip_grad_a, axis=1).astype(float)
+        # Extract positive lags [1, h_grad-1] which correspond to scroll distances
+        positive_lags = strip_corr[h_grad:]  # lags 1 to h_grad-1
 
-        # Find best NCC for this strip
-        best_ncc = -1
-        best_d = MIN_SCROLL_DISTANCE
+        # Add to raw correlation (positive_lags[d-1] corresponds to distance d)
+        raw_corr[1 : len(positive_lags) + 1] += positive_lags
 
-        for d in range(MIN_SCROLL_DISTANCE, max_d + 1):
+        # Compute cumulative sums of squares for efficient norm calculation
+        # For distance d: before segment is profile_b[d:], after segment is profile_a[:h_grad-d]
+        b_sq = profile_b**2
+        a_sq = profile_a**2
+
+        # Cumsum for before (sum from d to end = total - cumsum[d-1])
+        cumsum_b = np.cumsum(b_sq)
+        total_b_sq = cumsum_b[-1]
+
+        # Cumsum for after (sum from 0 to overlap_h-1 = cumsum[overlap_h-1])
+        cumsum_a = np.cumsum(a_sq)
+
+        # For each distance d, accumulate squared norms
+        for d in range(1, h_grad):
             overlap_h = h_grad - d
-            b_seg = profile_b[d:]
-            a_seg = profile_a[:overlap_h]
+            if overlap_h > 0:
+                # Before segment: profile_b[d:] -> sum of squares from index d to end
+                b_seg_sq = total_b_sq - cumsum_b[d - 1] if d > 0 else total_b_sq
 
-            # Normalized cross-correlation
-            dot_product = np.dot(b_seg, a_seg)
-            norm_b = np.linalg.norm(b_seg)
-            norm_a = np.linalg.norm(a_seg)
+                # After segment: profile_a[:overlap_h] -> sum of squares from 0 to overlap_h-1
+                a_seg_sq = cumsum_a[overlap_h - 1]
 
-            ncc = dot_product / (norm_b * norm_a + eps)
+                norm_b_sq[d] += b_seg_sq
+                norm_a_sq[d] += a_seg_sq
 
-            if ncc > best_ncc:
-                best_ncc = ncc
-                best_d = d
+    # Compute NCC: ncc[d] = raw_corr[d] / sqrt(norm_b_sq[d] * norm_a_sq[d])
+    ncc = np.zeros(h_grad)
+    for d in range(1, h_grad):
+        denom = np.sqrt(norm_b_sq[d] * norm_a_sq[d])
+        if denom > 0:
+            ncc[d] = raw_corr[d] / denom
 
-        # Vote for best distance (weighted by NCC score)
-        if best_ncc >= MIN_NCC_SCORE:
-            vote_weight = best_ncc**NCC_EXPONENT
-            votes[best_d] = votes.get(best_d, 0) + vote_weight
-
-    # Find winning scroll distance
-    if not votes:
-        logging.debug("No strips voted for any scroll distance")
+    # Find best distance (argmax of NCC)
+    # Only consider valid range [MIN_SCROLL_DISTANCE, max_d]
+    valid_range = ncc[MIN_SCROLL_DISTANCE : max_d + 1]
+    if len(valid_range) == 0 or np.max(valid_range) <= 0:
+        logging.debug("No positive correlation found")
         return None
 
-    # Get best voted distance
-    best_d = max(votes.keys(), key=lambda d: votes[d])
-    best_vote = votes[best_d]
+    best_d = int(np.argmax(valid_range) + MIN_SCROLL_DISTANCE)
+    best_ncc = ncc[best_d]
 
-    logging.debug(
-        f"Scroll distance: {best_d}px (votes={best_vote:.4f}, num_votes={len(votes)})"
-    )
-    return int(best_d)
+    logging.debug(f"Scroll distance: {best_d}px (NCC={best_ncc:.4f})")
+    return best_d
 
 
 # --- Phase 3: Viewport Refinement ---
