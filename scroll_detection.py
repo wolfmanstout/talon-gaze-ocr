@@ -262,65 +262,57 @@ def estimate_scroll_distance(
         )
         return None
 
-    # Initialize arrays for NCC computation
-    # raw_corr[d] = sum of dot products across strips at distance d
-    # norm_b_sq[d] = sum of squared norms for before segments at distance d
-    # norm_a_sq[d] = sum of squared norms for after segments at distance d
+    # 1. Profile Construction
+    # Split images into vertical strips
+    strips_b = np.array_split(grad_before, NUM_STRIPS, axis=1)
+    strips_a = np.array_split(grad_after, NUM_STRIPS, axis=1)
+
+    # Sum horizontally within strips, then stack side-by-side
+    # Shape: (h_grad, NUM_STRIPS)
+    profs_b = np.stack([s.sum(axis=1) for s in strips_b], axis=1)
+    profs_a = np.stack([s.sum(axis=1) for s in strips_a], axis=1)
+
+    # 2. Batch Correlation
+    # Correlate each strip column-wise
+    # Result Shape: (2*h_grad - 1, NUM_STRIPS)
+    full_corrs = np.stack(
+        [
+            np.correlate(profs_b[:, i], profs_a[:, i], mode="full")
+            for i in range(NUM_STRIPS)
+        ],
+        axis=1,
+    )
+
+    # Extract positive lags (rows from h_grad onwards)
+    # valid_corrs Shape: (h_grad - 1, NUM_STRIPS)
+    valid_corrs = full_corrs[h_grad:, :]
+
+    # Sum across all strips (axis 1) to get the final raw correlation profile
     raw_corr = np.zeros(h_grad)
-    norm_b_sq = np.zeros(h_grad)
-    norm_a_sq = np.zeros(h_grad)
+    raw_corr[1:] = valid_corrs.sum(axis=1)
 
-    # Process each vertical strip
-    strip_width = w // NUM_STRIPS
+    # 3. Vectorized Norm Calculation
+    # Compute cumulative sums down the columns (axis 0)
+    cs_b = np.cumsum(profs_b**2, axis=0)
+    cs_a = np.cumsum(profs_a**2, axis=0)
+    total_b = cs_b[-1, :]  # Shape: (NUM_STRIPS,)
 
-    for strip_idx in range(NUM_STRIPS):
-        x_start = strip_idx * strip_width
-        x_end = x_start + strip_width if strip_idx < NUM_STRIPS - 1 else w
+    # 'b' segment: Total energy - energy accumulated before the split index
+    # We look at all indices up to the last one (0 to h_grad-2)
+    b_contribs = total_b - cs_b[:-1, :]
 
-        # Extract strip gradients and create 1D profiles
-        profile_b = np.sum(grad_before[:, x_start:x_end], axis=1).astype(float)
-        profile_a = np.sum(grad_after[:, x_start:x_end], axis=1).astype(float)
+    # 'a' segment: Energy accumulated from 0 up to the overlap index
+    # We take the prefix sums and reverse the order of rows
+    a_contribs = cs_a[:-1, :][::-1, :]
 
-        # Use numpy correlate - 'full' mode gives correlation at all lags
-        strip_corr = np.correlate(profile_b, profile_a, mode="full")
+    # Sum squared norms across all strips (axis 1)
+    # Prepend a 0 to match the raw_corr indexing (d=0 is unused/zero)
+    norm_b_sq = np.concatenate(([0], b_contribs.sum(axis=1)))
+    norm_a_sq = np.concatenate(([0], a_contribs.sum(axis=1)))
 
-        # Extract positive lags [1, h_grad-1] which correspond to scroll distances
-        positive_lags = strip_corr[h_grad:]  # lags 1 to h_grad-1
-
-        # Add to raw correlation (positive_lags[d-1] corresponds to distance d)
-        raw_corr[1 : len(positive_lags) + 1] += positive_lags
-
-        # Compute cumulative sums of squares for efficient norm calculation
-        # For distance d: before segment is profile_b[d:], after segment is profile_a[:h_grad-d]
-        b_sq = profile_b**2
-        a_sq = profile_a**2
-
-        # Cumsum for before (sum from d to end = total - cumsum[d-1])
-        cumsum_b = np.cumsum(b_sq)
-        total_b_sq = cumsum_b[-1]
-
-        # Cumsum for after (sum from 0 to overlap_h-1 = cumsum[overlap_h-1])
-        cumsum_a = np.cumsum(a_sq)
-
-        # For each distance d, accumulate squared norms
-        for d in range(1, h_grad):
-            overlap_h = h_grad - d
-            if overlap_h > 0:
-                # Before segment: profile_b[d:] -> sum of squares from index d to end
-                b_seg_sq = total_b_sq - cumsum_b[d - 1] if d > 0 else total_b_sq
-
-                # After segment: profile_a[:overlap_h] -> sum of squares from 0 to overlap_h-1
-                a_seg_sq = cumsum_a[overlap_h - 1]
-
-                norm_b_sq[d] += b_seg_sq
-                norm_a_sq[d] += a_seg_sq
-
-    # Compute NCC: ncc[d] = raw_corr[d] / sqrt(norm_b_sq[d] * norm_a_sq[d])
-    ncc = np.zeros(h_grad)
-    for d in range(1, h_grad):
-        denom = np.sqrt(norm_b_sq[d] * norm_a_sq[d])
-        if denom > 0:
-            ncc[d] = raw_corr[d] / denom
+    # 4. Final NCC Calculation
+    denom = np.sqrt(norm_b_sq * norm_a_sq)
+    ncc = np.divide(raw_corr, denom, out=np.zeros_like(raw_corr), where=denom != 0)
 
     # Find best distance (argmax of NCC)
     # Only consider valid range [MIN_SCROLL_DISTANCE, max_d]
