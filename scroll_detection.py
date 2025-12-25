@@ -30,7 +30,7 @@ class BoundingBox:
     @classmethod
     def from_tuple(cls, t: tuple[int, int, int, int]) -> "BoundingBox":
         """Create from (x, y, width, height) tuple."""
-        return cls(x=t[0], y=t[1], width=t[2], height=t[3])
+        return cls(x=int(t[0]), y=int(t[1]), width=int(t[2]), height=int(t[3]))
 
 
 @dataclass(frozen=True)
