@@ -479,8 +479,8 @@ class ScrollPhaseResult:
         json_path = os.path.join(logging_dir, f"{file_prefix}.json")
 
         # Screenshots are skia.Image from Talon's screen.capture_rect()
-        self.before_screenshot.write_file(before_path)
-        self.after_screenshot.write_file(after_path)
+        self.before_screenshot.save(before_path)
+        self.after_screenshot.save(after_path)
 
         with open(json_path, "w") as f:
             json.dump(metadata, f, indent=2)
