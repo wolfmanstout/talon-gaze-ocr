@@ -1154,6 +1154,11 @@ class MacGazeOcrActions:
 
             # Focus the window if not already active
             if ui.active_window() != window:
+                if window.title == "Notification Center":
+                    app.notify(
+                        "Unable to focus window with notifications active. Please dismiss notifications."
+                    )
+                    return
                 window.focus()
                 start_time = time.perf_counter()
                 while ui.active_window() != window:
