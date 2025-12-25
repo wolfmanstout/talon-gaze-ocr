@@ -609,6 +609,3 @@ requires-dist = [
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-benchmark", specifier = ">=4.0.0" },
 ]
-
-[package.metadata.requires-dev]
-dev = []

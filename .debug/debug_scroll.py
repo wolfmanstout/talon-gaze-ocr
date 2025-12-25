@@ -92,13 +92,14 @@ class DebugData:
 
 def parse_from_json(json_path):
     """
-    Parse a scroll_*.json file and derive before/after image paths and cursor position.
+    Parse a scroll_*.json file and derive before/after image paths, cursor position,
+    and existing_viewport if present.
     """
     if not os.path.exists(json_path):
         raise click.BadParameter(f"JSON file not found: {json_path}")
 
     base = json_path.rsplit(".json", 1)[0]
-    before_path = base + ".png"
+    before_path = base + "_before.png"
     after_path = base + "_after.png"
 
     if not os.path.exists(before_path):
@@ -114,7 +115,12 @@ def parse_from_json(json_path):
     if "x" in cp and "y" in cp:
         cursor_pos = (cp["x"], cp["y"])
 
-    return before_path, after_path, cursor_pos
+    existing_viewport = None
+    ev = data.get("existing_viewport")
+    if ev and all(k in ev for k in ("x", "y", "width", "height")):
+        existing_viewport = (ev["x"], ev["y"], ev["width"], ev["height"])
+
+    return before_path, after_path, cursor_pos, existing_viewport
 
 
 def detect_scroll_debug(img_before, img_after, cursor_pos, params):
@@ -1118,8 +1124,11 @@ def main(
     """
 
     # Determine input source
+    json_existing_viewport = None
     if from_json:
-        before_image, after_image, cursor = parse_from_json(from_json)
+        before_image, after_image, cursor, json_existing_viewport = parse_from_json(
+            from_json
+        )
         if cursor_pos:
             cursor = tuple(cursor_pos)
         if output is None:
@@ -1138,7 +1147,8 @@ def main(
     img_b = np.array(Image.open(before_image))
     img_a = np.array(Image.open(after_image))
 
-    # Build params dict
+    # Build params dict (CLI --viewport overrides JSON existing_viewport)
+    effective_viewport = tuple(viewport) if viewport else json_existing_viewport
     params = {
         "min_scroll_distance": min_scroll_distance,
         "min_viewport_height": min_viewport_height,
@@ -1147,7 +1157,7 @@ def main(
         "change_threshold_ratio": change_threshold_ratio,
         "density_threshold": density_threshold,
         "num_strips": num_strips,
-        "existing_viewport": tuple(viewport) if viewport else None,
+        "existing_viewport": effective_viewport,
     }
 
     # Run instrumented detection
