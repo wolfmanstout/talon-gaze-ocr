@@ -12,10 +12,3 @@ dependencies = [
     "pytest-benchmark>=4.0.0",
 ]
 
-[tool.pytest.ini_options]
-testpaths = ["."]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
-
-[dependency-groups]
-dev = []

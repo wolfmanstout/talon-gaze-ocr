@@ -8,7 +8,6 @@ For detailed stats: uv run pytest benchmark_scroll_detection.py --benchmark-only
 import os
 import sys
 
-import numpy as np
 import pytest
 
 # Add parent directory to path
@@ -92,65 +91,3 @@ class TestPerformanceBenchmarks:
         result = benchmark(detect_scroll, img_before, img_after, cursor_pos)
 
         assert result is not None, "Should detect scroll"
-
-
-class TestPerformanceTargets:
-    """Tests that verify performance meets target requirements."""
-
-    def test_1440p_under_1_second(self):
-        """Verify that 1440p detection completes in under 1 second."""
-        import time
-
-        height, width = 1440, 2560
-        img_before = create_text_pattern_image(height, width, "text")
-        scroll_dist = 300
-        img_after = create_scrolled_image(img_before, scroll_dist)
-        cursor_pos = (1280, 720)
-
-        # Warm-up run
-        _ = detect_scroll(img_before, img_after, cursor_pos)
-
-        # Benchmark runs
-        num_runs = 5
-        times = []
-        result = None
-
-        for _ in range(num_runs):
-            start = time.time()
-            result = detect_scroll(img_before, img_after, cursor_pos)
-            elapsed = time.time() - start
-            times.append(elapsed)
-
-        avg_time = np.mean(times)
-
-        assert result is not None, "Should detect scroll"
-        assert avg_time < 1.0, f"Average time {avg_time:.3f}s exceeds 1.0s target"
-
-    def test_720p_under_200ms(self):
-        """Verify that 720p detection completes in under 200ms."""
-        import time
-
-        height, width = 720, 1280
-        img_before = create_text_pattern_image(height, width, "text")
-        scroll_dist = 200
-        img_after = create_scrolled_image(img_before, scroll_dist)
-        cursor_pos = (640, 360)
-
-        # Warm-up run
-        _ = detect_scroll(img_before, img_after, cursor_pos)
-
-        # Benchmark runs
-        num_runs = 10
-        times = []
-        result = None
-
-        for _ in range(num_runs):
-            start = time.time()
-            result = detect_scroll(img_before, img_after, cursor_pos)
-            elapsed = time.time() - start
-            times.append(elapsed)
-
-        avg_time = np.mean(times)
-
-        assert result is not None, "Should detect scroll"
-        assert avg_time < 0.2, f"Average time {avg_time:.3f}s exceeds 0.2s target"

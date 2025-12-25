@@ -9,8 +9,38 @@ This module contains only the pure algorithmic functions with no Talon dependenc
 """
 
 import logging
+from dataclasses import dataclass
 
 import numpy as np
+
+
+@dataclass(frozen=True)
+class BoundingBox:
+    """Immutable bounding box with x, y, width, height."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+    def as_tuple(self) -> tuple[int, int, int, int]:
+        """Return (x, y, width, height) tuple for compatibility."""
+        return (self.x, self.y, self.width, self.height)
+
+    @classmethod
+    def from_tuple(cls, t: tuple[int, int, int, int]) -> "BoundingBox":
+        """Create from (x, y, width, height) tuple."""
+        return cls(x=t[0], y=t[1], width=t[2], height=t[3])
+
+
+@dataclass(frozen=True)
+class ScrollResult:
+    """Result from successful scroll detection."""
+
+    scroll_distance: int
+    after_bbox: BoundingBox
+    viewport: BoundingBox
+
 
 # --- Kadane's Algorithm Variants (O(N) 1D Solvers) ---
 
@@ -458,8 +488,8 @@ def detect_scroll(
     img_before: np.ndarray,
     img_after: np.ndarray,
     cursor_pos: tuple[float, float],
-    existing_viewport: tuple[int, int, int, int] | None = None,
-) -> dict | None:
+    existing_viewport: BoundingBox | None = None,
+) -> ScrollResult | None:
     """
     Detects vertical scrolling using a three-phase approach:
     1. Initial viewport estimation (find changed region)
@@ -472,13 +502,10 @@ def detect_scroll(
         img_before: Numpy array (H, W, 3) or (H, W) - image before scroll
         img_after: Numpy array (H, W, 3) or (H, W) - image after scroll
         cursor_pos: (x, y) tuple - cursor position
-        existing_viewport: Optional (x, y, w, h) viewport from previous detection
+        existing_viewport: Optional BoundingBox from previous detection
 
     Returns:
-        Dictionary with:
-            - scroll_distance: Integer pixels scrolled (content moved up by this amount)
-            - after_bbox: (x, y, w, h) overlap region in the after image
-            - viewport: (x, y, w, h) refined viewport bounds
+        ScrollResult with scroll_distance, after_bbox, and viewport.
         Returns None if no valid scroll is found.
     """
     # Algorithm configuration constants
@@ -508,9 +535,10 @@ def detect_scroll(
     H, _ = gb.shape
 
     # --- Phase 1: Initial Viewport Estimation ---
+    # Internal functions use tuples; convert at API boundary
     if existing_viewport is not None:
         # Use provided viewport (skip Phase 1)
-        viewport = existing_viewport
+        viewport = existing_viewport.as_tuple()
         logging.debug(f"Using existing viewport: {viewport}")
     else:
         # Estimate initial viewport by finding changed pixels
@@ -522,7 +550,7 @@ def detect_scroll(
             return None
 
     # Validate viewport size
-    _, _, vp_w, vp_h = viewport
+    vp_x, vp_y, vp_w, vp_h = viewport
     if vp_h < MIN_VIEWPORT_HEIGHT or vp_w < MIN_VIEWPORT_WIDTH:
         logging.info(
             f"Scroll detection failed: Initial viewport too small "
@@ -548,9 +576,9 @@ def detect_scroll(
     if existing_viewport is not None:
         # Skip refinement when using existing viewport (second scroll)
         # Use existing viewport as refined viewport
-        refined_viewport = existing_viewport
+        refined_viewport = viewport  # Already a tuple from conversion above
         # Compute after_bbox from viewport and scroll distance
-        x, y, w, h = existing_viewport
+        x, y, w, h = viewport
         h_overlap = h - scroll_distance
         if h_overlap <= 0:
             logging.info(
@@ -583,8 +611,8 @@ def detect_scroll(
         )
         return None
 
-    return {
-        "scroll_distance": int(scroll_distance),
-        "after_bbox": after_bbox,
-        "viewport": refined_viewport,
-    }
+    return ScrollResult(
+        scroll_distance=int(scroll_distance),
+        after_bbox=BoundingBox.from_tuple(after_bbox),
+        viewport=BoundingBox.from_tuple(refined_viewport),
+    )
