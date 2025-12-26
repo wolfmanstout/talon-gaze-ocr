@@ -13,7 +13,9 @@ import pytest
 from PIL import Image
 
 # Add paths for imports
-sys.path.insert(0, str(Path(__file__).parent))  # .debug (for debug_scroll)
+sys.path.insert(
+    0, str(Path(__file__).parent.parent / ".tools")
+)  # .tools (for debug_scroll)
 sys.path.insert(
     0, str(Path(__file__).parent.parent)
 )  # project root (for scroll_detection)
