@@ -37,7 +37,7 @@ select = [
 ignore = ["E501", "SIM105", "SIM116", "UP045"]
 
 [tool.pytest.ini_options]
-testpaths = [".debug"]
+testpaths = [".tests"]
 
 [tool.pyright]
 pythonVersion = "3.11"
