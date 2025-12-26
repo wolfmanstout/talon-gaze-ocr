@@ -1134,7 +1134,7 @@ def print_summary(debug_data, cursor_pos, output_path, params):
     help="Threshold ratio for Phase 1 weights (lower = bridge more gaps)",
 )
 @click.option(
-    "--density-threshold", default=0.5, help="Density threshold for Phase 3 weights"
+    "--density-threshold", default=0.3, help="Density threshold for Phase 3 weights"
 )
 @click.option(
     "--num-strips", default=16, help="Number of vertical strips for correlation"
