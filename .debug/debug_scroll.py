@@ -74,7 +74,8 @@ class DebugData:
     second_peak_value: float | None = None  # Value of second highest peak
 
     # Phase 3: Viewport refinement
-    match_map: np.ndarray | None = None  # Aligned regions match
+    match_map: np.ndarray | None = None  # Aligned regions match (overlap)
+    static_match_map: np.ndarray | None = None  # Same-position regions match
     row_weights_phase3: np.ndarray | None = None
     col_weights_phase3: np.ndarray | None = None
     row_range_phase3: tuple | None = None  # (r1, r2)
@@ -396,6 +397,7 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
 
     # Store for visualization
     debug.match_map = overlap_match_init
+    debug.static_match_map = static_match_init
 
     # Build weights for row refinement
     STATIC_EPSILON = 1e-6
@@ -755,7 +757,7 @@ def render_profiles(ax, debug_data):
 
 
 def render_match_map(ax, debug_data, cursor_pos):
-    """Render the match map from Phase 3."""
+    """Render the match map from Phase 3 with 3 colors for weight categories."""
     if debug_data.match_map is None:
         ax.text(
             0.5, 0.5, "No match map", ha="center", va="center", transform=ax.transAxes
@@ -763,11 +765,32 @@ def render_match_map(ax, debug_data, cursor_pos):
         ax.set_title("Phase 3: Match Map")
         return
 
-    # Green for match, red for mismatch
-    h, w = debug_data.match_map.shape
+    overlap_match = debug_data.match_map
+    static_match = debug_data.static_match_map
+
+    # Compute three categories (same logic as weight calculation)
+    # dynamic_match: matches when shifted but NOT statically (scrolled content)
+    # static_in_overlap: matches both shifted AND statically (static content)
+    # mismatch: doesn't match when shifted
+    if static_match is not None:
+        dynamic_match = overlap_match & ~static_match
+        static_in_overlap = overlap_match & static_match
+    else:
+        # Fallback if static_match not available
+        dynamic_match = overlap_match
+        static_in_overlap = np.zeros_like(overlap_match)
+
+    mismatch = ~overlap_match
+
+    # Three colors corresponding to the three weights:
+    # Green (0, 200, 0) for dynamic_match (positive weight - scrolled content)
+    # Yellow (200, 200, 0) for static_in_overlap (near-zero weight - static content)
+    # Red (200, 0, 0) for mismatch (negative weight - non-viewport)
+    h, w = overlap_match.shape
     match_rgb = np.zeros((h, w, 3), dtype=np.uint8)
-    match_rgb[debug_data.match_map] = [0, 200, 0]
-    match_rgb[~debug_data.match_map] = [200, 0, 0]
+    match_rgb[dynamic_match] = [0, 200, 0]
+    match_rgb[static_in_overlap] = [200, 200, 0]
+    match_rgb[mismatch] = [200, 0, 0]
 
     ax.imshow(match_rgb, aspect="auto")
 
@@ -777,15 +800,20 @@ def render_match_map(ax, debug_data, cursor_pos):
         init_x = debug_data.initial_viewport[0] if debug_data.initial_viewport else 0
         # Convert to match_map coordinates (relative to c1_init)
         x_rel = x - init_x
-        rect = Rectangle((x_rel, y), w, h, fill=False, edgecolor="lime", linewidth=2)
+        rect = Rectangle((x_rel, y), w, h, fill=False, edgecolor="cyan", linewidth=2)
         ax.add_patch(rect)
 
-    # Calculate match percentage
-    total = debug_data.match_map.size
-    match_count = np.sum(debug_data.match_map)
-    pct = 100 * match_count / total if total > 0 else 0
+    # Calculate percentages for each category
+    total = overlap_match.size
+    dynamic_pct = 100 * np.sum(dynamic_match) / total if total > 0 else 0
+    static_pct = 100 * np.sum(static_in_overlap) / total if total > 0 else 0
+    mismatch_pct = 100 * np.sum(mismatch) / total if total > 0 else 0
 
-    ax.set_title(f"Phase 3: Match Map\nMatch: {pct:.1f}%")
+    ax.set_title(
+        f"Phase 3: Match Map\n"
+        f"Dynamic(+): {dynamic_pct:.0f}%  Static(0): {static_pct:.0f}%  "
+        f"Mismatch(-): {mismatch_pct:.0f}%"
+    )
     ax.axis("off")
 
 
