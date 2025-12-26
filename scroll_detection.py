@@ -383,6 +383,7 @@ def refine_viewport(
     after_region_init = after[:limit_h, c1_init:c2_init]
     before_shifted_init = before[d:, c1_init:c2_init]
     before_same_pos_init = before[:limit_h, c1_init:c2_init]
+    after_shifted_init = after[d:, c1_init:c2_init]  # For source_static check
 
     # Compute match maps for initial column range
     overlap_diff_init = np.abs(
@@ -390,12 +391,21 @@ def refine_viewport(
     )
     overlap_match_init = overlap_diff_init < pixel_tolerance
 
-    static_diff_init = np.abs(
+    # Check if destination position is static (after[y] == before[y])
+    dest_static_diff_init = np.abs(
         after_region_init.astype(float) - before_same_pos_init.astype(float)
     )
-    static_match_init = static_diff_init < pixel_tolerance
+    dest_static_init = dest_static_diff_init < pixel_tolerance
+
+    # Check if source position is static (before[y+d] == after[y+d])
+    source_static_diff_init = np.abs(
+        before_shifted_init.astype(float) - after_shifted_init.astype(float)
+    )
+    source_static_init = source_static_diff_init < pixel_tolerance
 
     # Three categories for row refinement
+    # Static if EITHER destination or source position is static
+    static_match_init = dest_static_init | source_static_init
     dynamic_match_init = overlap_match_init & ~static_match_init
     static_in_overlap_init = overlap_match_init & static_match_init
 
@@ -425,6 +435,7 @@ def refine_viewport(
     after_region_full = after[r1 : r2 + 1, :]
     before_shifted_full = before[r1 + d : r2 + 1 + d, :]
     before_same_pos_full = before[r1 : r2 + 1, :]
+    after_shifted_full = after[r1 + d : r2 + 1 + d, :]  # For source_static check
 
     # Compute match maps for full width
     overlap_diff_full = np.abs(
@@ -432,12 +443,21 @@ def refine_viewport(
     )
     overlap_match_full = overlap_diff_full < pixel_tolerance
 
-    static_diff_full = np.abs(
+    # Check if destination position is static (after[y] == before[y])
+    dest_static_diff_full = np.abs(
         after_region_full.astype(float) - before_same_pos_full.astype(float)
     )
-    static_match_full = static_diff_full < pixel_tolerance
+    dest_static_full = dest_static_diff_full < pixel_tolerance
+
+    # Check if source position is static (before[y+d] == after[y+d])
+    source_static_diff_full = np.abs(
+        before_shifted_full.astype(float) - after_shifted_full.astype(float)
+    )
+    source_static_full = source_static_diff_full < pixel_tolerance
 
     # Three categories for column refinement
+    # Static if EITHER destination or source position is static
+    static_match_full = dest_static_full | source_static_full
     dynamic_match_full = overlap_match_full & ~static_match_full
     static_in_overlap_full = overlap_match_full & static_match_full
 
