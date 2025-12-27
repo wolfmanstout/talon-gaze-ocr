@@ -213,7 +213,7 @@ class TestDebugScrollParity:
         cx, cy = int(cursor_pos[0]), int(cursor_pos[1])
 
         # Run production Phase 1
-        prod_viewport = estimate_initial_viewport(gb, ga, (cx, cy), pixel_tolerance=15)
+        prod_viewport = estimate_initial_viewport(gb, ga, (cx, cy))
 
         # Run debug implementation
         debug_result = detect_scroll_debug(
