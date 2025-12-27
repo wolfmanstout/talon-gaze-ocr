@@ -73,13 +73,16 @@ def create_text_pattern_image(
     return img
 
 
-def create_scrolled_image(original_img: np.ndarray, scroll_distance: int) -> np.ndarray:
+def create_scrolled_image(
+    original_img: np.ndarray, scroll_distance: int, direction: str = "down"
+) -> np.ndarray:
     """
-    Create a scrolled version of an image (scrolling up = content moves up).
+    Create a scrolled version of an image.
 
     Args:
         original_img: Original image array
-        scroll_distance: Pixels to scroll up (positive value)
+        scroll_distance: Pixels to scroll (positive value)
+        direction: "down" (content moves up) or "up" (content moves down)
 
     Returns:
         Scrolled image with same dimensions
@@ -89,7 +92,12 @@ def create_scrolled_image(original_img: np.ndarray, scroll_distance: int) -> np.
 
     remaining_height = height - scroll_distance
     if remaining_height > 0:
-        scrolled[:remaining_height] = original_img[scroll_distance:]
+        if direction == "down":
+            # Scroll down: content moves up, new content appears at bottom
+            scrolled[:remaining_height] = original_img[scroll_distance:]
+        else:
+            # Scroll up: content moves down, new content appears at top
+            scrolled[scroll_distance:] = original_img[:remaining_height]
 
     return scrolled
 

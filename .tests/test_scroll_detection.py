@@ -174,3 +174,84 @@ class TestArrayShapeSafety:
             ):
                 pytest.fail(f"Shape mismatch error: {e}")
             raise
+
+
+class TestScrollUpDirection:
+    """Tests for scroll-up detection (content moves down)."""
+
+    def test_basic_scroll_up(self, sample_text_image):
+        """Test basic scroll-up detection with clean synthetic images."""
+        scroll_dist = 250
+        img_after = create_scrolled_image(
+            sample_text_image, scroll_dist, direction="up"
+        )
+        cursor_pos = (640, 500)
+
+        result = detect_scroll(
+            sample_text_image, img_after, cursor_pos, scroll_direction="up"
+        )
+
+        assert result is not None, "No scroll detected for scroll-up"
+        assert abs(result.scroll_distance - scroll_dist) <= 5, (
+            f"Expected {scroll_dist}, got {result.scroll_distance}"
+        )
+
+    def test_small_scroll_up(self):
+        """Test small scroll-up detection."""
+        height, width = 720, 1280
+        img_before = create_text_pattern_image(height, width, "text")
+        scroll_dist = 120
+        img_after = create_scrolled_image(img_before, scroll_dist, direction="up")
+        cursor_pos = (640, 360)
+
+        result = detect_scroll(img_before, img_after, cursor_pos, scroll_direction="up")
+
+        assert result is not None, f"Should detect scroll-up of {scroll_dist}px"
+        error = abs(result.scroll_distance - scroll_dist)
+        assert error <= 30, f"Error too large: {error}px"
+
+    def test_large_scroll_up(self):
+        """Test large scroll-up detection (50% of height)."""
+        height, width = 1200, 1280
+        img_before = create_text_pattern_image(height, width, "text")
+        scroll_dist = int(height * 0.50)
+        img_after = create_scrolled_image(img_before, scroll_dist, direction="up")
+        cursor_pos = (640, 600)
+
+        result = detect_scroll(img_before, img_after, cursor_pos, scroll_direction="up")
+
+        assert result is not None, "Should detect scroll-up with 50% overlap"
+        error = abs(result.scroll_distance - scroll_dist)
+        assert error <= 10, f"Expected {scroll_dist}, got {result.scroll_distance}"
+
+    def test_scroll_up_symmetry_with_scroll_down(self):
+        """Test that scroll-up and scroll-down give symmetric results."""
+        height, width = 1000, 1280
+        img_original = create_text_pattern_image(height, width, "text")
+        scroll_dist = 200
+        cursor_pos = (640, 500)
+
+        # Create scroll-down image (content moves up)
+        img_scroll_down = create_scrolled_image(
+            img_original, scroll_dist, direction="down"
+        )
+        result_down = detect_scroll(
+            img_original, img_scroll_down, cursor_pos, scroll_direction="down"
+        )
+
+        # Create scroll-up image (content moves down)
+        img_scroll_up = create_scrolled_image(img_original, scroll_dist, direction="up")
+        result_up = detect_scroll(
+            img_original, img_scroll_up, cursor_pos, scroll_direction="up"
+        )
+
+        assert result_down is not None, "Scroll-down detection failed"
+        assert result_up is not None, "Scroll-up detection failed"
+
+        # Both should detect the same scroll distance
+        assert abs(result_down.scroll_distance - scroll_dist) <= 5, (
+            f"Scroll-down: expected {scroll_dist}, got {result_down.scroll_distance}"
+        )
+        assert abs(result_up.scroll_distance - scroll_dist) <= 5, (
+            f"Scroll-up: expected {scroll_dist}, got {result_up.scroll_distance}"
+        )

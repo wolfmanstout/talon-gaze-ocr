@@ -31,6 +31,15 @@ from scroll_detection import (
     get_best_1d_range_constrained,
 )
 
+# Default parameters matching production scroll_detection.py
+DEFAULT_MIN_SCROLL_DISTANCE = 20
+DEFAULT_MIN_VIEWPORT_HEIGHT = 150
+DEFAULT_MIN_VIEWPORT_WIDTH = 150
+DEFAULT_PIXEL_MATCH_TOLERANCE = 15
+DEFAULT_CHANGE_THRESHOLD_RATIO = 0.15
+DEFAULT_DENSITY_THRESHOLD = 0.3
+DEFAULT_NUM_STRIPS = 16
+
 
 @dataclass
 class DebugData:
@@ -94,7 +103,7 @@ class DebugData:
 def parse_from_json(json_path):
     """
     Parse a scroll_*.json file and derive before/after image paths, cursor position,
-    and existing_viewport if present.
+    existing_viewport, and scroll_direction if present.
     """
     if not os.path.exists(json_path):
         raise click.BadParameter(f"JSON file not found: {json_path}")
@@ -121,23 +130,34 @@ def parse_from_json(json_path):
     if ev and all(k in ev for k in ("x", "y", "width", "height")):
         existing_viewport = (ev["x"], ev["y"], ev["width"], ev["height"])
 
-    return before_path, after_path, cursor_pos, existing_viewport
+    # Default to "down" for backwards compatibility with old log files
+    scroll_direction = data.get("scroll_direction", "down")
+
+    return before_path, after_path, cursor_pos, existing_viewport, scroll_direction
 
 
-def detect_scroll_debug(img_before, img_after, cursor_pos, params):
+def detect_scroll_debug(img_before, img_after, cursor_pos, params=None):
     """
     Instrumented version of detect_scroll that returns debug data.
 
     This mirrors the algorithm with instrumentation to collect
     intermediate values for visualization.
     """
-    # Unpack parameters (all have CLI defaults)
-    MIN_SCROLL_DISTANCE = params["min_scroll_distance"]
-    MIN_VIEWPORT_HEIGHT = params["min_viewport_height"]
-    MIN_VIEWPORT_WIDTH = params["min_viewport_width"]
-    PIXEL_MATCH_TOLERANCE = params["pixel_match_tolerance"]
-    CHANGE_THRESHOLD_RATIO = params["change_threshold_ratio"]
-    DENSITY_THRESHOLD = params["density_threshold"]
+    if params is None:
+        params = {}
+
+    # Unpack parameters with defaults from module constants
+    MIN_SCROLL_DISTANCE = params.get("min_scroll_distance", DEFAULT_MIN_SCROLL_DISTANCE)
+    MIN_VIEWPORT_HEIGHT = params.get("min_viewport_height", DEFAULT_MIN_VIEWPORT_HEIGHT)
+    MIN_VIEWPORT_WIDTH = params.get("min_viewport_width", DEFAULT_MIN_VIEWPORT_WIDTH)
+    PIXEL_MATCH_TOLERANCE = params.get(
+        "pixel_match_tolerance", DEFAULT_PIXEL_MATCH_TOLERANCE
+    )
+    CHANGE_THRESHOLD_RATIO = params.get(
+        "change_threshold_ratio", DEFAULT_CHANGE_THRESHOLD_RATIO
+    )
+    DENSITY_THRESHOLD = params.get("density_threshold", DEFAULT_DENSITY_THRESHOLD)
+    scroll_direction = params.get("scroll_direction", "down")
 
     # Initialize debug data
     debug = DebugData(
@@ -242,7 +262,7 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
             return debug
 
     # === Phase 2: Scroll Distance Estimation (Summed Strip Correlation with NCC) ===
-    NUM_STRIPS = params["num_strips"]
+    NUM_STRIPS = params.get("num_strips", DEFAULT_NUM_STRIPS)
     MIN_OVERLAP_HEIGHT = 100  # Not configurable via CLI
 
     x, y, w, h = debug.initial_viewport
@@ -289,9 +309,16 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
         axis=1,
     )
 
-    # Extract positive lags (rows from h_grad onwards)
+    # Extract lags based on scroll direction
+    # For scroll-down (content moves up): positive lags (profs_a shifts right)
+    # For scroll-up (content moves down): negative lags (profs_a shifts left)
     # valid_corrs Shape: (h_grad - 1, NUM_STRIPS)
-    valid_corrs = full_corrs[h_grad:, :]
+    if scroll_direction == "down":
+        valid_corrs = full_corrs[h_grad:, :]  # positive lags
+    else:
+        # Negative lags: indices 0 to h_grad-2 represent lags -(h_grad-1) to -1
+        # Reverse to get lags -1, -2, ..., -(h_grad-1) matching distance 1, 2, ...
+        valid_corrs = full_corrs[: h_grad - 1, :][::-1, :]
 
     # Store per-strip raw correlations for heatmap visualization
     strip_correlations = np.zeros((NUM_STRIPS, h_grad))
@@ -305,11 +332,23 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
     cs_b = np.cumsum(profs_b**2, axis=0)
     cs_a = np.cumsum(profs_a**2, axis=0)
     total_b = cs_b[-1, :]
+    total_a = cs_a[-1, :]
 
-    # 'b' segment: Total energy - energy accumulated before the split index
-    b_contribs = total_b - cs_b[:-1, :]
-    # 'a' segment: Energy accumulated from 0 up to the overlap index (reversed)
-    a_contribs = cs_a[:-1, :][::-1, :]
+    # Energy contributions depend on scroll direction:
+    # For scroll-down: compare before[d:] with after[:h_grad-d]
+    #   b_contribs = suffix of before, a_contribs = prefix of after
+    # For scroll-up: compare before[:h_grad-d] with after[d:]
+    #   b_contribs = prefix of before, a_contribs = suffix of after
+    if scroll_direction == "down":
+        # 'b' segment: Total energy - energy accumulated before the split index
+        b_contribs = total_b - cs_b[:-1, :]
+        # 'a' segment: Energy accumulated from 0 up to the overlap index (reversed)
+        a_contribs = cs_a[:-1, :][::-1, :]
+    else:
+        # 'b' segment: Energy accumulated from 0 up to the overlap index (reversed)
+        b_contribs = cs_b[:-1, :][::-1, :]
+        # 'a' segment: Total energy - energy accumulated before the split index
+        a_contribs = total_a - cs_a[:-1, :]
 
     # Sum squared norms across all strips
     norm_b_sq = np.concatenate(([0], b_contribs.sum(axis=1)))
@@ -376,119 +415,147 @@ def detect_scroll_debug(img_before, img_after, cursor_pos, params):
     c2_init = init_x + init_w
 
     # --- Row refinement: use initial viewport columns ---
-    after_region_init = ga[:limit_h, c1_init:c2_init]
-    before_shifted_init = gb[d:, c1_init:c2_init]
-    before_same_pos_init = gb[:limit_h, c1_init:c2_init]
-    after_shifted_init = ga[d:, c1_init:c2_init]  # For source_static check
+    # Extract the four regions needed for match analysis:
+    # - overlap_after/overlap_before: the aligned overlap regions (should match)
+    # - dest_in_before: before image at destination position (for dest_static check)
+    # - source_in_after: after image at source position (for source_static check)
+    if scroll_direction == "down":
+        overlap_after_row = ga[:limit_h, c1_init:c2_init]
+        overlap_before_row = gb[d:, c1_init:c2_init]
+        dest_in_before_row = gb[:limit_h, c1_init:c2_init]
+        source_in_after_row = ga[d:, c1_init:c2_init]
+    else:
+        # Scroll-up: after[d:] matches before[:limit_h]
+        overlap_after_row = ga[d:, c1_init:c2_init]
+        overlap_before_row = gb[:limit_h, c1_init:c2_init]
+        dest_in_before_row = gb[d:, c1_init:c2_init]
+        source_in_after_row = ga[:limit_h, c1_init:c2_init]
 
-    # Compute match maps for initial column range
-    overlap_diff_init = np.abs(
-        after_region_init.astype(float) - before_shifted_init.astype(float)
+    # Compute match categories for row refinement
+    overlap_diff_row = np.abs(
+        overlap_after_row.astype(float) - overlap_before_row.astype(float)
     )
-    overlap_match_init = overlap_diff_init < PIXEL_MATCH_TOLERANCE
+    overlap_match_row = overlap_diff_row < PIXEL_MATCH_TOLERANCE
 
-    # Check if destination position is static (after[y] == before[y])
-    dest_static_diff_init = np.abs(
-        after_region_init.astype(float) - before_same_pos_init.astype(float)
+    dest_static_diff_row = np.abs(
+        overlap_after_row.astype(float) - dest_in_before_row.astype(float)
     )
-    dest_static_init = dest_static_diff_init < PIXEL_MATCH_TOLERANCE
+    dest_static_row = dest_static_diff_row < PIXEL_MATCH_TOLERANCE
 
-    # Check if source position is static (before[y+d] == after[y+d])
-    source_static_diff_init = np.abs(
-        before_shifted_init.astype(float) - after_shifted_init.astype(float)
+    source_static_diff_row = np.abs(
+        overlap_before_row.astype(float) - source_in_after_row.astype(float)
     )
-    source_static_init = source_static_diff_init < PIXEL_MATCH_TOLERANCE
+    source_static_row = source_static_diff_row < PIXEL_MATCH_TOLERANCE
 
-    # Three categories for row refinement
-    # Static if EITHER destination or source position is static
-    static_match_init = dest_static_init | source_static_init
-    dynamic_match_init = overlap_match_init & ~static_match_init
-    static_in_overlap_init = overlap_match_init & static_match_init
+    # Three categories: dynamic (scrolled), static (unchanged), mismatch (outside viewport)
+    static_match_row = dest_static_row | source_static_row
+    dynamic_match_row = overlap_match_row & ~static_match_row
+    static_in_overlap_row = overlap_match_row & static_match_row
 
     # Store for visualization
-    debug.match_map = overlap_match_init
-    debug.static_match_map = static_match_init
+    debug.match_map = overlap_match_row
+    debug.static_match_map = static_match_row
 
-    # Build weights for row refinement
+    # Build 2D weight map: positive for dynamic, near-zero for static, negative for mismatch
     STATIC_EPSILON = 1e-6
-    weights_init = np.full_like(
-        overlap_match_init, -DENSITY_THRESHOLD - 1e-5, dtype=float
+    weight_map_row = np.full_like(
+        overlap_match_row, -DENSITY_THRESHOLD - 1e-5, dtype=float
     )
-    weights_init[dynamic_match_init] = 1.0 - DENSITY_THRESHOLD
-    weights_init[static_in_overlap_init] = STATIC_EPSILON
+    weight_map_row[dynamic_match_row] = 1.0 - DENSITY_THRESHOLD
+    weight_map_row[static_in_overlap_row] = STATIC_EPSILON
 
-    target_y_max = min(cy, limit_h - 1)
-    target_y_min = max(0, cy - d)
-    if target_y_min > target_y_max:
-        target_y_min = target_y_max
+    # Cursor constraint: detected range must include part of cursor's scroll path [cy-d, cy]
+    target_row_min = max(0, cy - d)
+    target_row_max = min(cy, limit_h - 1)
+    if target_row_min > target_row_max:
+        target_row_min = target_row_max
 
-    row_weights_p3 = np.sum(weights_init, axis=1)
-    debug.row_weights_phase3 = row_weights_p3
+    row_weights = np.sum(weight_map_row, axis=1)
+    debug.row_weights_phase3 = row_weights
 
-    r1_p3, r2_p3, r_score_p3 = get_best_1d_range_constrained(
-        row_weights_p3, target_y_min, target_y_max
+    r1, r2, row_score = get_best_1d_range_constrained(
+        row_weights, target_row_min, target_row_max
     )
-    debug.row_range_phase3 = (r1_p3, r2_p3)
+    debug.row_range_phase3 = (r1, r2)
 
-    if r_score_p3 <= 0:
+    if row_score <= 0:
         debug.failure_phase = 3
-        debug.failure_reason = f"No valid refined row range (score={r_score_p3:.2f})"
+        debug.failure_reason = f"No valid refined row range (score={row_score:.2f})"
         return debug
 
     # --- Column refinement: use full image width with refined rows ---
-    after_region_full = ga[r1_p3 : r2_p3 + 1, :]
-    before_shifted_full = gb[r1_p3 + d : r2_p3 + 1 + d, :]
-    before_same_pos_full = gb[r1_p3 : r2_p3 + 1, :]
-    after_shifted_full = ga[r1_p3 + d : r2_p3 + 1 + d, :]  # For source_static check
+    # r1, r2 are slice indices; convert to screen rows based on direction
+    if scroll_direction == "down":
+        # Scroll-down: slice indices equal screen rows
+        overlap_after_col = ga[r1 : r2 + 1, :]
+        overlap_before_col = gb[r1 + d : r2 + 1 + d, :]
+        dest_in_before_col = gb[r1 : r2 + 1, :]
+        source_in_after_col = ga[r1 + d : r2 + 1 + d, :]
+    else:
+        # Scroll-up: screen row = slice index + d
+        overlap_after_col = ga[r1 + d : r2 + 1 + d, :]
+        overlap_before_col = gb[r1 : r2 + 1, :]
+        dest_in_before_col = gb[r1 + d : r2 + 1 + d, :]
+        source_in_after_col = ga[r1 : r2 + 1, :]
 
-    # Compute match maps for full width
-    overlap_diff_full = np.abs(
-        after_region_full.astype(float) - before_shifted_full.astype(float)
+    # Compute match categories for column refinement
+    overlap_diff_col = np.abs(
+        overlap_after_col.astype(float) - overlap_before_col.astype(float)
     )
-    overlap_match_full = overlap_diff_full < PIXEL_MATCH_TOLERANCE
+    overlap_match_col = overlap_diff_col < PIXEL_MATCH_TOLERANCE
 
-    # Check if destination position is static (after[y] == before[y])
-    dest_static_diff_full = np.abs(
-        after_region_full.astype(float) - before_same_pos_full.astype(float)
+    dest_static_diff_col = np.abs(
+        overlap_after_col.astype(float) - dest_in_before_col.astype(float)
     )
-    dest_static_full = dest_static_diff_full < PIXEL_MATCH_TOLERANCE
+    dest_static_col = dest_static_diff_col < PIXEL_MATCH_TOLERANCE
 
-    # Check if source position is static (before[y+d] == after[y+d])
-    source_static_diff_full = np.abs(
-        before_shifted_full.astype(float) - after_shifted_full.astype(float)
+    source_static_diff_col = np.abs(
+        overlap_before_col.astype(float) - source_in_after_col.astype(float)
     )
-    source_static_full = source_static_diff_full < PIXEL_MATCH_TOLERANCE
+    source_static_col = source_static_diff_col < PIXEL_MATCH_TOLERANCE
 
-    # Three categories for column refinement
-    # Static if EITHER destination or source position is static
-    static_match_full = dest_static_full | source_static_full
-    dynamic_match_full = overlap_match_full & ~static_match_full
-    static_in_overlap_full = overlap_match_full & static_match_full
+    static_match_col = dest_static_col | source_static_col
+    dynamic_match_col = overlap_match_col & ~static_match_col
+    static_in_overlap_col = overlap_match_col & static_match_col
 
-    # Build weights for column refinement
-    weights_full = np.full_like(
-        overlap_match_full, -DENSITY_THRESHOLD - 1e-5, dtype=float
+    # Build 2D weight map for column refinement
+    weight_map_col = np.full_like(
+        overlap_match_col, -DENSITY_THRESHOLD - 1e-5, dtype=float
     )
-    weights_full[dynamic_match_full] = 1.0 - DENSITY_THRESHOLD
-    weights_full[static_in_overlap_full] = STATIC_EPSILON
+    weight_map_col[dynamic_match_col] = 1.0 - DENSITY_THRESHOLD
+    weight_map_col[static_in_overlap_col] = STATIC_EPSILON
 
-    col_weights_p3 = np.sum(weights_full, axis=0)
-    debug.col_weights_phase3 = col_weights_p3
+    col_weights = np.sum(weight_map_col, axis=0)
+    debug.col_weights_phase3 = col_weights
 
-    c1_final, c2_final, c_score_p3 = get_best_1d_anchored(col_weights_p3, cx)
-    debug.col_range_phase3 = (c1_final, c2_final)
+    c1, c2, col_score = get_best_1d_anchored(col_weights, cx)
+    debug.col_range_phase3 = (c1, c2)
 
-    if c_score_p3 <= 0:
+    if col_score <= 0:
         debug.failure_phase = 3
-        debug.failure_reason = f"No valid refined column range (score={c_score_p3:.2f})"
+        debug.failure_reason = f"No valid refined column range (score={col_score:.2f})"
         return debug
 
-    h_overlap = r2_p3 - r1_p3 + 1
-    w_refined = c2_final - c1_final + 1
+    h_overlap = r2 - r1 + 1
+    w_refined = c2 - c1 + 1
     h_viewport = h_overlap + d
 
-    debug.after_bbox = (c1_final, r1_p3, w_refined, h_overlap)
-    debug.refined_viewport = (c1_final, r1_p3, w_refined, h_viewport)
+    # Convert slice-relative r1 to screen coordinates
+    # after_bbox: where the overlap region is in the after image
+    # refined_viewport: the full viewport including new content
+    if scroll_direction == "down":
+        # Scroll-down: r1 is already a screen row (overlap was ga[:limit_h])
+        # Viewport starts at overlap and extends DOWN by d
+        after_bbox_y = r1
+        viewport_y = r1
+    else:
+        # Scroll-up: r1 is slice index, overlap is at screen row r1 + d
+        # Viewport starts d pixels ABOVE the overlap (to include new content at top)
+        after_bbox_y = r1 + d
+        viewport_y = r1  # Same as overlap_y - d
+
+    debug.after_bbox = (c1, after_bbox_y, w_refined, h_overlap)
+    debug.refined_viewport = (c1, viewport_y, w_refined, h_viewport)
 
     # Final size check
     if h_viewport < MIN_VIEWPORT_HEIGHT or w_refined < MIN_VIEWPORT_WIDTH:
@@ -541,6 +608,7 @@ def render_original_images(ax_before, ax_after, debug_data, cursor_pos):
     if debug_data.after_bbox:
         x, y, w, h_overlap = debug_data.after_bbox
         d = debug_data.scroll_distance or 0
+        scroll_direction = debug_data.params.get("scroll_direction", "down")
 
         # In After image: overlap is at (x, y)
         rect_after = Rectangle(
@@ -548,9 +616,12 @@ def render_original_images(ax_before, ax_after, debug_data, cursor_pos):
         )
         ax_after.add_patch(rect_after)
 
-        # In Before image: same content is at (x, y + d)
+        # In Before image: same content is offset by d
+        # For scroll-down: before content is at y + d (content moved up)
+        # For scroll-up: before content is at y - d (content moved down)
+        before_y = y + d if scroll_direction == "down" else y - d
         rect_before = Rectangle(
-            (x, y + d), w, h_overlap, fill=False, edgecolor="lime", linewidth=2
+            (x, before_y), w, h_overlap, fill=False, edgecolor="lime", linewidth=2
         )
         ax_before.add_patch(rect_before)
 
@@ -818,9 +889,18 @@ def render_match_map(ax, debug_data, cursor_pos):
     if debug_data.after_bbox:
         x, y, w, h = debug_data.after_bbox
         init_x = debug_data.initial_viewport[0] if debug_data.initial_viewport else 0
-        # Convert to match_map coordinates (relative to c1_init)
+        scroll_direction = debug_data.params.get("scroll_direction", "down")
+        scroll_distance = debug_data.scroll_distance or 0
+
+        # Convert to match_map coordinates
+        # x: relative to c1_init (initial viewport x)
         x_rel = x - init_x
-        rect = Rectangle((x_rel, y), w, h, fill=False, edgecolor="cyan", linewidth=2)
+        # y: match_map starts at row 0 (scroll-down) or row d (scroll-up) of after image
+        y_rel = y if scroll_direction == "down" else y - scroll_distance
+
+        rect = Rectangle(
+            (x_rel, y_rel), w, h, fill=False, edgecolor="cyan", linewidth=2
+        )
         ax.add_patch(rect)
 
     # Calculate percentages for each category
@@ -908,6 +988,7 @@ def compute_correlation_2d(debug_data, candidate_distance):
     d = candidate_distance
     grad_b = debug_data.grad_b
     grad_a = debug_data.grad_a
+    scroll_direction = debug_data.params.get("scroll_direction", "down")
 
     if grad_b is None or grad_a is None:
         return None
@@ -924,8 +1005,14 @@ def compute_correlation_2d(debug_data, candidate_distance):
         return None
 
     limit_h = H - d
-    b_region = grad_b[d:, :]
-    a_region = grad_a[:limit_h, :]
+    # Scroll-down: compare before[d:] with after[:limit_h]
+    # Scroll-up: compare before[:limit_h] with after[d:]
+    if scroll_direction == "down":
+        b_region = grad_b[d:, :]
+        a_region = grad_a[:limit_h, :]
+    else:
+        b_region = grad_b[:limit_h, :]
+        a_region = grad_a[d:, :]
 
     return np.abs(b_region) * np.abs(a_region)
 
@@ -936,6 +1023,7 @@ def compute_pixel_match(debug_data, candidate_distance):
     gray_b = debug_data.gray_b
     gray_a = debug_data.gray_a
     tolerance = debug_data.params["pixel_match_tolerance"]
+    scroll_direction = debug_data.params.get("scroll_direction", "down")
 
     if debug_data.initial_viewport:
         vx, vy, vw, vh = debug_data.initial_viewport
@@ -948,8 +1036,14 @@ def compute_pixel_match(debug_data, candidate_distance):
         return None, 0, 0
 
     limit_h = H - d
-    b_region = gray_b[d:, :]
-    a_region = gray_a[:limit_h, :]
+    # Scroll-down: compare before[d:] with after[:limit_h]
+    # Scroll-up: compare before[:limit_h] with after[d:]
+    if scroll_direction == "down":
+        b_region = gray_b[d:, :]
+        a_region = gray_a[:limit_h, :]
+    else:
+        b_region = gray_b[:limit_h, :]
+        a_region = gray_a[d:, :]
 
     diff = np.abs(b_region - a_region)
     match_mask = diff < tolerance
@@ -1121,23 +1215,39 @@ def print_summary(debug_data, cursor_pos, output_path, params):
 )
 # Algorithm tuning parameters
 @click.option(
-    "--min-scroll-distance", default=20, help="Minimum scroll distance to consider"
+    "--min-scroll-distance",
+    default=DEFAULT_MIN_SCROLL_DISTANCE,
+    help="Minimum scroll distance to consider",
 )
-@click.option("--min-viewport-height", default=150, help="Minimum viewport height")
-@click.option("--min-viewport-width", default=300, help="Minimum viewport width")
 @click.option(
-    "--pixel-match-tolerance", default=15, help="Pixel difference tolerance for match"
+    "--min-viewport-height",
+    default=DEFAULT_MIN_VIEWPORT_HEIGHT,
+    help="Minimum viewport height",
+)
+@click.option(
+    "--min-viewport-width",
+    default=DEFAULT_MIN_VIEWPORT_WIDTH,
+    help="Minimum viewport width",
+)
+@click.option(
+    "--pixel-match-tolerance",
+    default=DEFAULT_PIXEL_MATCH_TOLERANCE,
+    help="Pixel difference tolerance for match",
 )
 @click.option(
     "--change-threshold-ratio",
-    default=0.15,
+    default=DEFAULT_CHANGE_THRESHOLD_RATIO,
     help="Threshold ratio for Phase 1 weights (lower = bridge more gaps)",
 )
 @click.option(
-    "--density-threshold", default=0.3, help="Density threshold for Phase 3 weights"
+    "--density-threshold",
+    default=DEFAULT_DENSITY_THRESHOLD,
+    help="Density threshold for Phase 3 weights",
 )
 @click.option(
-    "--num-strips", default=16, help="Number of vertical strips for correlation"
+    "--num-strips",
+    default=DEFAULT_NUM_STRIPS,
+    help="Number of vertical strips for correlation",
 )
 @click.option(
     "--viewport",
@@ -1145,6 +1255,12 @@ def print_summary(debug_data, cursor_pos, output_path, params):
     type=int,
     default=None,
     help="Override viewport as X Y WIDTH HEIGHT (skips Phase 1)",
+)
+@click.option(
+    "--direction",
+    type=click.Choice(["down", "up"]),
+    default=None,
+    help="Scroll direction (default: from JSON or 'down')",
 )
 def main(
     before_image,
@@ -1161,6 +1277,7 @@ def main(
     density_threshold,
     num_strips,
     viewport,
+    direction,
 ):
     """Generate debug visualization for scroll detection (Three-Phase Algorithm).
 
@@ -1172,10 +1289,15 @@ def main(
 
     # Determine input source
     json_existing_viewport = None
+    json_scroll_direction = "down"
     if from_json:
-        before_image, after_image, cursor, json_existing_viewport = parse_from_json(
-            from_json
-        )
+        (
+            before_image,
+            after_image,
+            cursor,
+            json_existing_viewport,
+            json_scroll_direction,
+        ) = parse_from_json(from_json)
         if cursor_pos:
             cursor = tuple(cursor_pos)
         if output is None:
@@ -1189,6 +1311,9 @@ def main(
         raise click.UsageError(
             "Either provide --from-json or both BEFORE_IMAGE and AFTER_IMAGE"
         )
+
+    # CLI --direction overrides JSON, which defaults to "down"
+    effective_direction = direction if direction else json_scroll_direction
 
     # Load images
     img_b = np.array(Image.open(before_image))
@@ -1205,6 +1330,7 @@ def main(
         "density_threshold": density_threshold,
         "num_strips": num_strips,
         "existing_viewport": effective_viewport,
+        "scroll_direction": effective_direction,
     }
 
     # Run instrumented detection
