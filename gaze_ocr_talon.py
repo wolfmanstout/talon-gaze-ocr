@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 import numpy as np
-from talon import Context, Module, actions, app, cron, fs, screen, settings, ui
+from talon import Context, Module, actions, app, cron, ctrl, fs, screen, settings, ui
 from talon.canvas import Canvas, MouseEvent
 from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
@@ -530,7 +530,11 @@ def perform_scroll_and_detect(
     actions.sleep(f"{wait_ms}ms")
 
     screen_rect = screen.main().rect
-    after_screenshot = screen.capture_rect(screen_rect, retina=False)
+    ctrl.cursor_visible(False)
+    try:
+        after_screenshot = screen.capture_rect(screen_rect, retina=False)
+    finally:
+        ctrl.cursor_visible(True)
     after_array = np.array(after_screenshot)
 
     detection = detect_scroll(
@@ -1223,7 +1227,11 @@ class GazeOcrActions:
 
         # Capture initial state
         screen_rect = screen.main().rect
-        before_screenshot = screen.capture_rect(screen_rect, retina=False)
+        ctrl.cursor_visible(False)
+        try:
+            before_screenshot = screen.capture_rect(screen_rect, retina=False)
+        finally:
+            ctrl.cursor_visible(True)
         before_array = np.array(before_screenshot)
         # Brief pause to ensure cursor position is up-to-date before reading it
         actions.sleep("5ms")
