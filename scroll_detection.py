@@ -10,8 +10,10 @@ This module contains only the pure algorithmic functions with no Talon dependenc
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 # Module-level constants
 PIXEL_TOLERANCE = 20  # Max pixel difference to consider a match
@@ -132,8 +134,8 @@ def get_best_1d_range_constrained(
 
 
 def estimate_initial_viewport(
-    before: np.ndarray,
-    after: np.ndarray,
+    before: NDArray[np.floating[Any]],
+    after: NDArray[np.floating[Any]],
     cursor_pos: tuple[int, int],
 ) -> tuple[int, int, int, int] | None:
     """
@@ -144,8 +146,8 @@ def estimate_initial_viewport(
     to handle varying viewport sizes robustly.
 
     Args:
-        before: Grayscale image before scroll (H, W)
-        after: Grayscale image after scroll (H, W)
+        before: Grayscale float image before scroll (H, W)
+        after: Grayscale float image after scroll (H, W)
         cursor_pos: (x, y) cursor position
 
     Returns:
@@ -164,7 +166,7 @@ def estimate_initial_viewport(
         return None
 
     # Step 1-2: Compute diff and threshold to binary change map
-    diff = np.abs(after.astype(float) - before.astype(float))
+    diff = np.abs(after - before)
     changed = diff > PIXEL_TOLERANCE
 
     # Step 3-4: Sum changed pixels per row and normalize
@@ -219,8 +221,8 @@ def estimate_initial_viewport(
 
 
 def estimate_scroll_distance(
-    before: np.ndarray,
-    after: np.ndarray,
+    before: NDArray[np.floating[Any]],
+    after: NDArray[np.floating[Any]],
     viewport: tuple[int, int, int, int],
     scroll_direction: str = "down",
 ) -> int | None:
@@ -232,8 +234,8 @@ def estimate_scroll_distance(
     (Normalized Cross-Correlation). The distance with maximum NCC is returned.
 
     Args:
-        before: Grayscale image before scroll (H, W)
-        after: Grayscale image after scroll (H, W)
+        before: Grayscale float image before scroll (H, W)
+        after: Grayscale float image after scroll (H, W)
         viewport: (x, y, width, height) viewport bounds
         scroll_direction: "down" (content moves up) or "up" (content moves down)
 
@@ -351,8 +353,8 @@ def estimate_scroll_distance(
 
 
 def refine_viewport(
-    before: np.ndarray,
-    after: np.ndarray,
+    before: NDArray[np.floating[Any]],
+    after: NDArray[np.floating[Any]],
     initial_viewport: tuple[int, int, int, int],
     scroll_distance: int,
     cursor_pos: tuple[int, int],
@@ -367,8 +369,8 @@ def refine_viewport(
     - Non-match: pixels that don't align in overlap (negative weight)
 
     Args:
-        before: Grayscale image before scroll (H, W)
-        after: Grayscale image after scroll (H, W)
+        before: Grayscale float image before scroll (H, W)
+        after: Grayscale float image after scroll (H, W)
         initial_viewport: (x, y, width, height) initial viewport estimate
         scroll_distance: Detected scroll distance in pixels
         cursor_pos: (x, y) cursor position
@@ -417,19 +419,13 @@ def refine_viewport(
         source_in_after_row = after[:limit_h, c1_init:c2_init]
 
     # Compute match categories for row refinement
-    overlap_diff_row = np.abs(
-        overlap_after_row.astype(float) - overlap_before_row.astype(float)
-    )
+    overlap_diff_row = np.abs(overlap_after_row - overlap_before_row)
     overlap_match_row = overlap_diff_row < PIXEL_TOLERANCE
 
-    dest_static_diff_row = np.abs(
-        overlap_after_row.astype(float) - dest_in_before_row.astype(float)
-    )
+    dest_static_diff_row = np.abs(overlap_after_row - dest_in_before_row)
     dest_static_row = dest_static_diff_row < PIXEL_TOLERANCE
 
-    source_static_diff_row = np.abs(
-        overlap_before_row.astype(float) - source_in_after_row.astype(float)
-    )
+    source_static_diff_row = np.abs(overlap_before_row - source_in_after_row)
     source_static_row = source_static_diff_row < PIXEL_TOLERANCE
 
     # Three categories: dynamic (scrolled), static (unchanged), mismatch (outside viewport)
@@ -477,19 +473,13 @@ def refine_viewport(
         source_in_after_col = after[r1 : r2 + 1, :]
 
     # Compute match categories for column refinement
-    overlap_diff_col = np.abs(
-        overlap_after_col.astype(float) - overlap_before_col.astype(float)
-    )
+    overlap_diff_col = np.abs(overlap_after_col - overlap_before_col)
     overlap_match_col = overlap_diff_col < PIXEL_TOLERANCE
 
-    dest_static_diff_col = np.abs(
-        overlap_after_col.astype(float) - dest_in_before_col.astype(float)
-    )
+    dest_static_diff_col = np.abs(overlap_after_col - dest_in_before_col)
     dest_static_col = dest_static_diff_col < PIXEL_TOLERANCE
 
-    source_static_diff_col = np.abs(
-        overlap_before_col.astype(float) - source_in_after_col.astype(float)
-    )
+    source_static_diff_col = np.abs(overlap_before_col - source_in_after_col)
     source_static_col = source_static_diff_col < PIXEL_TOLERANCE
 
     static_match_col = dest_static_col | source_static_col
