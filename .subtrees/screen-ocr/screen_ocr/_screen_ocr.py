@@ -51,10 +51,10 @@ try:
 except ImportError:
     dxcam = None
 try:
-    from talon import actions, screen, ui
+    from talon import actions, ctrl, screen, ui
     from talon.types.rect import Rect
 except ImportError:
-    ui = screen = Rect = actions = None
+    ui = screen = Rect = actions = ctrl = None
 
 # Represented as [left, top, right, bottom] pixel coordinates
 BoundingBox = tuple[int, int, int, int]
@@ -301,19 +301,33 @@ class Reader:
     def _clean_screenshot(
         self, bounding_box: Optional[BoundingBox], clamp_to_main_screen: bool = True
     ) -> tuple[Any, BoundingBox]:
-        if not actions:
-            return self._screenshot(bounding_box, clamp_to_main_screen)
-        # Attempt to turn off HUD if talon_hud is installed.
+        # Hide cursor during screenshot.
         try:
-            actions.user.hud_set_visibility(False, pause_seconds=0.02)
+            if ctrl:
+                ctrl.cursor_visible(False)
         except Exception:
             pass
         try:
-            return self._screenshot(bounding_box, clamp_to_main_screen)
-        finally:
-            # Attempt to turn on HUD if talon_hud is installed.
+            if not actions:
+                return self._screenshot(bounding_box, clamp_to_main_screen)
+            # Attempt to turn off HUD if talon_hud is installed.
             try:
-                actions.user.hud_set_visibility(True, pause_seconds=0.001)
+                actions.user.hud_set_visibility(False, pause_seconds=0.02)
+            except Exception:
+                pass
+            try:
+                return self._screenshot(bounding_box, clamp_to_main_screen)
+            finally:
+                # Attempt to turn on HUD if talon_hud is installed.
+                try:
+                    actions.user.hud_set_visibility(True, pause_seconds=0.001)
+                except Exception:
+                    pass
+        finally:
+            # Restore cursor visibility.
+            try:
+                if ctrl:
+                    ctrl.cursor_visible(True)
             except Exception:
                 pass
 
