@@ -13,6 +13,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+# Module-level constants
+PIXEL_TOLERANCE = 20  # Max pixel difference to consider a match
+
 
 @dataclass(frozen=True)
 class BoundingBox:
@@ -132,7 +135,6 @@ def estimate_initial_viewport(
     before: np.ndarray,
     after: np.ndarray,
     cursor_pos: tuple[int, int],
-    pixel_tolerance: int = 15,
 ) -> tuple[int, int, int, int] | None:
     """
     Estimates the initial viewport by finding the largest region of changed pixels,
@@ -145,7 +147,6 @@ def estimate_initial_viewport(
         before: Grayscale image before scroll (H, W)
         after: Grayscale image after scroll (H, W)
         cursor_pos: (x, y) cursor position
-        pixel_tolerance: Maximum difference to consider pixels unchanged
 
     Returns:
         (x, y, width, height) viewport bounds or None if detection fails
@@ -164,7 +165,7 @@ def estimate_initial_viewport(
 
     # Step 1-2: Compute diff and threshold to binary change map
     diff = np.abs(after.astype(float) - before.astype(float))
-    changed = diff > pixel_tolerance
+    changed = diff > PIXEL_TOLERANCE
 
     # Step 3-4: Sum changed pixels per row and normalize
     row_sums = np.sum(changed, axis=1).astype(float)
@@ -355,7 +356,6 @@ def refine_viewport(
     initial_viewport: tuple[int, int, int, int],
     scroll_distance: int,
     cursor_pos: tuple[int, int],
-    pixel_tolerance: int = 15,
     scroll_direction: str = "down",
 ) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]] | None:
     """
@@ -372,7 +372,6 @@ def refine_viewport(
         initial_viewport: (x, y, width, height) initial viewport estimate
         scroll_distance: Detected scroll distance in pixels
         cursor_pos: (x, y) cursor position
-        pixel_tolerance: Maximum difference to consider pixels matching
         scroll_direction: "down" (content moves up) or "up" (content moves down)
 
     Returns:
@@ -421,17 +420,17 @@ def refine_viewport(
     overlap_diff_row = np.abs(
         overlap_after_row.astype(float) - overlap_before_row.astype(float)
     )
-    overlap_match_row = overlap_diff_row < pixel_tolerance
+    overlap_match_row = overlap_diff_row < PIXEL_TOLERANCE
 
     dest_static_diff_row = np.abs(
         overlap_after_row.astype(float) - dest_in_before_row.astype(float)
     )
-    dest_static_row = dest_static_diff_row < pixel_tolerance
+    dest_static_row = dest_static_diff_row < PIXEL_TOLERANCE
 
     source_static_diff_row = np.abs(
         overlap_before_row.astype(float) - source_in_after_row.astype(float)
     )
-    source_static_row = source_static_diff_row < pixel_tolerance
+    source_static_row = source_static_diff_row < PIXEL_TOLERANCE
 
     # Three categories: dynamic (scrolled), static (unchanged), mismatch (outside viewport)
     static_match_row = dest_static_row | source_static_row
@@ -481,17 +480,17 @@ def refine_viewport(
     overlap_diff_col = np.abs(
         overlap_after_col.astype(float) - overlap_before_col.astype(float)
     )
-    overlap_match_col = overlap_diff_col < pixel_tolerance
+    overlap_match_col = overlap_diff_col < PIXEL_TOLERANCE
 
     dest_static_diff_col = np.abs(
         overlap_after_col.astype(float) - dest_in_before_col.astype(float)
     )
-    dest_static_col = dest_static_diff_col < pixel_tolerance
+    dest_static_col = dest_static_diff_col < PIXEL_TOLERANCE
 
     source_static_diff_col = np.abs(
         overlap_before_col.astype(float) - source_in_after_col.astype(float)
     )
-    source_static_col = source_static_diff_col < pixel_tolerance
+    source_static_col = source_static_diff_col < PIXEL_TOLERANCE
 
     static_match_col = dest_static_col | source_static_col
     dynamic_match_col = overlap_match_col & ~static_match_col
@@ -575,7 +574,6 @@ def detect_scroll(
     # Algorithm configuration constants
     MIN_VIEWPORT_HEIGHT = 150  # Detected viewport must be at least this tall
     MIN_VIEWPORT_WIDTH = 150  # Detected viewport must be at least this wide
-    PIXEL_MATCH_TOLERANCE = 15  # Max pixel difference to consider a match
 
     # Convert cursor position to integers for array indexing
     cx, cy = int(cursor_pos[0]), int(cursor_pos[1])
@@ -606,9 +604,7 @@ def detect_scroll(
         logging.debug(f"Using existing viewport: {viewport}")
     else:
         # Estimate initial viewport by finding changed pixels
-        viewport = estimate_initial_viewport(
-            gb, ga, (cx, cy), pixel_tolerance=PIXEL_MATCH_TOLERANCE
-        )
+        viewport = estimate_initial_viewport(gb, ga, (cx, cy))
         if viewport is None:
             logging.info("Scroll detection failed: Could not estimate initial viewport")
             return None
@@ -661,7 +657,6 @@ def detect_scroll(
             viewport,
             scroll_distance,
             (cx, cy),
-            pixel_tolerance=PIXEL_MATCH_TOLERANCE,
             scroll_direction=scroll_direction,
         )
         if result is None:

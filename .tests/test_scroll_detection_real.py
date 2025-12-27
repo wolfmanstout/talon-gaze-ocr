@@ -81,3 +81,32 @@ class TestRealImages:
 
         assert result is not None, "Should detect scroll in real images"
         assert result.scroll_distance > 0, "Scroll distance should be positive"
+
+    def test_scroll_success_40px_viewport_extends_past_cursor(
+        self, load_json_test_case
+    ):
+        """Test that viewport refinement extends past cursor when content matches.
+
+        This test ensures the PIXEL_TOLERANCE fix (increased to 20) remains in place.
+        With tolerance=15, the viewport would stop at the cursor x position (~505).
+        With tolerance=20, it correctly extends left to capture the full viewport.
+        """
+        img_before, img_after, cursor_pos, _ = load_json_test_case(
+            "scroll_success_40px_1766818564.08.json"
+        )
+
+        result = detect_scroll(img_before, img_after, cursor_pos)
+
+        assert result is not None, "Should detect scroll"
+        assert result.scroll_distance == 40, (
+            f"Expected 40px scroll, got {result.scroll_distance}px"
+        )
+
+        # Viewport should extend significantly left of cursor (x ~505)
+        # With the fix, viewport.x should be around 312, width around 1133
+        assert result.viewport.x < 400, (
+            f"Viewport should extend left of cursor; got x={result.viewport.x}"
+        )
+        assert result.viewport.width > 1000, (
+            f"Viewport should be wide (>1000px); got width={result.viewport.width}"
+        )
