@@ -81,17 +81,15 @@ def test_case(request):
 
 
 def make_debug_params(existing_viewport=None):
-    """Create params dict for debug implementation."""
-    return {
-        "min_scroll_distance": 20,
-        "min_viewport_height": 150,
-        "min_viewport_width": 300,
-        "pixel_match_tolerance": 15,
-        "change_threshold_ratio": 0.15,
-        "density_threshold": 0.5,
-        "num_strips": 16,
-        "existing_viewport": existing_viewport,
-    }
+    """Create params dict for debug implementation.
+
+    Only pass existing_viewport if provided; all other parameters use defaults
+    matching production scroll_detection.py.
+    """
+    params = {}
+    if existing_viewport is not None:
+        params["existing_viewport"] = existing_viewport
+    return params
 
 
 class TestDebugScrollParity:

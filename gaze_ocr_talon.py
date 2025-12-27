@@ -410,6 +410,7 @@ class ScrollPhaseResult:
     after_array: np.ndarray  # Numpy array for chaining to next phase
     cursor_pos: tuple[float, float]  # Cursor position during scroll
     existing_viewport: BoundingBox | None = None  # Viewport passed in (skips Phase 1/3)
+    scroll_direction: str = "down"  # "down" or "up"
 
     @property
     def succeeded(self) -> bool:
@@ -440,6 +441,7 @@ class ScrollPhaseResult:
             metadata: dict = {
                 "status": "failure",
                 "timestamp": timestamp,
+                "scroll_direction": self.scroll_direction,
                 "cursor_position": {"x": self.cursor_pos[0], "y": self.cursor_pos[1]},
             }
         else:
@@ -447,9 +449,16 @@ class ScrollPhaseResult:
             file_prefix = (
                 f"scroll_success_{self.detection.scroll_distance}px_{timestamp:.2f}"
             )
+            # For scroll-down: before_bbox is at y + scroll_distance (content moved up)
+            # For scroll-up: before_bbox is at y - scroll_distance (content moved down)
+            if self.scroll_direction == "down":
+                before_bbox_y = bbox.y + self.detection.scroll_distance
+            else:
+                before_bbox_y = bbox.y - self.detection.scroll_distance
             metadata = {
                 "status": "success",
                 "timestamp": timestamp,
+                "scroll_direction": self.scroll_direction,
                 "scroll_distance_px": self.detection.scroll_distance,
                 "cursor_position": {"x": self.cursor_pos[0], "y": self.cursor_pos[1]},
                 "after_bbox": {
@@ -460,7 +469,7 @@ class ScrollPhaseResult:
                 },
                 "before_bbox": {
                     "x": bbox.x,
-                    "y": bbox.y + self.detection.scroll_distance,
+                    "y": before_bbox_y,
                     "width": bbox.width,
                     "height": bbox.height,
                 },
@@ -495,22 +504,26 @@ def perform_scroll_and_detect(
     cursor_pos: tuple[float, float],
     phase_name: str = "",
     existing_viewport: BoundingBox | None = None,
+    scroll_direction: str = "down",
 ) -> ScrollPhaseResult:
     """Perform a scroll, capture the result, and run scroll detection.
 
     Args:
         before_screenshot: Talon screen capture from before the scroll
         before_array: Numpy array of the before image
-        scroll_amount: Wheel units to scroll
+        scroll_amount: Wheel units to scroll (positive value, direction handled separately)
         cursor_pos: (x, y) cursor position
         phase_name: Label for logging (e.g., "probe", "completion")
         existing_viewport: Optional viewport from previous detection
             (for second scroll, skips viewport detection/refinement)
+        scroll_direction: "down" (content moves up) or "up" (content moves down)
 
     Returns:
         ScrollPhaseResult with detection results and screenshots
     """
-    actions.mouse_scroll(scroll_amount)
+    # Scroll direction: positive = down (content moves up), negative = up (content moves down)
+    actual_scroll = scroll_amount if scroll_direction == "down" else -scroll_amount
+    actions.mouse_scroll(actual_scroll)
 
     # Wait for scroll animation to complete before capturing
     wait_ms: int = settings.get("user.ocr_scroll_wait_ms")
@@ -520,7 +533,9 @@ def perform_scroll_and_detect(
     after_screenshot = screen.capture_rect(screen_rect, retina=False)
     after_array = np.array(after_screenshot)
 
-    detection = detect_scroll(before_array, after_array, cursor_pos, existing_viewport)
+    detection = detect_scroll(
+        before_array, after_array, cursor_pos, existing_viewport, scroll_direction
+    )
 
     # Log result with phase label
     if detection and phase_name:
@@ -540,6 +555,7 @@ def perform_scroll_and_detect(
         after_array=after_array,
         cursor_pos=cursor_pos,
         existing_viewport=existing_viewport,
+        scroll_direction=scroll_direction,
     )
 
 
@@ -1178,11 +1194,12 @@ class GazeOcrActions:
             return
         tracker.move_to_gaze_point((offset_right, offset_down))
 
-    def scroll_down_with_visualization(amount: float = 1.0):
-        """Scroll down and show visual indicator of content movement.
+    def scroll_with_visualization(amount: float = 1.0, direction: str = "down"):
+        """Scroll in specified direction and show visual indicator of content movement.
 
         Args:
             amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
+            direction: "down" (content moves up) or "up" (content moves down)
 
         Uses a two-phase approach:
         1. Probe scroll: Small scroll to detect viewport size and calibrate scroll ratio
@@ -1191,7 +1208,10 @@ class GazeOcrActions:
         global scroll_indicator_canvas
 
         if not settings.get("user.ocr_scroll_indicator_enabled"):
-            actions.user.mouse_scroll_down(amount)
+            if direction == "down":
+                actions.user.mouse_scroll_down(amount)
+            else:
+                actions.user.mouse_scroll_up(amount)
             return
 
         # Close any existing canvas to prevent it appearing in screenshots
@@ -1217,9 +1237,12 @@ class GazeOcrActions:
             PROBE_SCROLL_AMOUNT,
             cursor_pos,
             phase_name="probe",
+            scroll_direction=direction,
         )
 
         if not probe.succeeded:
+            # Save screenshots for debugging failed detections
+            probe.save_screenshots()
             return
 
         scroll_ratio = probe.scroll_distance / PROBE_SCROLL_AMOUNT
@@ -1243,23 +1266,29 @@ class GazeOcrActions:
                 cursor_pos,
                 phase_name="completion",
                 existing_viewport=viewport,
+                scroll_direction=direction,
             )
 
             if completion.succeeded:
                 # Use completion's scroll distance (more accurate for larger scrolls)
                 total_scroll = probe.scroll_distance + completion.scroll_distance
             else:
-                # Detection failed (e.g., hit bottom of content) - use estimate
+                # Detection failed (e.g., hit end of content) - use estimate
                 total_scroll = probe.scroll_distance + int(remaining_pixels)
         else:
             # No second scroll needed
             total_scroll = probe.scroll_distance
 
-        # Line shows where content from before the scroll ends
-        line_y = viewport.y + viewport.height - total_scroll
+        # Line shows where content from before the scroll ends (the "seam")
+        # For scroll-down: content moved up, seam is near the bottom
+        # For scroll-up: content moved down, seam is near the top
+        if direction == "down":
+            line_y = viewport.y + viewport.height - total_scroll
+        else:
+            line_y = viewport.y + total_scroll
 
         logging.info(
-            f"Scroll complete: total={total_scroll}px, "
+            f"Scroll {direction} complete: total={total_scroll}px, "
             f"viewport={viewport.width}x{viewport.height}"
         )
 
@@ -1270,6 +1299,22 @@ class GazeOcrActions:
         probe.save_screenshots()
         if completion is not None:
             completion.save_screenshots()
+
+    def scroll_down_with_visualization(amount: float = 1.0):
+        """Scroll down and show visual indicator of content movement.
+
+        Args:
+            amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
+        """
+        actions.user.scroll_with_visualization(amount, "down")
+
+    def scroll_up_with_visualization(amount: float = 1.0):
+        """Scroll up and show visual indicator of content movement.
+
+        Args:
+            amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
+        """
+        actions.user.scroll_with_visualization(amount, "up")
 
     #
     # Actions operating on a single point within onscreen text.
