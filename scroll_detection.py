@@ -381,7 +381,7 @@ def refine_viewport(
         refined_viewport: (x, y, width, height) refined viewport bounds
         after_bbox: (x, y, width, height) overlap region in after image
     """
-    DENSITY_THRESHOLD = 0.3  # Density threshold for matching pixel detection
+    DENSITY_THRESHOLD = 0.01  # Density threshold for matching pixel detection
     STATIC_EPSILON = 1e-6  # Small positive weight for static pixels
 
     H, _ = before.shape
