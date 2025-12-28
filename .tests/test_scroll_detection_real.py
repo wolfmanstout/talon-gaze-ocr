@@ -110,3 +110,30 @@ class TestRealImages:
         assert result.viewport.width > 1000, (
             f"Viewport should be wide (>1000px); got width={result.viewport.width}"
         )
+
+    def test_scroll_success_40px_with_animation(self, load_json_test_case):
+        """Test that viewport refinement handles animations correctly.
+
+        This test ensures the lowered DENSITY_THRESHOLD (0.01) handles cases where
+        an animation in the viewport causes non-matching pixels. With threshold=0.3,
+        the viewport would incorrectly expand horizontally (1133px) and shrink
+        vertically (295px). With threshold=0.01, it correctly detects ~600x600.
+        """
+        img_before, img_after, cursor_pos, _ = load_json_test_case(
+            "scroll_success_40px_1766904228.34.json"
+        )
+
+        result = detect_scroll(img_before, img_after, cursor_pos)
+
+        assert result is not None, "Should detect scroll"
+        assert result.scroll_distance == 40, (
+            f"Expected 40px scroll, got {result.scroll_distance}px"
+        )
+
+        # Viewport should be roughly square (~600x600), not wide and short
+        assert result.viewport.width < 700, (
+            f"Viewport width should be <700px; got {result.viewport.width}"
+        )
+        assert result.viewport.height > 500, (
+            f"Viewport height should be >500px; got {result.viewport.height}"
+        )
