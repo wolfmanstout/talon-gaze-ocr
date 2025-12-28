@@ -21,7 +21,7 @@ uv run pytest
 
 Development tools are in `.tools/`. Run the scroll detection visualization tool with:
 ```
-uv run python .tools/debug_scroll.py --from-json .tests/data/file_to_debug.json
+uv run .tools/debug_scroll.py --from-json .tests/data/file_to_debug.json
 ```
 
 ## Architecture Overview
