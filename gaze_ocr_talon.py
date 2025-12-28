@@ -728,7 +728,7 @@ class GazeOcrActions:
         contents_rect = screen_ocr.to_rect(contents.bounding_box)
 
         # Capture start time for synchronized fading
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         def on_draw(c):
             light_bg = has_light_background(contents.screenshot)
@@ -744,7 +744,7 @@ class GazeOcrActions:
                     fade_in_duration + hold_duration + fade_out_duration
                 )  # 1.5s total
 
-                elapsed_time = time.time() - start_time
+                elapsed_time = time.perf_counter() - start_time
                 cycle_time = elapsed_time % total_cycle_time
 
                 # Calculate alpha (0.0 to 1.0) based on cycle position
