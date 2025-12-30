@@ -242,7 +242,7 @@ def estimate_scroll_distance(
     Returns:
         Scroll distance in pixels (always positive magnitude), or None
     """
-    MIN_SCROLL_DISTANCE = 20  # Minimum scroll distance to consider (pixels)
+    MIN_SCROLL_DISTANCE = 1  # Minimum scroll distance to consider (pixels)
     MIN_OVERLAP_HEIGHT = 100  # Minimum overlap height required (prevents edge effects)
     NUM_STRIPS = 16  # Number of vertical strips for correlation
 
