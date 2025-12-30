@@ -165,6 +165,10 @@ mod.tag(
     "gaze_ocr_disambiguation",
     desc="Tag for disambiguating between different onscreen matches.",
 )
+mod.tag(
+    "chromium_smooth_scrolling_disabled",
+    desc="Set this tag if you have disabled smooth scrolling in your Chromium browser (chrome://flags/#smooth-scrolling).",
+)
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
 mod.list(
     "ocr_common_actions", desc="Common actions that can be used without 'seen'/'scene'."
