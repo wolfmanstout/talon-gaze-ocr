@@ -212,8 +212,11 @@ class TestDebugScrollParity:
 
         cx, cy = int(cursor_pos[0]), int(cursor_pos[1])
 
+        # Compute same-position diff (as detect_scroll does)
+        same_pos_diff = np.abs(ga - gb)
+
         # Run production Phase 1
-        prod_viewport = estimate_initial_viewport(gb, ga, (cx, cy))
+        prod_viewport = estimate_initial_viewport(gb, ga, (cx, cy), same_pos_diff)
 
         # Run debug implementation
         debug_result = detect_scroll_debug(
