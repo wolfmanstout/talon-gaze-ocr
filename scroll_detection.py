@@ -404,23 +404,26 @@ def refine_viewport(
     c1_init = init_x
     c2_init = init_x + init_w
 
+    # Precompute full-width shifted diff once for reuse in row and column refinement
+    # This avoids redundant np.abs() calls over overlapping regions
+    if scroll_direction == "down":
+        shifted_diff = np.abs(after[:limit_h, :] - before[d:, :])
+    else:
+        shifted_diff = np.abs(after[d:, :] - before[:limit_h, :])
+
     # --- Row refinement: use initial viewport columns ---
     # Extract the overlap regions for match analysis
     if scroll_direction == "down":
-        overlap_after_row = after[:limit_h, c1_init:c2_init]
-        overlap_before_row = before[d:, c1_init:c2_init]
         # Static detection uses precomputed same-position diff
         dest_static_row = same_pos_diff[:limit_h, c1_init:c2_init] < PIXEL_TOLERANCE
         source_static_row = same_pos_diff[d:, c1_init:c2_init] < PIXEL_TOLERANCE
     else:
         # Scroll-up: after[d:] matches before[:limit_h]
-        overlap_after_row = after[d:, c1_init:c2_init]
-        overlap_before_row = before[:limit_h, c1_init:c2_init]
         dest_static_row = same_pos_diff[d:, c1_init:c2_init] < PIXEL_TOLERANCE
         source_static_row = same_pos_diff[:limit_h, c1_init:c2_init] < PIXEL_TOLERANCE
 
-    # Compute match categories for row refinement
-    overlap_diff_row = np.abs(overlap_after_row - overlap_before_row)
+    # Compute match categories for row refinement (slice precomputed shifted diff)
+    overlap_diff_row = shifted_diff[:, c1_init:c2_init]
     overlap_match_row = overlap_diff_row < PIXEL_TOLERANCE
 
     # Three categories: dynamic (scrolled), static (unchanged), mismatch (outside viewport)
@@ -455,21 +458,16 @@ def refine_viewport(
     # --- Column refinement: use full image width with refined rows ---
     # r1, r2 are slice indices; convert to screen rows based on direction
     if scroll_direction == "down":
-        # Scroll-down: slice indices equal screen rows
-        overlap_after_col = after[r1 : r2 + 1, :]
-        overlap_before_col = before[r1 + d : r2 + 1 + d, :]
         # Static detection uses precomputed same-position diff
         dest_static_col = same_pos_diff[r1 : r2 + 1, :] < PIXEL_TOLERANCE
         source_static_col = same_pos_diff[r1 + d : r2 + 1 + d, :] < PIXEL_TOLERANCE
     else:
         # Scroll-up: screen row = slice index + d
-        overlap_after_col = after[r1 + d : r2 + 1 + d, :]
-        overlap_before_col = before[r1 : r2 + 1, :]
         dest_static_col = same_pos_diff[r1 + d : r2 + 1 + d, :] < PIXEL_TOLERANCE
         source_static_col = same_pos_diff[r1 : r2 + 1, :] < PIXEL_TOLERANCE
 
-    # Compute match categories for column refinement
-    overlap_diff_col = np.abs(overlap_after_col - overlap_before_col)
+    # Compute match categories for column refinement (slice precomputed shifted diff)
+    overlap_diff_col = shifted_diff[r1 : r2 + 1, :]
     overlap_match_col = overlap_diff_col < PIXEL_TOLERANCE
 
     static_match_col = dest_static_col | source_static_col
