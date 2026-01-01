@@ -166,8 +166,8 @@ mod.tag(
     desc="Tag for disambiguating between different onscreen matches.",
 )
 mod.tag(
-    "chromium_smooth_scrolling_disabled",
-    desc="Set this tag if you have disabled smooth scrolling in your Chromium browser (chrome://flags/#smooth-scrolling).",
+    "browser_smooth_scrolling_disabled",
+    desc="Set this tag if you have disabled smooth scrolling in your browser.",
 )
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
 mod.list(
