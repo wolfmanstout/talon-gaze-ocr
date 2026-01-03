@@ -125,6 +125,12 @@ mod.setting(
     desc="Region to OCR when no data from the eye tracker",
 )
 mod.setting(
+    "ocr_cursor_behavior_when_no_eye_tracker",
+    type=Literal["NONE", "ACTIVE_WINDOW_CENTER"],
+    default="NONE",
+    desc="Behavior when moving cursor to gaze point with no eye tracker data. NONE: do nothing, ACTIVE_WINDOW_CENTER: move to center of active window.",
+)
+mod.setting(
     "ocr_scroll_indicator_enabled",
     type=bool,
     default=True,
@@ -1194,13 +1200,20 @@ class GazeOcrActions:
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
         """Moves mouse cursor to gaze location.
 
-        If no gaze data available, leaves cursor at current position.
+        If no gaze data available, behavior depends on
+        user.ocr_cursor_behavior_when_no_eye_tracker setting.
         """
-        # TODO: Remove this check before merging to beta/main - for testing
-        # scroll visualization without eye tracker, we want cursor to stay put.
-        if not tracker.has_gaze_point():
+        gaze = tracker.get_gaze_point()
+        if gaze:
+            x = gaze[0] + offset_right
+            y = gaze[1] + offset_down
+            actions.mouse_move(x, y)
             return
-        tracker.move_to_gaze_point((offset_right, offset_down))
+
+        fallback = settings.get("user.ocr_cursor_behavior_when_no_eye_tracker")
+        if fallback == "ACTIVE_WINDOW_CENTER":
+            center = ui.active_window().rect.center
+            actions.mouse_move(center.x + offset_right, center.y + offset_down)
 
     def scroll_with_visualization(amount: float = 1.0, direction: str = "down"):
         """Scroll in specified direction and show visual indicator of content movement.
