@@ -421,6 +421,8 @@ class ScrollPhaseResult:
     cursor_pos: tuple[float, float]  # Cursor position during scroll
     existing_viewport: BoundingBox | None = None  # Viewport passed in (skips Phase 1/3)
     scroll_direction: str = "down"  # "down" or "up"
+    offset_x: int = 0  # Screen coordinate offset (for cropped screenshots)
+    offset_y: int = 0
 
     @property
     def succeeded(self) -> bool:
@@ -437,6 +439,19 @@ class ScrollPhaseResult:
         if self.detection is None:
             raise ValueError("Cannot get viewport from failed detection")
         return self.detection.viewport
+
+    @property
+    def viewport_screen_coords(self) -> BoundingBox:
+        """Viewport in screen coordinates (adjusts for cropped screenshots)."""
+        if self.detection is None:
+            raise ValueError("Cannot get viewport from failed detection")
+        vp = self.detection.viewport
+        return BoundingBox(
+            x=vp.x + self.offset_x,
+            y=vp.y + self.offset_y,
+            width=vp.width,
+            height=vp.height,
+        )
 
     def save_screenshots(self) -> None:
         """Save before/after screenshots and metadata if logging is enabled."""
@@ -507,6 +522,38 @@ class ScrollPhaseResult:
         logging.info(f"Saved scroll screenshots to {file_prefix}*")
 
 
+@dataclass
+class CaptureContext:
+    """Context for screenshot capture, tracking coordinate offsets."""
+
+    screenshot: Any  # Talon screenshot
+    array: np.ndarray
+    offset_x: int  # Screen X offset (window.rect.x or 0)
+    offset_y: int  # Screen Y offset (window.rect.y or 0)
+    window: ui.Window | None
+
+
+def _capture_screenshot(window: ui.Window | None) -> CaptureContext:
+    """Capture screenshot, optionally cropped to window."""
+    # Crop to window bounds if available, otherwise full screen capture
+    capture_rect = window.rect if window else screen.main().rect
+
+    # Keep cursor hidden only for the actual capture
+    ctrl.cursor_visible(False)
+    try:
+        screenshot = screen.capture_rect(capture_rect, retina=False)
+    finally:
+        ctrl.cursor_visible(True)
+
+    return CaptureContext(
+        screenshot=screenshot,
+        array=np.array(screenshot),
+        offset_x=int(capture_rect.x),
+        offset_y=int(capture_rect.y),
+        window=window,
+    )
+
+
 def perform_scroll_and_detect(
     before_screenshot,
     before_array: np.ndarray,
@@ -515,6 +562,9 @@ def perform_scroll_and_detect(
     phase_name: str = "",
     existing_viewport: BoundingBox | None = None,
     scroll_direction: str = "down",
+    window: ui.Window | None = None,
+    offset_x: int = 0,
+    offset_y: int = 0,
 ) -> ScrollPhaseResult:
     """Perform a scroll, capture the result, and run scroll detection.
 
@@ -522,11 +572,14 @@ def perform_scroll_and_detect(
         before_screenshot: Talon screen capture from before the scroll
         before_array: Numpy array of the before image
         scroll_amount: Wheel units to scroll (positive value, direction handled separately)
-        cursor_pos: (x, y) cursor position
+        cursor_pos: (x, y) cursor position (in image coordinates)
         phase_name: Label for logging (e.g., "probe", "completion")
         existing_viewport: Optional viewport from previous detection
             (for second scroll, skips viewport detection/refinement)
         scroll_direction: "down" (content moves up) or "up" (content moves down)
+        window: Optional window to crop screenshot to
+        offset_x: Screen X offset for cropped screenshots
+        offset_y: Screen Y offset for cropped screenshots
 
     Returns:
         ScrollPhaseResult with detection results and screenshots
@@ -539,13 +592,10 @@ def perform_scroll_and_detect(
     wait_ms: int = settings.get("user.ocr_scroll_wait_ms")
     actions.sleep(f"{wait_ms}ms")
 
-    screen_rect = screen.main().rect
-    ctrl.cursor_visible(False)
-    try:
-        after_screenshot = screen.capture_rect(screen_rect, retina=False)
-    finally:
-        ctrl.cursor_visible(True)
-    after_array = np.array(after_screenshot)
+    # Capture after screenshot (cropped to window if provided)
+    after_ctx = _capture_screenshot(window)
+    after_screenshot = after_ctx.screenshot
+    after_array = after_ctx.array
 
     detection = detect_scroll(
         before_array, after_array, cursor_pos, existing_viewport, scroll_direction
@@ -570,6 +620,8 @@ def perform_scroll_and_detect(
         cursor_pos=cursor_pos,
         existing_viewport=existing_viewport,
         scroll_direction=scroll_direction,
+        offset_x=offset_x,
+        offset_y=offset_y,
     )
 
 
@@ -635,6 +687,27 @@ debug_canvas = None
 scroll_indicator_canvas = None
 ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
 disambiguation_generator = None
+
+
+def _get_window_under_cursor() -> tuple[ui.Window | None, tuple[float, float]]:
+    """Get window under cursor using window_at API.
+
+    Returns:
+        Tuple of (window or None, cursor_pos). Includes cursor_pos since we
+        already have it after the required 5ms sleep.
+    """
+    # Brief pause to ensure cursor position is up-to-date
+    actions.sleep("5ms")
+    cursor_x, cursor_y = float(actions.mouse_x()), float(actions.mouse_y())
+    cursor_pos = (cursor_x, cursor_y)
+
+    if not settings.get("user.ocr_use_window_at_api"):
+        return None, cursor_pos
+    try:
+        window = ui.window_at(int(cursor_x), int(cursor_y))
+        return window, cursor_pos
+    except (RuntimeError, AttributeError):
+        return None, cursor_pos
 
 
 def reset_disambiguation():
@@ -1225,6 +1298,9 @@ class GazeOcrActions:
         Uses a two-phase approach:
         1. Probe scroll: Small scroll to detect viewport size and calibrate scroll ratio
         2. Calibrated scroll: Complete remaining scroll based on detected viewport
+
+        When ocr_use_window_at_api is enabled, screenshots are cropped to the window
+        under the cursor for improved performance.
         """
         global scroll_indicator_canvas
 
@@ -1242,71 +1318,73 @@ class GazeOcrActions:
             # Brief pause for canvas to fully close before screenshot
             actions.sleep("10ms")
 
-        # Capture initial state
-        screen_rect = screen.main().rect
-        ctrl.cursor_visible(False)
-        try:
-            before_screenshot = screen.capture_rect(screen_rect, retina=False)
-        finally:
-            ctrl.cursor_visible(True)
-        before_array = np.array(before_screenshot)
-        # Brief pause to ensure cursor position is up-to-date before reading it
-        actions.sleep("5ms")
-        cursor_pos = (float(actions.mouse_x()), float(actions.mouse_y()))
+        # Get window under cursor and cursor position (includes 5ms sleep)
+        window, cursor_screen = _get_window_under_cursor()
+
+        # Capture initial state (cropped to window if available)
+        before_ctx = _capture_screenshot(window)
+
+        # Cursor position relative to capture area
+        cursor_pos = (
+            cursor_screen[0] - before_ctx.offset_x,
+            cursor_screen[1] - before_ctx.offset_y,
+        )
 
         # Phase 1: Probe scroll to detect viewport and calibrate
         PROBE_SCROLL_AMOUNT = 50  # Wheel units (not pixels)
         probe = perform_scroll_and_detect(
-            before_screenshot,
-            before_array,
+            before_ctx.screenshot,
+            before_ctx.array,
             PROBE_SCROLL_AMOUNT,
             cursor_pos,
             phase_name="probe",
             scroll_direction=direction,
+            window=window,
+            offset_x=before_ctx.offset_x,
+            offset_y=before_ctx.offset_y,
         )
 
         if not probe.succeeded:
-            # Save screenshots for debugging failed detections
             probe.save_screenshots()
             return
 
         scroll_ratio = probe.scroll_distance / PROBE_SCROLL_AMOUNT
-        viewport = probe.viewport
+        viewport = probe.viewport_screen_coords  # Screen coords for visualization
 
         # Phase 2: Calculate and execute remaining scroll
-        # Total scroll = viewport height * fraction * amount multiplier
+        # Use image-coordinate viewport for pixel calculations
+        vp_img = probe.viewport
         viewport_fraction: float = settings.get("user.ocr_scroll_viewport_fraction")
-        total_desired_pixels = viewport.height * viewport_fraction * amount
+        total_desired_pixels = vp_img.height * viewport_fraction * amount
         remaining_pixels = max(0, total_desired_pixels - probe.scroll_distance)
         completion = None
 
         if remaining_pixels > 0 and scroll_ratio > 0:
             remaining_wheel_units = remaining_pixels / scroll_ratio
 
-            # Pass probe's viewport to skip viewport detection in completion scroll
+            # Pass probe's viewport (image coords) to skip viewport detection
             completion = perform_scroll_and_detect(
                 probe.after_screenshot,
                 probe.after_array,
                 remaining_wheel_units,
                 cursor_pos,
                 phase_name="completion",
-                existing_viewport=viewport,
+                existing_viewport=vp_img,
                 scroll_direction=direction,
+                window=window,
+                offset_x=before_ctx.offset_x,
+                offset_y=before_ctx.offset_y,
             )
 
             if completion.succeeded:
-                # Use completion's scroll distance (more accurate for larger scrolls)
                 total_scroll = probe.scroll_distance + completion.scroll_distance
             else:
-                # Detection failed (e.g., hit end of content) - use estimate
                 total_scroll = probe.scroll_distance + int(remaining_pixels)
         else:
-            # No second scroll needed
             total_scroll = probe.scroll_distance
 
+        # Calculate line_y in screen coordinates
         # Line shows where content from before the scroll ends (the "seam")
-        # For scroll-down: content moved up, seam is near the bottom
-        # For scroll-up: content moved down, seam is near the top
         if direction == "down":
             line_y = viewport.y + viewport.height - total_scroll
         else:
