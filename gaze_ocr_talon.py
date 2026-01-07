@@ -1026,12 +1026,7 @@ class GazeOcrActions:
 
         debug_mode: bool = settings.get("user.ocr_scroll_debug_mode")
         start_time = time.time()
-        # Use longer fade for debug mode so user can examine the result
-        fade_duration: float = (
-            5.0
-            if debug_mode
-            else settings.get("user.ocr_scroll_indicator_fade_seconds")
-        )
+        fade_duration: float = settings.get("user.ocr_scroll_indicator_fade_seconds")
 
         def on_draw(c):
             elapsed = time.time() - start_time
