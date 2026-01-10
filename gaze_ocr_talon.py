@@ -235,7 +235,7 @@ _OCR_MODIFIERS: dict[str, Callable[[], None]] = {
 @ctx.dynamic_list("user.onscreen_ocr_text")
 def onscreen_ocr_text(phrase) -> str | list[str] | dict[str, str]:
     global gaze_ocr_controller, punctuation_table
-    reset_disambiguation()
+    reset_state()
     gaze_ocr_controller.read_nearby((phrase[0].start, phrase[-1].end))
     selection_list = gaze_ocr_controller.latest_screen_contents().as_string()
     # Split camel-casing.
@@ -716,22 +716,26 @@ def _get_window_under_cursor() -> tuple[ui.Window | None, tuple[float, float]]:
         return None, cursor_pos
 
 
-def reset_disambiguation():
+def reset_state():
     global \
         ambiguous_matches, \
         disambiguation_generator, \
         disambiguation_canvas, \
-        debug_canvas
+        debug_canvas, \
+        scroll_indicator_canvas
     ctx.tags = []
     ambiguous_matches = None
     disambiguation_generator = None
-    hide_canvas = disambiguation_canvas or debug_canvas
+    hide_canvas = disambiguation_canvas or debug_canvas or scroll_indicator_canvas
     if disambiguation_canvas:
         disambiguation_canvas.close()
     disambiguation_canvas = None
     if debug_canvas:
         debug_canvas.close()
     debug_canvas = None
+    if scroll_indicator_canvas:
+        scroll_indicator_canvas.close()
+    scroll_indicator_canvas = None
     if hide_canvas:
         # Ensure that the canvas doesn't interfere with subsequent screenshots.
         actions.sleep("10ms")
@@ -773,7 +777,7 @@ def show_disambiguation():
             def timeout_disambiguation():
                 global disambiguation_canvas
                 if disambiguation_canvas and disambiguation_canvas == current_canvas:
-                    reset_disambiguation()
+                    reset_state()
 
             cron.after(
                 f"{setting_ocr_disambiguation_display_seconds}s",
@@ -803,7 +807,7 @@ def show_disambiguation():
 
 def begin_generator(generator):
     global ambiguous_matches, disambiguation_generator, disambiguation_canvas
-    reset_disambiguation()
+    reset_state()
     try:
         ambiguous_matches = next(generator)
         disambiguation_generator = generator
@@ -1001,7 +1005,7 @@ class GazeOcrActions:
 
         If the near parameter is provided, refreshes OCR nearby where the user is
         looking when they spoke the near parameter."""
-        reset_disambiguation()
+        reset_state()
         if refresh:
             if near:
                 gaze_ocr_controller.read_nearby((near.start, near.end))
@@ -1261,11 +1265,11 @@ class GazeOcrActions:
             show_disambiguation()
         except StopIteration:
             # Execution completed successfully.
-            reset_disambiguation()
+            reset_state()
 
     def hide_gaze_ocr_options():
         """Hide the disambiguation UI."""
-        reset_disambiguation()
+        reset_state()
 
     #
     # Actions operating on the gaze point.
@@ -1312,12 +1316,8 @@ class GazeOcrActions:
                 actions.user.mouse_scroll_up(amount)
             return
 
-        # Close any existing canvas to prevent it appearing in screenshots
-        if scroll_indicator_canvas:
-            scroll_indicator_canvas.close()
-            scroll_indicator_canvas = None
-            # Brief pause for canvas to fully close before screenshot
-            actions.sleep("10ms")
+        # Close any existing canvases to prevent them appearing in screenshots
+        reset_state()
 
         # Get window under cursor and cursor position (includes 5ms sleep)
         window, cursor_screen = _get_window_under_cursor()
