@@ -166,6 +166,12 @@ mod.setting(
     default=0.8,
     desc="Fraction of viewport height to scroll (0.0-1.0).",
 )
+mod.setting(
+    "ocr_scroll_probe_amount",
+    type=int,
+    default=50,
+    desc="Wheel units for initial scroll probe to detect viewport and calibrate scroll ratio.",
+)
 
 mod.tag(
     "gaze_ocr_disambiguation",
@@ -1326,11 +1332,11 @@ class GazeOcrActions:
         )
 
         # Phase 1: Probe scroll to detect viewport and calibrate
-        PROBE_SCROLL_AMOUNT = 50  # Wheel units (not pixels)
+        probe_scroll_amount: int = settings.get("user.ocr_scroll_probe_amount")
         probe = perform_scroll_and_detect(
             before_ctx.screenshot,
             before_ctx.array,
-            PROBE_SCROLL_AMOUNT,
+            probe_scroll_amount,
             cursor_pos,
             phase_name="probe",
             scroll_direction=direction,
@@ -1350,7 +1356,7 @@ class GazeOcrActions:
                 actions.user.mouse_scroll_up(amount)
             return
 
-        scroll_ratio = probe.scroll_distance / PROBE_SCROLL_AMOUNT
+        scroll_ratio = probe.scroll_distance / probe_scroll_amount
         viewport = probe.viewport_screen_coords  # Screen coords for visualization
 
         # Phase 2: Calculate and execute remaining scroll
