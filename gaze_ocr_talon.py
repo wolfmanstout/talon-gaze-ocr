@@ -157,7 +157,7 @@ mod.setting(
 mod.setting(
     "ocr_scroll_debug_mode",
     type=bool,
-    default=True,
+    default=False,
     desc="Show full debug visualization (red/green boxes) instead of just the line.",
 )
 mod.setting(
@@ -1341,6 +1341,13 @@ class GazeOcrActions:
 
         if not probe.succeeded:
             probe.save_screenshots()
+            # This can happen nominally if the scrolled content is empty or
+            # doesn't vary vertically. Just perform a regular scroll in that
+            # case.
+            if direction == "down":
+                actions.user.mouse_scroll_down(amount)
+            else:
+                actions.user.mouse_scroll_up(amount)
             return
 
         scroll_ratio = probe.scroll_distance / PROBE_SCROLL_AMOUNT
