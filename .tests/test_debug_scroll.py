@@ -216,7 +216,7 @@ class TestDebugScrollParity:
         same_pos_diff = np.abs(ga - gb)
 
         # Run production Phase 1
-        prod_viewport = estimate_initial_viewport(gb, ga, (cx, cy), same_pos_diff)
+        prod_viewport = estimate_initial_viewport((cx, cy), same_pos_diff)
 
         # Run debug implementation
         debug_result = detect_scroll_debug(

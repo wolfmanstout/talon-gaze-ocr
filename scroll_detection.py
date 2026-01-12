@@ -17,6 +17,8 @@ from numpy.typing import NDArray
 
 # Module-level constants
 PIXEL_TOLERANCE = 20  # Max pixel difference to consider a match
+MIN_VIEWPORT_HEIGHT = 150  # Detected viewport must be at least this tall
+MIN_VIEWPORT_WIDTH = 150  # Detected viewport must be at least this wide
 
 
 @dataclass(frozen=True)
@@ -134,8 +136,6 @@ def get_best_1d_range_constrained(
 
 
 def estimate_initial_viewport(
-    before: NDArray[np.floating[Any]],
-    after: NDArray[np.floating[Any]],
     cursor_pos: tuple[int, int],
     same_pos_diff: NDArray[np.floating[Any]],
 ) -> tuple[int, int, int, int] | None:
@@ -147,8 +147,6 @@ def estimate_initial_viewport(
     to handle varying viewport sizes robustly.
 
     Args:
-        before: Grayscale float image before scroll (H, W)
-        after: Grayscale float image after scroll (H, W)
         cursor_pos: (x, y) cursor position
         same_pos_diff: Precomputed |after - before| diff
 
@@ -159,7 +157,7 @@ def estimate_initial_viewport(
     # Lower value = less penalty for unchanged rows, allowing viewport to bridge gaps
     CHANGE_THRESHOLD_RATIO = 0.15
 
-    H, W = before.shape
+    H, W = same_pos_diff.shape
     cx, cy = cursor_pos
 
     # Validate cursor position
@@ -353,6 +351,26 @@ def estimate_scroll_distance(
 # --- Phase 3: Viewport Refinement ---
 
 
+def _build_weight_map(
+    overlap_diff: NDArray[np.floating[Any]],
+    dest_static: NDArray[np.bool_],
+    source_static: NDArray[np.bool_],
+) -> NDArray[np.floating[Any]]:
+    """Build weight map with three categories: dynamic, static, and mismatch."""
+    DENSITY_THRESHOLD = 0.01  # Density threshold for matching pixel detection
+    STATIC_EPSILON = 1e-6  # Small positive weight for static pixels
+
+    overlap_match = overlap_diff < PIXEL_TOLERANCE
+    static_match = dest_static | source_static
+    dynamic_match = overlap_match & ~static_match
+    static_in_overlap = overlap_match & static_match
+
+    weight_map = np.full_like(overlap_match, -DENSITY_THRESHOLD - 1e-5, dtype=float)
+    weight_map[dynamic_match] = 1.0 - DENSITY_THRESHOLD
+    weight_map[static_in_overlap] = STATIC_EPSILON
+    return weight_map
+
+
 def refine_viewport(
     before: NDArray[np.floating[Any]],
     after: NDArray[np.floating[Any]],
@@ -384,9 +402,6 @@ def refine_viewport(
         refined_viewport: (x, y, width, height) refined viewport bounds
         after_bbox: (x, y, width, height) overlap region in after image
     """
-    DENSITY_THRESHOLD = 0.01  # Density threshold for matching pixel detection
-    STATIC_EPSILON = 1e-6  # Small positive weight for static pixels
-
     H, _ = before.shape
     cx, cy = cursor_pos
     init_x, _, init_w, _ = initial_viewport
@@ -422,21 +437,9 @@ def refine_viewport(
         dest_static_row = same_pos_diff[d:, c1_init:c2_init] < PIXEL_TOLERANCE
         source_static_row = same_pos_diff[:limit_h, c1_init:c2_init] < PIXEL_TOLERANCE
 
-    # Compute match categories for row refinement (slice precomputed shifted diff)
-    overlap_diff_row = shifted_diff[:, c1_init:c2_init]
-    overlap_match_row = overlap_diff_row < PIXEL_TOLERANCE
-
-    # Three categories: dynamic (scrolled), static (unchanged), mismatch (outside viewport)
-    static_match_row = dest_static_row | source_static_row
-    dynamic_match_row = overlap_match_row & ~static_match_row
-    static_in_overlap_row = overlap_match_row & static_match_row
-
-    # Build 2D weight map: positive for dynamic, near-zero for static, negative for mismatch
-    weight_map_row = np.full_like(
-        overlap_match_row, -DENSITY_THRESHOLD - 1e-5, dtype=float
+    weight_map_row = _build_weight_map(
+        shifted_diff[:, c1_init:c2_init], dest_static_row, source_static_row
     )
-    weight_map_row[dynamic_match_row] = 1.0 - DENSITY_THRESHOLD
-    weight_map_row[static_in_overlap_row] = STATIC_EPSILON
 
     # Cursor constraint: detected range must include part of cursor's scroll path [cy-d, cy]
     target_row_min = max(0, cy - d)
@@ -466,20 +469,9 @@ def refine_viewport(
         dest_static_col = same_pos_diff[r1 + d : r2 + 1 + d, :] < PIXEL_TOLERANCE
         source_static_col = same_pos_diff[r1 : r2 + 1, :] < PIXEL_TOLERANCE
 
-    # Compute match categories for column refinement (slice precomputed shifted diff)
-    overlap_diff_col = shifted_diff[r1 : r2 + 1, :]
-    overlap_match_col = overlap_diff_col < PIXEL_TOLERANCE
-
-    static_match_col = dest_static_col | source_static_col
-    dynamic_match_col = overlap_match_col & ~static_match_col
-    static_in_overlap_col = overlap_match_col & static_match_col
-
-    # Build 2D weight map for column refinement
-    weight_map_col = np.full_like(
-        overlap_match_col, -DENSITY_THRESHOLD - 1e-5, dtype=float
+    weight_map_col = _build_weight_map(
+        shifted_diff[r1 : r2 + 1, :], dest_static_col, source_static_col
     )
-    weight_map_col[dynamic_match_col] = 1.0 - DENSITY_THRESHOLD
-    weight_map_col[static_in_overlap_col] = STATIC_EPSILON
 
     col_weights = np.sum(weight_map_col, axis=0)
     c1, c2, col_score = get_best_1d_anchored(col_weights, cx)
@@ -520,6 +512,25 @@ def refine_viewport(
     return (refined_viewport, after_bbox)
 
 
+def _to_grayscale(img: np.ndarray) -> NDArray[np.floating[Any]]:
+    """Convert RGB image to grayscale using ITU-R BT.709 coefficients."""
+    if img.ndim == 3:
+        return img[..., 0] * 0.2126 + img[..., 1] * 0.7152 + img[..., 2] * 0.0722
+    return img.astype(float)
+
+
+def _validate_viewport_size(viewport: tuple[int, int, int, int], context: str) -> bool:
+    """Check if viewport meets minimum size requirements."""
+    _, _, w, h = viewport
+    if h < MIN_VIEWPORT_HEIGHT or w < MIN_VIEWPORT_WIDTH:
+        logging.info(
+            f"Scroll detection failed: {context} viewport too small "
+            f"(detected: {w}x{h}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT})"
+        )
+        return False
+    return True
+
+
 # --- Main Detection Function ---
 
 
@@ -549,29 +560,12 @@ def detect_scroll(
         ScrollResult with scroll_distance, after_bbox, and viewport.
         Returns None if no valid scroll is found.
     """
-    # Algorithm configuration constants
-    MIN_VIEWPORT_HEIGHT = 150  # Detected viewport must be at least this tall
-    MIN_VIEWPORT_WIDTH = 150  # Detected viewport must be at least this wide
-
     # Convert cursor position to integers for array indexing
     cx, cy = int(cursor_pos[0]), int(cursor_pos[1])
 
     # Preprocessing: Convert to grayscale
-    if img_before.ndim == 3:
-        # Grayscale conversion using ITU-R BT.709 coefficients
-        gb = (
-            img_before[..., 0] * 0.2126
-            + img_before[..., 1] * 0.7152
-            + img_before[..., 2] * 0.0722
-        )
-        ga = (
-            img_after[..., 0] * 0.2126
-            + img_after[..., 1] * 0.7152
-            + img_after[..., 2] * 0.0722
-        )
-    else:
-        gb, ga = img_before.astype(float), img_after.astype(float)
-
+    gb = _to_grayscale(img_before)
+    ga = _to_grayscale(img_after)
     H, _ = gb.shape
 
     # Precompute same-position diff once for reuse in Phase 1 and Phase 3
@@ -589,18 +583,13 @@ def detect_scroll(
     else:
         # Estimate initial viewport by finding changed pixels
         assert same_pos_diff is not None
-        viewport = estimate_initial_viewport(gb, ga, (cx, cy), same_pos_diff)
+        viewport = estimate_initial_viewport((cx, cy), same_pos_diff)
         if viewport is None:
             logging.info("Scroll detection failed: Could not estimate initial viewport")
             return None
 
     # Validate viewport size
-    _, _, vp_w, vp_h = viewport
-    if vp_h < MIN_VIEWPORT_HEIGHT or vp_w < MIN_VIEWPORT_WIDTH:
-        logging.info(
-            f"Scroll detection failed: Initial viewport too small "
-            f"(detected: {vp_w}x{vp_h}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT})"
-        )
+    if not _validate_viewport_size(viewport, "Initial"):
         return None
 
     # --- Phase 2: Scroll Distance Estimation ---
@@ -621,7 +610,7 @@ def detect_scroll(
     if existing_viewport is not None:
         # Skip refinement when using existing viewport (second scroll)
         # Use existing viewport as refined viewport
-        refined_viewport = viewport  # Already a tuple from conversion above
+        refined_viewport = viewport
         # Compute after_bbox from viewport and scroll distance
         x, y, w, h = viewport
         h_overlap = h - scroll_distance
@@ -649,16 +638,10 @@ def detect_scroll(
         if result is None:
             logging.info("Scroll detection failed: Could not refine viewport")
             return None
-
         refined_viewport, after_bbox = result
 
     # Final Feasibility Check
-    _, _, rv_w, rv_h = refined_viewport
-    if rv_h < MIN_VIEWPORT_HEIGHT or rv_w < MIN_VIEWPORT_WIDTH:
-        logging.info(
-            f"Scroll detection failed: Refined viewport too small "
-            f"(detected: {rv_w}x{rv_h}, required: {MIN_VIEWPORT_WIDTH}x{MIN_VIEWPORT_HEIGHT})"
-        )
+    if not _validate_viewport_size(refined_viewport, "Refined"):
         return None
 
     return ScrollResult(
