@@ -29,16 +29,16 @@ mode: user.dictation_command
 
 (eye | i) scroll up:
     user.move_cursor_to_gaze_point(0, 40)
-    user.scroll_up_with_visualization()
+    user.scroll_up_with_enhancements()
 (eye | i) scroll up half:
     user.move_cursor_to_gaze_point(0, 40)
-    user.scroll_up_with_visualization(0.5)
+    user.scroll_up_with_enhancements(0.5)
 (eye | i) scroll down:
     user.move_cursor_to_gaze_point(0, -40)
-    user.scroll_down_with_visualization()
+    user.scroll_down_with_enhancements()
 (eye | i) scroll down half:
     user.move_cursor_to_gaze_point(0, -40)
-    user.scroll_down_with_visualization(0.5)
+    user.scroll_down_with_enhancements(0.5)
 (eye | i) scroll left:
     user.move_cursor_to_gaze_point(40, 0)
     user.mouse_scroll_left()

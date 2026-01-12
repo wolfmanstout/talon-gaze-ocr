@@ -131,10 +131,10 @@ mod.setting(
     desc="Behavior when moving cursor to gaze point with no eye tracker data. NONE: do nothing, ACTIVE_WINDOW_CENTER: move to center of active window.",
 )
 mod.setting(
-    "ocr_scroll_indicator_enabled",
+    "ocr_scroll_enhancements_enabled",
     type=bool,
     default=True,
-    desc="Enable visual indicator when scrolling.",
+    desc="Enable scroll enhancements: dynamic scroll calibration and visual indicator.",
 )
 mod.setting(
     "ocr_scroll_indicator_fade_seconds",
@@ -1293,7 +1293,7 @@ class GazeOcrActions:
             center = ui.active_window().rect.center
             actions.mouse_move(center.x + offset_right, center.y + offset_down)
 
-    def scroll_with_visualization(amount: float = 1.0, direction: str = "down"):
+    def scroll_with_enhancements(amount: float = 1.0, direction: str = "down"):
         """Scroll in specified direction and show visual indicator of content movement.
 
         Args:
@@ -1309,7 +1309,7 @@ class GazeOcrActions:
         """
         global scroll_indicator_canvas
 
-        if not settings.get("user.ocr_scroll_indicator_enabled"):
+        if not settings.get("user.ocr_scroll_enhancements_enabled"):
             if direction == "down":
                 actions.user.mouse_scroll_down(amount)
             else:
@@ -1411,21 +1411,21 @@ class GazeOcrActions:
         if completion is not None:
             completion.save_screenshots()
 
-    def scroll_down_with_visualization(amount: float = 1.0):
-        """Scroll down and show visual indicator of content movement.
+    def scroll_down_with_enhancements(amount: float = 1.0):
+        """Scroll down with dynamic calibration and visual indicator.
 
         Args:
             amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
         """
-        actions.user.scroll_with_visualization(amount, "down")
+        actions.user.scroll_with_enhancements(amount, "down")
 
-    def scroll_up_with_visualization(amount: float = 1.0):
-        """Scroll up and show visual indicator of content movement.
+    def scroll_up_with_enhancements(amount: float = 1.0):
+        """Scroll up with dynamic calibration and visual indicator.
 
         Args:
             amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
         """
-        actions.user.scroll_with_visualization(amount, "up")
+        actions.user.scroll_with_enhancements(amount, "up")
 
     #
     # Actions operating on a single point within onscreen text.
