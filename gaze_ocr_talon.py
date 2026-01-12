@@ -424,34 +424,31 @@ class ScrollPhaseResult:
     after_screenshot: Any  # Talon screen capture for saving
     before_array: np.ndarray  # Numpy array used for detection
     after_array: np.ndarray  # Numpy array for chaining to next phase
-    cursor_pos: tuple[float, float]  # Cursor position during scroll
-    existing_viewport: BoundingBox | None = None  # Viewport passed in (skips Phase 1/3)
-    scroll_direction: str = "down"  # "down" or "up"
-    offset_x: int = 0  # Screen coordinate offset (for cropped screenshots)
+    cursor_pos: tuple[float, float]
+    existing_viewport: BoundingBox | None = None
+    scroll_direction: str = "down"
+    offset_x: int = 0
     offset_y: int = 0
 
     @property
     def succeeded(self) -> bool:
         return self.detection is not None
 
-    @property
-    def scroll_distance(self) -> int:
+    def get_scroll_distance(self) -> int:
+        """Get scroll distance. Raises ValueError if detection failed."""
         if self.detection is None:
             raise ValueError("Cannot get scroll_distance from failed detection")
         return self.detection.scroll_distance
 
-    @property
-    def viewport(self) -> BoundingBox:
+    def get_viewport(self) -> BoundingBox:
+        """Get viewport in image coordinates. Raises ValueError if detection failed."""
         if self.detection is None:
             raise ValueError("Cannot get viewport from failed detection")
         return self.detection.viewport
 
-    @property
-    def viewport_screen_coords(self) -> BoundingBox:
-        """Viewport in screen coordinates (adjusts for cropped screenshots)."""
-        if self.detection is None:
-            raise ValueError("Cannot get viewport from failed detection")
-        vp = self.detection.viewport
+    def get_viewport_screen_coords(self) -> BoundingBox:
+        """Get viewport in screen coordinates (adjusts for cropped screenshots)."""
+        vp = self.get_viewport()
         return BoundingBox(
             x=vp.x + self.offset_x,
             y=vp.y + self.offset_y,
@@ -607,15 +604,15 @@ def perform_scroll_and_detect(
         before_array, after_array, cursor_pos, existing_viewport, scroll_direction
     )
 
-    # Log result with phase label
-    if detection and phase_name:
-        vp = detection.viewport
-        logging.info(
-            f"Scroll {phase_name}: {detection.scroll_distance}px, "
-            f"viewport={vp.width}x{vp.height}"
-        )
-    elif phase_name:
-        logging.info(f"Scroll {phase_name}: detection failed")
+    if phase_name:
+        if detection:
+            vp = detection.viewport
+            logging.info(
+                f"Scroll {phase_name}: {detection.scroll_distance}px, "
+                f"viewport={vp.width}x{vp.height}"
+            )
+        else:
+            logging.info(f"Scroll {phase_name}: detection failed")
 
     return ScrollPhaseResult(
         detection=detection,
@@ -723,21 +720,21 @@ def reset_state():
         disambiguation_canvas, \
         debug_canvas, \
         scroll_indicator_canvas
+
     ctx.tags = []
     ambiguous_matches = None
     disambiguation_generator = None
-    hide_canvas = disambiguation_canvas or debug_canvas or scroll_indicator_canvas
-    if disambiguation_canvas:
-        disambiguation_canvas.close()
+
+    had_canvas = disambiguation_canvas or debug_canvas or scroll_indicator_canvas
+    for canvas in [disambiguation_canvas, debug_canvas, scroll_indicator_canvas]:
+        if canvas:
+            canvas.close()
     disambiguation_canvas = None
-    if debug_canvas:
-        debug_canvas.close()
     debug_canvas = None
-    if scroll_indicator_canvas:
-        scroll_indicator_canvas.close()
     scroll_indicator_canvas = None
-    if hide_canvas:
-        # Ensure that the canvas doesn't interfere with subsequent screenshots.
+
+    if had_canvas:
+        # Ensure canvas doesn't interfere with subsequent screenshots
         actions.sleep("10ms")
 
 
@@ -1029,29 +1026,27 @@ class GazeOcrActions:
         """
         global scroll_indicator_canvas
 
-        # Close existing canvas if any (handles rapid scrolls)
         if scroll_indicator_canvas:
             scroll_indicator_canvas.close()
             scroll_indicator_canvas = None
 
+        # Capture settings outside callback to avoid repeated lookups
         debug_mode: bool = settings.get("user.ocr_scroll_debug_mode")
-        start_time = time.time()
         fade_duration: float = settings.get("user.ocr_scroll_indicator_fade_seconds")
+        indicator_color: str = settings.get("user.ocr_scroll_indicator_color")
+        start_time = time.time()
 
         def on_draw(c):
             elapsed = time.time() - start_time
-            alpha = max(0.0, 1.0 - (elapsed / fade_duration))
-
-            if alpha <= 0:
+            if elapsed >= fade_duration:
                 return
 
-            alpha_byte = int(alpha * 255)
+            alpha_byte = int((1.0 - elapsed / fade_duration) * 255)
 
-            # Draw viewport box in green if in debug mode
             if debug_mode:
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.stroke_width = 3.0
-                c.paint.color = f"00FF00{alpha_byte:02X}"  # Green with alpha
+                c.paint.color = f"00FF00{alpha_byte:02X}"
                 c.draw_rect(
                     rect.Rect(
                         x=viewport.x,
@@ -1060,26 +1055,18 @@ class GazeOcrActions:
                         height=viewport.height,
                     )
                 )
-
-                # Draw label
                 c.paint.style = c.paint.Style.FILL
                 c.paint.textsize = 20
-                label = f"VIEWPORT (scroll={scroll_distance}px)"
-                c.draw_text(label, viewport.x, viewport.y - 5)
+                c.draw_text(
+                    f"VIEWPORT (scroll={scroll_distance}px)", viewport.x, viewport.y - 5
+                )
 
-            # Draw scroll seam line in light blue
-            color = settings.get("user.ocr_scroll_indicator_color")
-            c.paint.color = f"{color}{alpha_byte:02X}"
+            # Draw scroll seam line
+            c.paint.color = f"{indicator_color}{alpha_byte:02X}"
             c.paint.style = c.paint.Style.STROKE
             c.paint.stroke_width = 2.0
 
-            line_x_end = viewport.x + viewport.width
-            try:
-                c.draw_line(viewport.x, line_y, line_x_end, line_y)
-            except AttributeError:
-                c.draw_rect(
-                    rect.Rect(x=viewport.x, y=line_y, width=viewport.width, height=2)
-                )
+            c.draw_line(viewport.x, line_y, viewport.x + viewport.width, line_y)
 
         scroll_indicator_canvas = Canvas.from_screen(screen.main())
         scroll_indicator_canvas.blocks_mouse = False
@@ -1307,25 +1294,21 @@ class GazeOcrActions:
         When ocr_use_window_at_api is enabled, screenshots are cropped to the window
         under the cursor for improved performance.
         """
-        global scroll_indicator_canvas
 
-        if not settings.get("user.ocr_scroll_enhancements_enabled"):
+        def fallback_scroll():
             if direction == "down":
                 actions.user.mouse_scroll_down(amount)
             else:
                 actions.user.mouse_scroll_up(amount)
+
+        if not settings.get("user.ocr_scroll_enhancements_enabled"):
+            fallback_scroll()
             return
 
-        # Close any existing canvases to prevent them appearing in screenshots
         reset_state()
 
-        # Get window under cursor and cursor position (includes 5ms sleep)
         window, cursor_screen = _get_window_under_cursor()
-
-        # Capture initial state (cropped to window if available)
         before_ctx = _capture_screenshot(window)
-
-        # Cursor position relative to capture area
         cursor_pos = (
             cursor_screen[0] - before_ctx.offset_x,
             cursor_screen[1] - before_ctx.offset_y,
@@ -1347,24 +1330,18 @@ class GazeOcrActions:
 
         if not probe.succeeded:
             probe.save_screenshots()
-            # This can happen nominally if the scrolled content is empty or
-            # doesn't vary vertically. Just perform a regular scroll in that
-            # case.
-            if direction == "down":
-                actions.user.mouse_scroll_down(amount)
-            else:
-                actions.user.mouse_scroll_up(amount)
+            fallback_scroll()
             return
 
-        scroll_ratio = probe.scroll_distance / probe_scroll_amount
-        viewport = probe.viewport_screen_coords  # Screen coords for visualization
+        probe_distance = probe.get_scroll_distance()
+        scroll_ratio = probe_distance / probe_scroll_amount
+        viewport = probe.get_viewport_screen_coords()
 
         # Phase 2: Calculate and execute remaining scroll
-        # Use image-coordinate viewport for pixel calculations
-        vp_img = probe.viewport
+        vp_img = probe.get_viewport()
         viewport_fraction: float = settings.get("user.ocr_scroll_viewport_fraction")
         total_desired_pixels = vp_img.height * viewport_fraction * amount
-        remaining_pixels = max(0, total_desired_pixels - probe.scroll_distance)
+        remaining_pixels = max(0, total_desired_pixels - probe_distance)
         completion = None
 
         if remaining_pixels > 0 and scroll_ratio > 0:
@@ -1385,11 +1362,11 @@ class GazeOcrActions:
             )
 
             if completion.succeeded:
-                total_scroll = probe.scroll_distance + completion.scroll_distance
+                total_scroll = probe_distance + completion.get_scroll_distance()
             else:
-                total_scroll = probe.scroll_distance + int(remaining_pixels)
+                total_scroll = probe_distance + int(remaining_pixels)
         else:
-            total_scroll = probe.scroll_distance
+            total_scroll = probe_distance
 
         # Calculate line_y in screen coordinates
         # Line shows where content from before the scroll ends (the "seam")
