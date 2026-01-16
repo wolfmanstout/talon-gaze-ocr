@@ -1337,6 +1337,13 @@ class GazeOcrActions:
         scroll_ratio = probe_distance / probe_scroll_amount
         viewport = probe.get_viewport_screen_coords()
 
+        # Show visualization after probe scroll (first frame of animation)
+        if direction == "down":
+            probe_line_y = viewport.y + viewport.height - probe_distance
+        else:
+            probe_line_y = viewport.y + probe_distance
+        actions.user.show_scroll_indicator(probe_line_y, viewport, probe_distance)
+
         # Phase 2: Calculate and execute remaining scroll
         vp_img = probe.get_viewport()
         viewport_fraction: float = settings.get("user.ocr_scroll_viewport_fraction")
@@ -1346,6 +1353,9 @@ class GazeOcrActions:
 
         if remaining_pixels > 0 and scroll_ratio > 0:
             remaining_wheel_units = remaining_pixels / scroll_ratio
+
+            # Close probe visualization before taking completion screenshot
+            reset_state()
 
             # Pass probe's viewport (image coords) to skip viewport detection
             completion = perform_scroll_and_detect(
