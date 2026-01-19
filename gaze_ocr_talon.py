@@ -170,7 +170,7 @@ mod.setting(
     "ocr_scroll_probe_amount",
     type=int,
     default=50,
-    desc="Wheel units for initial scroll probe to detect viewport and calibrate scroll ratio. Higher values increase robustness in apps without smooth scrolling, but may overshoot small scrolls.",
+    desc="Wheel units for initial scroll probe to detect viewport and calibrate scroll ratio. Higher values increase robustness in apps with discrete scrolling amounts, but may overshoot small scrolls.",
 )
 
 mod.tag(
