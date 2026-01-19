@@ -164,13 +164,13 @@ mod.setting(
     "ocr_scroll_viewport_fraction",
     type=float,
     default=0.8,
-    desc="Fraction of viewport height to scroll (0.0-1.0).",
+    desc="Fraction of viewport height to scroll (0.0-1.0). Values close to 1.0 will reduce robustness of scroll detection.",
 )
 mod.setting(
     "ocr_scroll_probe_amount",
     type=int,
     default=50,
-    desc="Wheel units for initial scroll probe to detect viewport and calibrate scroll ratio.",
+    desc="Wheel units for initial scroll probe to detect viewport and calibrate scroll ratio. Higher values increase robustness in apps without smooth scrolling, but may overshoot small scrolls.",
 )
 
 mod.tag(
