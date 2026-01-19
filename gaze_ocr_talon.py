@@ -1280,7 +1280,7 @@ class GazeOcrActions:
             center = ui.active_window().rect.center
             actions.mouse_move(center.x + offset_right, center.y + offset_down)
 
-    def scroll_with_enhancements(amount: float = 1.0, direction: str = "down"):
+    def enhanced_scroll(amount: float = 1.0, direction: str = "down"):
         """Scroll in specified direction and show visual indicator of content movement.
 
         Args:
@@ -1388,21 +1388,21 @@ class GazeOcrActions:
         if completion is not None:
             completion.save_screenshots()
 
-    def scroll_down_with_enhancements(amount: float = 1.0):
+    def enhanced_scroll_down(amount: float = 1.0):
         """Scroll down with dynamic calibration and visual indicator.
 
         Args:
             amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
         """
-        actions.user.scroll_with_enhancements(amount, "down")
+        actions.user.enhanced_scroll(amount, "down")
 
-    def scroll_up_with_enhancements(amount: float = 1.0):
+    def enhanced_scroll_up(amount: float = 1.0):
         """Scroll up with dynamic calibration and visual indicator.
 
         Args:
             amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
         """
-        actions.user.scroll_with_enhancements(amount, "up")
+        actions.user.enhanced_scroll(amount, "up")
 
     #
     # Actions operating on a single point within onscreen text.
