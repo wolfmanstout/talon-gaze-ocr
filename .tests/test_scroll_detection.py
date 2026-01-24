@@ -150,30 +150,33 @@ class TestArrayShapeSafety:
     """Tests for array shape matching to prevent broadcast errors."""
 
     @pytest.mark.parametrize(
-        "height,width,scroll_dist",
+        "height,width,scroll_dist,expected_distance",
         [
-            (720, 1280, 50),
-            (1440, 2560, 100),
-            (800, 1200, 500),
-            (600, 800, 580),
+            (720, 1280, 50, 50),
+            (1440, 2560, 100, 100),
+            (800, 1200, 500, 500),
+            (600, 800, 580, None),  # Almost no overlap -> no detection
         ],
     )
-    def test_various_sizes_no_shape_errors(self, height, width, scroll_dist):
-        """Test that various image sizes don't cause shape mismatch errors."""
+    def test_various_sizes_correct_detection(
+        self, height, width, scroll_dist, expected_distance
+    ):
+        """Test that various image sizes detect scrolls correctly without shape errors."""
         img_before = create_text_pattern_image(height, width, "text")
         img_after = create_scrolled_image(img_before, scroll_dist)
         cursor_pos = (width // 2, height // 2)
 
-        # Should not raise ValueError about shape mismatch
-        try:
-            detect_scroll(img_before, img_after, cursor_pos)
-            # Result can be None for edge cases, but no exception should occur
-        except ValueError as e:
-            if "operands could not be broadcast" in str(e) or "shape mismatch" in str(
-                e
-            ):
-                pytest.fail(f"Shape mismatch error: {e}")
-            raise
+        result = detect_scroll(img_before, img_after, cursor_pos)
+
+        if expected_distance is None:
+            assert result is None, (
+                f"Expected None for {scroll_dist}px scroll on {height}px image"
+            )
+        else:
+            assert result is not None, f"Should detect {scroll_dist}px scroll"
+            assert result.scroll_distance == expected_distance, (
+                f"Expected {expected_distance}px, got {result.scroll_distance}px"
+            )
 
 
 class TestScrollUpDirection:
