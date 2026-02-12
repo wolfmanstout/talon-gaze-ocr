@@ -470,21 +470,6 @@ def show_disambiguation():
                 location = (location[0] + match.text_height, location[1])
             used_locations.add(location)
             c.draw_text(str(i + 1), *location)
-        setting_ocr_disambiguation_display_seconds = settings.get(
-            "user.ocr_disambiguation_display_seconds"
-        )
-        if setting_ocr_disambiguation_display_seconds and disambiguation_canvas:
-            current_canvas = disambiguation_canvas
-
-            def timeout_disambiguation():
-                global disambiguation_canvas
-                if disambiguation_canvas and disambiguation_canvas == current_canvas:
-                    reset_disambiguation()
-
-            cron.after(
-                f"{setting_ocr_disambiguation_display_seconds}s",
-                timeout_disambiguation,
-            )
 
     ctx.tags = ["user.gaze_ocr_disambiguation"]
     if disambiguation_canvas:
@@ -505,6 +490,21 @@ def show_disambiguation():
         disambiguation_canvas = Canvas.from_rect(rect)
     disambiguation_canvas.register("draw", on_draw)
     disambiguation_canvas.freeze()
+
+    setting_ocr_disambiguation_display_seconds = settings.get(
+        "user.ocr_disambiguation_display_seconds"
+    )
+    if setting_ocr_disambiguation_display_seconds and disambiguation_canvas:
+        current_canvas = disambiguation_canvas
+
+        def timeout_disambiguation():
+            global disambiguation_canvas
+            if disambiguation_canvas and disambiguation_canvas == current_canvas:
+                reset_disambiguation()
+
+        # Convert to integer milliseconds since cron.after expects integer+suffix.
+        timeout_ms = int(setting_ocr_disambiguation_display_seconds * 1000)
+        cron.after(f"{timeout_ms}ms", timeout_disambiguation)
 
 
 def begin_generator(generator):
@@ -816,19 +816,6 @@ class GazeOcrActions:
 
             else:
                 raise RuntimeError(f"Type not recognized: {type}")
-            if debug_canvas and not persistent:
-                current_canvas = debug_canvas
-
-                def timeout_debug_canvas():
-                    global debug_canvas
-                    if debug_canvas and debug_canvas == current_canvas:
-                        debug_canvas.close()
-                        debug_canvas = None
-
-                cron.after(
-                    f"{settings.get('user.ocr_debug_display_seconds')}s",
-                    timeout_debug_canvas,
-                )
 
         # Increased size slightly for canvas to ensure everything will be inside canvas
         canvas_rect = contents_rect.copy()
@@ -848,6 +835,22 @@ class GazeOcrActions:
                 debug_canvas = None
 
         debug_canvas.register("mouse", on_mouse)
+
+        if not persistent:
+            current_canvas = debug_canvas
+
+            def timeout_debug_canvas():
+                global debug_canvas
+                if debug_canvas and debug_canvas == current_canvas:
+                    debug_canvas.close()
+                    debug_canvas = None
+
+            # Convert to integer milliseconds since cron.after expects
+            # integer+suffix.
+            debug_timeout_ms = int(
+                settings.get("user.ocr_debug_display_seconds") * 1000
+            )
+            cron.after(f"{debug_timeout_ms}ms", timeout_debug_canvas)
 
     def hide_ocr_overlay():
         """Hide any visible OCR overlay."""
