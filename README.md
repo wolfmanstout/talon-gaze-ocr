@@ -61,6 +61,34 @@ working using Tesseract, but this configuration is not tested by the author.
   commands](https://handsfreecoding.org/2024/03/15/making-writing-and-editing-with-your-voice-feel-natural/)
   including "revise" and "insert".
 
+## Scrolling Visualization
+
+Scroll commands (`scroll up`, `scroll down`, `scroll up half`, `scroll down half`)
+provide two key improvements:
+- **Consistent scroll distance**: Scrolls a fixed fraction of the viewport regardless
+  of window height.
+- **Visual indicator**: Shows how content shifted so you don't lose your place.
+
+### Browser Users (Windows/Linux)
+
+Browsers use smooth scrolling by default, which slows down scroll detection. To
+speed this up, disable smooth scrolling and add a tag to your Talon settings:
+
+**Chromium (Chrome, Edge, Brave, Vivaldi, Opera):**
+1. Navigate to `chrome://flags/#smooth-scrolling`
+2. Set "Smooth Scrolling" to **Disabled**
+3. Restart your browser
+
+**Firefox:**
+1. Navigate to `about:preferences`
+2. Search for "smooth scrolling"
+3. Uncheck "Use smooth scrolling"
+
+Then add to your Talon settings:
+```talon
+tag(): user.browser_smooth_scrolling_disabled
+```
+
 ## Known limitations:
 
 - Only operates on the main screen, as defined by Talon.

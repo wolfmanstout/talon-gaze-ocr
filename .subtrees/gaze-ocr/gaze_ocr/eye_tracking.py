@@ -134,14 +134,5 @@ class EyeTracker:
         else:
             return None
 
-    def get_gaze_point_or_default(self):
-        return self.get_gaze_point() or self._windows.get_foreground_window_center()
-
     def get_monitor_size(self):
         return self._monitor_size
-
-    def move_to_gaze_point(self, offset=(0, 0)):
-        gaze = self.get_gaze_point_or_default()
-        x = max(0, int(gaze[0]) + offset[0])
-        y = max(0, int(gaze[1]) + offset[1])
-        self._mouse.move((x, y))

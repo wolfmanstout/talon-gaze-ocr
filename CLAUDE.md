@@ -10,6 +10,20 @@ Pre-commit will run Ruff and pycheck automatically when committing. Don't
 proceed until the commit is successful. Many Ruff issues will be fixed
 automatically, so if that fails simply retry the commit.
 
+**Testing:**
+
+Tests are in `.tests/` with test data in `.tests/data/`. Run with:
+```
+uv run pytest
+```
+
+**Debug Tools:**
+
+Development tools are in `.tools/`. Run the scroll detection visualization tool with:
+```
+uv run .tools/debug_scroll.py --from-json .tests/data/file_to_debug.json
+```
+
 ## Architecture Overview
 
 This is a Talon voice control extension that enables advanced cursor control using eye tracking and OCR (text recognition). The system allows users to click, select, and manipulate text by speaking words that appear on screen.

@@ -6,6 +6,17 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[dependency-groups]
+dev = [
+    "click>=8.1.0",
+    "line-profiler>=5.0.0",
+    "matplotlib>=3.8.0",
+    "numpy>=1.24.0",
+    "pillow>=10.0.0",
+    "pytest>=8.0.0",
+    "pytest-benchmark>=4.0.0",
+]
+
 [tool.ruff]
 extend-exclude = [".subtrees/rapidfuzz"]
 
@@ -25,6 +36,9 @@ select = [
     "I",
 ]
 ignore = ["E501", "SIM105", "SIM116", "UP045"]
+
+[tool.pytest.ini_options]
+testpaths = [".tests"]
 
 [tool.pyright]
 pythonVersion = "3.11"
