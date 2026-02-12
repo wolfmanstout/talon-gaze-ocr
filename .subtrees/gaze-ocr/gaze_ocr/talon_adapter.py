@@ -125,9 +125,6 @@ class TalonEyeTracker:
             return None
         return self._gaze_to_pixels(self._queue[-1].gaze)
 
-    def get_gaze_point_or_default(self):
-        return self.get_gaze_point() or tuple(ui.active_window().rect.center)
-
     def get_gaze_bounds_during_time_range(self, start_timestamp, end_timestamp):
         if not self._queue:
             print("No gaze history available")
@@ -170,9 +167,3 @@ class TalonEyeTracker:
         pos = rect.pos + gaze * rect.size
         pos = rect.clamp(pos)
         return (pos.x, pos.y)
-
-    def move_to_gaze_point(self, offset=(0, 0)):
-        gaze = self.get_gaze_point_or_default()
-        x = gaze[0] + offset[0]
-        y = gaze[1] + offset[1]
-        actions.mouse_move(x, y)

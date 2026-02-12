@@ -1,17 +1,21 @@
 import glob
+import json
 import logging
+import os
 import sys
 import time
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
-from talon import Context, Module, actions, app, cron, fs, screen, settings, ui
+from talon import Context, Module, actions, app, cron, ctrl, fs, screen, settings, ui
 from talon.canvas import Canvas, MouseEvent
 from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
 
+from .scroll_detection import BoundingBox, ScrollResult, detect_scroll
 from .timestamped_captures import TextRange, TimestampedText
 
 try:
@@ -119,10 +123,62 @@ mod.setting(
     default="MAIN_SCREEN",
     desc="Region to OCR when no data from the eye tracker",
 )
+mod.setting(
+    "ocr_cursor_behavior_when_no_eye_tracker",
+    type=Literal["NONE", "ACTIVE_WINDOW_CENTER"],
+    default="NONE",
+    desc="Behavior when moving cursor to gaze point with no eye tracker data. NONE: do nothing, ACTIVE_WINDOW_CENTER: move to center of active window.",
+)
+mod.setting(
+    "ocr_scroll_enhancements_enabled",
+    type=bool,
+    default=True,
+    desc="Enable scroll enhancements: dynamic scroll calibration and visual indicator.",
+)
+mod.setting(
+    "ocr_scroll_indicator_fade_seconds",
+    type=float,
+    default=1.5,
+    desc="Duration for scroll indicator line to fade out.",
+)
+mod.setting(
+    "ocr_scroll_indicator_color",
+    type=str,
+    default="ADD8E6",
+    desc="Color for scroll indicator line (hex RGB).",
+)
+mod.setting(
+    "ocr_scroll_wait_ms",
+    type=int,
+    default=50,
+    desc="Milliseconds to wait after scroll before capturing 'after' screenshot.",
+)
+mod.setting(
+    "ocr_scroll_debug_mode",
+    type=bool,
+    default=False,
+    desc="Show full debug visualization (red/green boxes) instead of just the line.",
+)
+mod.setting(
+    "ocr_scroll_viewport_fraction",
+    type=float,
+    default=0.8,
+    desc="Fraction of viewport height to scroll (0.0-1.0). Values close to 1.0 will reduce robustness of scroll detection.",
+)
+mod.setting(
+    "ocr_scroll_probe_amount",
+    type=int,
+    default=50,
+    desc="Wheel units for initial scroll probe to detect viewport and calibrate scroll ratio. Higher values increase robustness in apps with discrete scrolling amounts, but may overshoot small scrolls.",
+)
 
 mod.tag(
     "gaze_ocr_disambiguation",
     desc="Tag for disambiguating between different onscreen matches.",
+)
+mod.tag(
+    "browser_smooth_scrolling_disabled",
+    desc="Set this tag if you have disabled smooth scrolling in your browser.",
 )
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
 mod.list(
@@ -338,6 +394,223 @@ def has_light_background(screenshot):
     return np.mean(grayscale) > 128
 
 
+@dataclass
+class ScrollPhaseResult:
+    """Result from a single scroll phase (probe or completion)."""
+
+    detection: ScrollResult | None
+    before_screenshot: Any
+    after_screenshot: Any
+    before_array: np.ndarray
+    after_array: np.ndarray
+    cursor_pos: tuple[float, float]
+    existing_viewport: BoundingBox | None = None
+    scroll_direction: str = "down"
+    offset_x: int = 0
+    offset_y: int = 0
+
+    @property
+    def succeeded(self) -> bool:
+        return self.detection is not None
+
+    def get_scroll_distance(self) -> int:
+        """Get scroll distance. Raises ValueError if detection failed."""
+        if self.detection is None:
+            raise ValueError("Cannot get scroll_distance from failed detection")
+        return self.detection.scroll_distance
+
+    def get_viewport(self) -> BoundingBox:
+        """Get viewport in image coordinates. Raises ValueError if detection failed."""
+        if self.detection is None:
+            raise ValueError("Cannot get viewport from failed detection")
+        return self.detection.viewport
+
+    def get_viewport_screen_coords(self) -> BoundingBox:
+        """Get viewport in screen coordinates (adjusts for cropped screenshots)."""
+        vp = self.get_viewport()
+        return BoundingBox(
+            x=vp.x + self.offset_x,
+            y=vp.y + self.offset_y,
+            width=vp.width,
+            height=vp.height,
+        )
+
+    def save_screenshots(self) -> None:
+        """Save before/after screenshots and metadata if logging is enabled."""
+        logging_dir = settings.get("user.ocr_logging_dir")
+        if not logging_dir:
+            return
+
+        timestamp = time.time()
+
+        if self.detection is None:
+            file_prefix = f"scroll_failure_{timestamp:.2f}"
+            metadata: dict = {
+                "status": "failure",
+                "timestamp": timestamp,
+                "scroll_direction": self.scroll_direction,
+                "cursor_position": {"x": self.cursor_pos[0], "y": self.cursor_pos[1]},
+            }
+        else:
+            bbox = self.detection.after_bbox
+            file_prefix = (
+                f"scroll_success_{self.detection.scroll_distance}px_{timestamp:.2f}"
+            )
+            # For scroll-down: before_bbox is at y + scroll_distance (content moved up)
+            # For scroll-up: before_bbox is at y - scroll_distance (content moved down)
+            if self.scroll_direction == "down":
+                before_bbox_y = bbox.y + self.detection.scroll_distance
+            else:
+                before_bbox_y = bbox.y - self.detection.scroll_distance
+            metadata = {
+                "status": "success",
+                "timestamp": timestamp,
+                "scroll_direction": self.scroll_direction,
+                "scroll_distance_px": self.detection.scroll_distance,
+                "cursor_position": {"x": self.cursor_pos[0], "y": self.cursor_pos[1]},
+                "after_bbox": {
+                    "x": bbox.x,
+                    "y": bbox.y,
+                    "width": bbox.width,
+                    "height": bbox.height,
+                },
+                "before_bbox": {
+                    "x": bbox.x,
+                    "y": before_bbox_y,
+                    "width": bbox.width,
+                    "height": bbox.height,
+                },
+            }
+
+        if self.existing_viewport is not None:
+            metadata["existing_viewport"] = {
+                "x": self.existing_viewport.x,
+                "y": self.existing_viewport.y,
+                "width": self.existing_viewport.width,
+                "height": self.existing_viewport.height,
+            }
+
+        before_path = os.path.join(logging_dir, f"{file_prefix}_before.png")
+        after_path = os.path.join(logging_dir, f"{file_prefix}_after.png")
+        json_path = os.path.join(logging_dir, f"{file_prefix}.json")
+
+        for screenshot, path in [
+            (self.before_screenshot, before_path),
+            (self.after_screenshot, after_path),
+        ]:
+            if hasattr(screenshot, "save"):
+                screenshot.save(path)
+            else:
+                screenshot.write_file(path)
+
+        with open(json_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+
+
+@dataclass
+class CaptureContext:
+    """Context for screenshot capture, tracking coordinate offsets."""
+
+    screenshot: Any  # Talon screenshot
+    array: np.ndarray
+    offset_x: int  # Screen X offset (window.rect.x or 0)
+    offset_y: int  # Screen Y offset (window.rect.y or 0)
+    window: ui.Window | None
+
+
+def _capture_screenshot(window: ui.Window | None) -> CaptureContext:
+    """Capture screenshot, optionally cropped to window."""
+    capture_rect = window.rect if window else screen.main().rect
+
+    # Attempt to turn off HUD if talon_hud is installed.
+    try:
+        actions.user.hud_set_visibility(False, pause_seconds=0.02)
+    except Exception:
+        pass
+    ctrl.cursor_visible(False)
+    try:
+        screenshot = screen.capture_rect(capture_rect, retina=False)
+    finally:
+        ctrl.cursor_visible(True)
+        # Attempt to turn on HUD if talon_hud is installed.
+        try:
+            actions.user.hud_set_visibility(True, pause_seconds=0.001)
+        except Exception:
+            pass
+
+    return CaptureContext(
+        screenshot=screenshot,
+        array=np.array(screenshot),
+        offset_x=int(capture_rect.x),
+        offset_y=int(capture_rect.y),
+        window=window,
+    )
+
+
+def perform_scroll_and_detect(
+    before_screenshot,
+    before_array: np.ndarray,
+    scroll_amount: float,
+    cursor_pos: tuple[float, float],
+    phase_name: str = "",
+    existing_viewport: BoundingBox | None = None,
+    scroll_direction: str = "down",
+    window: ui.Window | None = None,
+    offset_x: int = 0,
+    offset_y: int = 0,
+) -> ScrollPhaseResult:
+    """Perform a scroll, capture the result, and run scroll detection.
+
+    Args:
+        before_screenshot: Talon screen capture from before the scroll
+        before_array: Numpy array of the before image
+        scroll_amount: Wheel units to scroll (positive value, direction handled separately)
+        cursor_pos: (x, y) cursor position (in image coordinates)
+        phase_name: Label for logging (e.g., "probe", "completion")
+        existing_viewport: Optional viewport from previous detection
+            (for second scroll, skips viewport detection/refinement)
+        scroll_direction: "down" (content moves up) or "up" (content moves down)
+        window: Optional window to crop screenshot to
+        offset_x: Screen X offset for cropped screenshots
+        offset_y: Screen Y offset for cropped screenshots
+
+    Returns:
+        ScrollPhaseResult with detection results and screenshots
+    """
+    # Scroll direction: positive = down (content moves up), negative = up (content moves down)
+    actual_scroll = scroll_amount if scroll_direction == "down" else -scroll_amount
+    actions.mouse_scroll(actual_scroll)
+
+    # Wait for scroll animation to complete before capturing
+    wait_ms: int = settings.get("user.ocr_scroll_wait_ms")
+    actions.sleep(f"{wait_ms}ms")
+
+    # Capture after screenshot (cropped to window if provided)
+    after_ctx = _capture_screenshot(window)
+    after_screenshot = after_ctx.screenshot
+    after_array = after_ctx.array
+
+    detection = detect_scroll(
+        before_array, after_array, cursor_pos, existing_viewport, scroll_direction
+    )
+
+    if phase_name and not detection:
+        logging.info(f"Scroll {phase_name}: detection failed")
+
+    return ScrollPhaseResult(
+        detection=detection,
+        before_screenshot=before_screenshot,
+        after_screenshot=after_screenshot,
+        before_array=before_array,
+        after_array=after_array,
+        cursor_pos=cursor_pos,
+        existing_viewport=existing_viewport,
+        scroll_direction=scroll_direction,
+        offset_x=offset_x,
+        offset_y=offset_y,
+    )
+
+
 def get_debug_color(has_light_background: bool):
     return (
         settings.get("user.ocr_light_background_debug_color")
@@ -397,6 +670,7 @@ def calculate_optimal_text_size(
 
 disambiguation_canvas = None
 debug_canvas = None
+scroll_indicator_canvas = None
 ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
 disambiguation_generator = None
 
@@ -427,24 +701,49 @@ def _clamp_rect_to_screen(r: rect.Rect) -> rect.Rect:
     return clamped
 
 
-def reset_disambiguation():
+def _get_window_under_cursor() -> tuple[ui.Window | None, tuple[float, float]]:
+    """Get window under cursor using window_at API.
+
+    Returns:
+        Tuple of (window or None, cursor_pos). Includes cursor_pos since we
+        already have it after the required 5ms sleep.
+    """
+    # Brief pause to ensure cursor position is up-to-date
+    actions.sleep("5ms")
+    cursor_x, cursor_y = float(actions.mouse_x()), float(actions.mouse_y())
+    cursor_pos = (cursor_x, cursor_y)
+
+    if not settings.get("user.ocr_use_window_at_api"):
+        return None, cursor_pos
+    try:
+        window = ui.window_at(int(cursor_x), int(cursor_y))
+        return window, cursor_pos
+    except Exception:
+        return None, cursor_pos
+
+
+def reset_state():
     global \
         ambiguous_matches, \
         disambiguation_generator, \
         disambiguation_canvas, \
-        debug_canvas
+        debug_canvas, \
+        scroll_indicator_canvas
+
     ctx.tags = []
     ambiguous_matches = None
     disambiguation_generator = None
-    hide_canvas = disambiguation_canvas or debug_canvas
-    if disambiguation_canvas:
-        disambiguation_canvas.close()
+
+    had_canvas = disambiguation_canvas or debug_canvas or scroll_indicator_canvas
+    for canvas in [disambiguation_canvas, debug_canvas, scroll_indicator_canvas]:
+        if canvas:
+            canvas.close()
     disambiguation_canvas = None
-    if debug_canvas:
-        debug_canvas.close()
     debug_canvas = None
-    if hide_canvas:
-        # Ensure that the canvas doesn't interfere with subsequent screenshots.
+    scroll_indicator_canvas = None
+
+    if had_canvas:
+        # Ensure canvas doesn't interfere with subsequent screenshots
         actions.sleep("10ms")
 
 
@@ -507,7 +806,7 @@ def show_disambiguation():
         def timeout_disambiguation():
             global disambiguation_canvas
             if disambiguation_canvas and disambiguation_canvas == current_canvas:
-                reset_disambiguation()
+                reset_state()
 
         # Convert to integer milliseconds since cron.after expects integer+suffix.
         timeout_ms = int(setting_ocr_disambiguation_display_seconds * 1000)
@@ -516,7 +815,7 @@ def show_disambiguation():
 
 def begin_generator(generator):
     global ambiguous_matches, disambiguation_generator, disambiguation_canvas
-    reset_disambiguation()
+    reset_state()
     try:
         ambiguous_matches = next(generator)
         disambiguation_generator = generator
@@ -714,13 +1013,89 @@ class GazeOcrActions:
 
         If the near parameter is provided, refreshes OCR nearby where the user is
         looking when they spoke the near parameter."""
-        reset_disambiguation()
+        reset_state()
         if refresh:
             if near:
                 gaze_ocr_controller.read_nearby((near.start, near.end))
             else:
                 gaze_ocr_controller.read_nearby()
         actions.user.show_ocr_overlay_for_query(type, "", True)
+
+    def show_scroll_indicator(
+        line_y: int,
+        viewport: BoundingBox,
+        scroll_distance: int,
+    ):
+        """Display fading horizontal line at scroll boundary.
+
+        In debug mode, also shows the viewport outline and scroll distance label.
+
+        Args:
+            line_y: Y-coordinate for the scroll seam line
+            viewport: Bounding box of the detected viewport
+            scroll_distance: Pixels scrolled (for debug label)
+        """
+        global scroll_indicator_canvas
+
+        if scroll_indicator_canvas:
+            scroll_indicator_canvas.close()
+            scroll_indicator_canvas = None
+
+        # Capture settings outside callback to avoid repeated lookups
+        debug_mode: bool = settings.get("user.ocr_scroll_debug_mode")
+        fade_duration: float = settings.get("user.ocr_scroll_indicator_fade_seconds")
+        indicator_color: str = settings.get("user.ocr_scroll_indicator_color")
+        start_time = time.time()
+
+        def on_draw(c):
+            elapsed = time.time() - start_time
+            if elapsed >= fade_duration:
+                return
+
+            alpha_byte = int((1.0 - elapsed / fade_duration) * 255)
+
+            if debug_mode:
+                c.paint.style = c.paint.Style.STROKE
+                c.paint.stroke_width = 3.0
+                c.paint.color = f"00FF00{alpha_byte:02X}"
+                c.draw_rect(
+                    rect.Rect(
+                        x=viewport.x,
+                        y=viewport.y,
+                        width=viewport.width,
+                        height=viewport.height,
+                    )
+                )
+                c.paint.style = c.paint.Style.FILL
+                c.paint.textsize = 20
+                c.draw_text(
+                    f"VIEWPORT (scroll={scroll_distance}px)", viewport.x, viewport.y - 5
+                )
+
+            # Draw scroll seam line
+            c.paint.color = f"{indicator_color}{alpha_byte:02X}"
+            c.paint.style = c.paint.Style.STROKE
+            c.paint.stroke_width = 2.0
+
+            c.draw_line(viewport.x, line_y, viewport.x + viewport.width, line_y)
+
+        scroll_indicator_canvas = Canvas.from_screen(screen.main())
+        scroll_indicator_canvas.blocks_mouse = False
+        scroll_indicator_canvas.register("draw", on_draw)
+
+        # Schedule cleanup - capture canvas reference to avoid race condition
+        canvas_to_cleanup = scroll_indicator_canvas
+
+        def cleanup_scroll_canvas():
+            global scroll_indicator_canvas
+            # Only close if it's still the same canvas we created
+            if scroll_indicator_canvas is canvas_to_cleanup:
+                canvas_to_cleanup.close()
+                scroll_indicator_canvas = None
+
+        # Convert to milliseconds since cron.after doesn't accept float seconds
+        cleanup_delay_ms = int((fade_duration + 0.1) * 1000)
+        cron.after(f"{cleanup_delay_ms}ms", cleanup_scroll_canvas)
 
     def show_ocr_overlay_for_query(
         type: str, query: str = "", persistent: bool = False
@@ -891,19 +1266,152 @@ class GazeOcrActions:
             show_disambiguation()
         except StopIteration:
             # Execution completed successfully.
-            reset_disambiguation()
+            reset_state()
 
     def hide_gaze_ocr_options():
         """Hide the disambiguation UI."""
-        reset_disambiguation()
+        reset_state()
 
     #
     # Actions operating on the gaze point.
     #
 
     def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
-        """Moves mouse cursor to gaze location."""
-        tracker.move_to_gaze_point((offset_right, offset_down))
+        """Moves mouse cursor to gaze location.
+
+        If no gaze data available, behavior depends on
+        user.ocr_cursor_behavior_when_no_eye_tracker setting.
+        """
+        gaze = tracker.get_gaze_point()
+        if gaze:
+            x = gaze[0] + offset_right
+            y = gaze[1] + offset_down
+            actions.mouse_move(x, y)
+            return
+
+        fallback = settings.get("user.ocr_cursor_behavior_when_no_eye_tracker")
+        if fallback == "ACTIVE_WINDOW_CENTER":
+            center = ui.active_window().rect.center
+            actions.mouse_move(center.x + offset_right, center.y + offset_down)
+
+    def enhanced_scroll(amount: float = 1.0, direction: str = "down"):
+        """Scroll in specified direction and show visual indicator of content movement.
+
+        Args:
+            amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
+            direction: "down" (content moves up) or "up" (content moves down)
+
+        Uses a two-phase approach:
+        1. Probe scroll: Small scroll to detect viewport size and calibrate scroll ratio
+        2. Calibrated scroll: Complete remaining scroll based on detected viewport
+
+        When ocr_use_window_at_api is enabled, screenshots are cropped to the window
+        under the cursor for improved performance.
+        """
+
+        def fallback_scroll():
+            if direction == "down":
+                actions.user.mouse_scroll_down(amount)
+            else:
+                actions.user.mouse_scroll_up(amount)
+
+        if not settings.get("user.ocr_scroll_enhancements_enabled"):
+            fallback_scroll()
+            return
+
+        reset_state()
+
+        window, cursor_screen = _get_window_under_cursor()
+        before_ctx = _capture_screenshot(window)
+        cursor_pos = (
+            cursor_screen[0] - before_ctx.offset_x,
+            cursor_screen[1] - before_ctx.offset_y,
+        )
+
+        # Phase 1: Probe scroll to detect viewport and calibrate
+        probe_scroll_amount: int = settings.get("user.ocr_scroll_probe_amount")
+        probe = perform_scroll_and_detect(
+            before_ctx.screenshot,
+            before_ctx.array,
+            probe_scroll_amount,
+            cursor_pos,
+            phase_name="probe",
+            scroll_direction=direction,
+            window=window,
+            offset_x=before_ctx.offset_x,
+            offset_y=before_ctx.offset_y,
+        )
+
+        if not probe.succeeded:
+            probe.save_screenshots()
+            fallback_scroll()
+            return
+
+        probe_distance = probe.get_scroll_distance()
+        scroll_ratio = probe_distance / probe_scroll_amount
+        viewport = probe.get_viewport_screen_coords()
+
+        # Phase 2: Calculate and execute remaining scroll
+        vp_img = probe.get_viewport()
+        viewport_fraction: float = settings.get("user.ocr_scroll_viewport_fraction")
+        total_desired_pixels = vp_img.height * viewport_fraction * amount
+        remaining_pixels = max(0, total_desired_pixels - probe_distance)
+        completion = None
+
+        if remaining_pixels > 0 and scroll_ratio > 0:
+            remaining_wheel_units = remaining_pixels / scroll_ratio
+
+            # Pass probe's viewport (image coords) to skip viewport detection
+            completion = perform_scroll_and_detect(
+                probe.after_screenshot,
+                probe.after_array,
+                remaining_wheel_units,
+                cursor_pos,
+                phase_name="completion",
+                existing_viewport=vp_img,
+                scroll_direction=direction,
+                window=window,
+                offset_x=before_ctx.offset_x,
+                offset_y=before_ctx.offset_y,
+            )
+
+            if completion.succeeded:
+                total_scroll = probe_distance + completion.get_scroll_distance()
+            else:
+                total_scroll = probe_distance + int(remaining_pixels)
+        else:
+            total_scroll = probe_distance
+
+        # Calculate line_y in screen coordinates
+        # Line shows where content from before the scroll ends (the "seam")
+        if direction == "down":
+            line_y = viewport.y + viewport.height - total_scroll
+        else:
+            line_y = viewport.y + total_scroll
+
+        # Show visualization using probe's viewport
+        actions.user.show_scroll_indicator(line_y, viewport, total_scroll)
+
+        # Save screenshots after visualization is shown
+        probe.save_screenshots()
+        if completion is not None:
+            completion.save_screenshots()
+
+    def enhanced_scroll_down(amount: float = 1.0):
+        """Scroll down with dynamic calibration and visual indicator.
+
+        Args:
+            amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
+        """
+        actions.user.enhanced_scroll(amount, "down")
+
+    def enhanced_scroll_up(amount: float = 1.0):
+        """Scroll up with dynamic calibration and visual indicator.
+
+        Args:
+            amount: Multiplier for scroll distance (1.0 = one viewport height * fraction)
+        """
+        actions.user.enhanced_scroll(amount, "up")
 
     #
     # Actions operating on a single point within onscreen text.
