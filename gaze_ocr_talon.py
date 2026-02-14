@@ -401,6 +401,32 @@ ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
 disambiguation_generator = None
 
 
+def _clamp_rect_to_screen(r: rect.Rect) -> rect.Rect:
+    """Clamp a rect to the single screen with the most overlap.
+
+    Canvases that span multiple screens with different DPI/scale factors
+    can disappear on macOS. This finds the best screen and clamps the rect
+    to stay within its bounds.
+    """
+    best_screen = max(
+        screen.screens(),
+        key=lambda s: (
+            max(0, min(r.x + r.width, s.rect.x + s.rect.width) - max(r.x, s.rect.x))
+            * max(0, min(r.y + r.height, s.rect.y + s.rect.height) - max(r.y, s.rect.y))
+        ),
+        default=None,
+    )
+    if best_screen is None:
+        return r
+    sr = best_screen.rect
+    clamped = r.copy()
+    clamped.x = max(r.x, sr.x)
+    clamped.y = max(r.y, sr.y)
+    clamped.width = min(r.x + r.width, sr.x + sr.width) - clamped.x
+    clamped.height = min(r.y + r.height, sr.y + sr.height) - clamped.y
+    return clamped
+
+
 def reset_disambiguation():
     global \
         ambiguous_matches, \
@@ -455,6 +481,7 @@ def show_disambiguation():
         disambiguation_canvas.close()
     rect = screen_ocr.to_rect(contents.bounding_box)
     screen_rect = screen.main().rect
+
     # If rect is approximately equal to screen.main().rect, use Canvas.from_screen to
     # avoid Windows bug where the screen is blacked out.
     # https://github.com/wolfmanstout/talon-gaze-ocr/issues/47
@@ -466,6 +493,7 @@ def show_disambiguation():
     ):
         disambiguation_canvas = Canvas.from_screen(screen.main())
     else:
+        rect = _clamp_rect_to_screen(rect)
         disambiguation_canvas = Canvas.from_rect(rect)
     disambiguation_canvas.register("draw", on_draw)
     disambiguation_canvas.freeze()
@@ -802,6 +830,8 @@ class GazeOcrActions:
         canvas_rect.height += 100
         canvas_rect.width += 100
         canvas_rect.center = center
+
+        canvas_rect = _clamp_rect_to_screen(canvas_rect)
 
         debug_canvas = Canvas.from_rect(canvas_rect)
         debug_canvas.blocks_mouse = True
