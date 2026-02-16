@@ -63,11 +63,15 @@ working using Tesseract, but this configuration is not tested by the author.
 
 ## Scrolling Visualization
 
-Scroll commands (`eye scroll up`, `eye scroll down`, `eye scroll up half`, 
+Scroll commands (`eye scroll up`, `eye scroll down`, `eye scroll up half`,
 `eye scroll down half`) provide two key improvements:
 - **Consistent scroll distance**: Scrolls a fixed fraction of the viewport regardless
   of window height.
 - **Visual indicator**: Shows how content shifted so you don't lose your place.
+
+See [my blog post on voice-native
+scrolling](https://handsfreecoding.org/2026/02/15/voice-native-scrolling-in-talon-gaze-ocr/)
+for details on this feature.
 
 ### Enable faster scrolling on Windows and Linux
 
