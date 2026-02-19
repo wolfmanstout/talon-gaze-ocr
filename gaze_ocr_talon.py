@@ -389,8 +389,10 @@ app.register("ready", on_ready)
 
 def has_light_background(screenshot):
     array = np.array(screenshot)
-    # From https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Image.convert
-    grayscale = 0.299 * array[:, :, 0] + 0.587 * array[:, :, 1] + 0.114 * array[:, :, 2]
+    # ITU-R BT.709 coefficients
+    grayscale = (
+        0.2126 * array[:, :, 0] + 0.7152 * array[:, :, 1] + 0.0722 * array[:, :, 2]
+    )
     return np.mean(grayscale) > 128
 
 
