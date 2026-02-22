@@ -1678,7 +1678,7 @@ class MacGazeOcrActions:
         if use_window_at:
             # Attempt to turn off HUD if talon_hud is installed.
             try:
-                actions.user.hud_set_visibility(False, pause_seconds=0)
+                actions.user.hud_set_visibility(False, pause_seconds=0.001)
             except Exception:
                 pass
             # Use window_at API (requires beta Talon)
