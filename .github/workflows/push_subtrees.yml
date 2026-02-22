@@ -9,7 +9,7 @@ jobs:
   push-subtrees:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_SUBTREE_TOKEN }}
