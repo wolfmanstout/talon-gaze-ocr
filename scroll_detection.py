@@ -47,7 +47,6 @@ class ScrollResult:
     scroll_distance: int
     after_bbox: BoundingBox
     viewport: BoundingBox
-    initial_viewport: BoundingBox | None = None
 
 
 # --- Kadane's Algorithm Variants (O(N) 1D Solvers) ---
@@ -564,7 +563,6 @@ def detect_scroll(
 
     # --- Phase 1: Initial Viewport Estimation ---
     # Internal functions use tuples; convert at API boundary
-    initial_viewport_bbox: BoundingBox | None = None
     if existing_viewport is not None:
         # Use provided viewport (skip Phase 1)
         viewport = existing_viewport.as_tuple()
@@ -575,7 +573,6 @@ def detect_scroll(
         if viewport is None:
             logging.info("Scroll detection failed: Could not estimate initial viewport")
             return None
-        initial_viewport_bbox = BoundingBox.from_tuple(viewport)
 
     # Validate viewport size
     if not _validate_viewport_size(viewport, "Initial"):
@@ -637,5 +634,4 @@ def detect_scroll(
         scroll_distance=int(scroll_distance),
         after_bbox=BoundingBox.from_tuple(after_bbox),
         viewport=BoundingBox.from_tuple(refined_viewport),
-        initial_viewport=initial_viewport_bbox,
     )

@@ -11,8 +11,8 @@ from scroll_detection import BoundingBox
 from scroll_probe_cache import (
     ScrollProbeCacheEntry,
     full_frame_match_ratio,
-    is_full_frame_mostly_unchanged,
-    is_viewport_close,
+    is_outside_viewport_mostly_unchanged,
+    outside_viewport_match_ratio,
     ratios_match,
     update_ratio_stability,
 )
@@ -21,7 +21,6 @@ from scroll_probe_cache import (
 def _make_entry() -> ScrollProbeCacheEntry:
     return ScrollProbeCacheEntry(
         viewport_refined_img=BoundingBox(100, 150, 800, 600),
-        viewport_unrefined_img=BoundingBox(90, 140, 820, 620),
         reference_before_full=np.zeros((720, 1280, 3), dtype=np.uint8),
     )
 
@@ -38,24 +37,28 @@ def test_full_frame_match_ratio_partial_change():
     assert full_frame_match_ratio(a, b) == 0.8
 
 
-def test_is_full_frame_mostly_unchanged_threshold():
+def test_outside_viewport_match_ratio_only_considers_outside():
     a = np.zeros((10, 10, 3), dtype=np.uint8)
     b = a.copy()
-    b[0, :, :] = 1  # 90% match
-    assert is_full_frame_mostly_unchanged(a, b, threshold=0.9)
-    assert not is_full_frame_mostly_unchanged(a, b, threshold=0.95)
+    viewport = BoundingBox(2, 2, 6, 6)
+
+    # Change only inside viewport; outside should still match perfectly.
+    b[2:8, 2:8, :] = 255
+    assert outside_viewport_match_ratio(a, b, viewport) == 1.0
+
+    # Change part of outside region too.
+    b[0, :, :] = 255
+    ratio = outside_viewport_match_ratio(a, b, viewport)
+    assert 0.0 < ratio < 1.0
 
 
-def test_is_viewport_close_within_threshold():
-    cached = BoundingBox(100, 200, 900, 500)
-    estimated = BoundingBox(110, 210, 910, 505)
-    assert is_viewport_close(cached, estimated, frame_w=2000, frame_h=1200)
-
-
-def test_is_viewport_close_rejects_large_shift():
-    cached = BoundingBox(100, 200, 900, 500)
-    estimated = BoundingBox(400, 200, 900, 500)
-    assert not is_viewport_close(cached, estimated, frame_w=2000, frame_h=1200)
+def test_is_outside_viewport_mostly_unchanged_threshold():
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    b = a.copy()
+    viewport = BoundingBox(2, 2, 6, 6)
+    b[0, :, :] = 1
+    assert is_outside_viewport_mostly_unchanged(a, b, viewport, threshold=0.6)
+    assert not is_outside_viewport_mostly_unchanged(a, b, viewport, threshold=0.95)
 
 
 def test_ratios_match_tolerates_float_noise():
@@ -91,16 +94,14 @@ def test_stable_ratio_remains_valid_after_mismatch():
     assert entry.stable_scroll_ratio == 1.0
 
 
-def test_comparison_targets_unrefined_viewport_shape():
+def test_outside_viewport_check_uses_refined_viewport():
     entry = ScrollProbeCacheEntry(
-        viewport_refined_img=BoundingBox(300, 300, 500, 300),
-        viewport_unrefined_img=BoundingBox(90, 140, 820, 620),
+        viewport_refined_img=BoundingBox(2, 2, 6, 6),
         reference_before_full=np.zeros((720, 1280, 3), dtype=np.uint8),
     )
-    estimated = BoundingBox(90, 140, 820, 620)
-    assert is_viewport_close(
-        entry.viewport_unrefined_img, estimated, frame_w=1280, frame_h=720
-    )
-    assert not is_viewport_close(
-        entry.viewport_refined_img, estimated, frame_w=1280, frame_h=720
+    current = np.zeros((10, 10, 3), dtype=np.uint8)
+    cached = current.copy()
+    cached[2:8, 2:8, :] = 255
+    assert is_outside_viewport_mostly_unchanged(
+        current, cached, entry.viewport_refined_img, threshold=1.0
     )
