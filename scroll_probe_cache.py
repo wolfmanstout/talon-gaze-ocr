@@ -19,7 +19,6 @@ class ScrollProbeCacheEntry:
     """Cache entry keyed by app name for enhanced scrolling."""
 
     viewport_refined_img: BoundingBox
-    viewport_unrefined_img: BoundingBox
     reference_before_full: np.ndarray
     stable_scroll_ratio: float | None = None
     pending_probe_ratio: float | None = None
@@ -38,40 +37,41 @@ def full_frame_match_ratio(current: np.ndarray, cached: np.ndarray) -> float:
     return float(np.mean(same))
 
 
-def is_full_frame_mostly_unchanged(
-    current: np.ndarray, cached: np.ndarray, threshold: float = 0.95
-) -> bool:
-    """True when full-frame screenshots are mostly unchanged."""
-    return full_frame_match_ratio(current, cached) >= threshold
+def outside_viewport_match_ratio(
+    current: np.ndarray, cached: np.ndarray, viewport: BoundingBox
+) -> float:
+    """Return exact per-pixel match ratio outside the viewport rectangle."""
+    if current.shape != cached.shape:
+        return 0.0
+    if current.size == 0:
+        return 0.0
 
+    H, W = current.shape[:2]
+    x1 = max(0, viewport.x)
+    y1 = max(0, viewport.y)
+    x2 = min(W, viewport.x + viewport.width)
+    y2 = min(H, viewport.y + viewport.height)
 
-def is_viewport_close(
-    cached_unrefined: BoundingBox,
-    estimated_unrefined: BoundingBox,
-    frame_w: int,
-    frame_h: int,
-    threshold: float = 0.08,
-) -> bool:
-    """Compare viewport center/size deltas normalized by frame dimensions."""
-    if frame_w <= 0 or frame_h <= 0:
-        return False
+    mask = np.ones((H, W), dtype=bool)
+    if x1 < x2 and y1 < y2:
+        mask[y1:y2, x1:x2] = False
+    if not np.any(mask):
+        return 1.0
 
-    cached_cx = cached_unrefined.x + (cached_unrefined.width / 2.0)
-    cached_cy = cached_unrefined.y + (cached_unrefined.height / 2.0)
-    estimated_cx = estimated_unrefined.x + (estimated_unrefined.width / 2.0)
-    estimated_cy = estimated_unrefined.y + (estimated_unrefined.height / 2.0)
-
-    center_dx = abs(cached_cx - estimated_cx) / frame_w
-    center_dy = abs(cached_cy - estimated_cy) / frame_h
-    width_delta = abs(cached_unrefined.width - estimated_unrefined.width) / frame_w
-    height_delta = abs(cached_unrefined.height - estimated_unrefined.height) / frame_h
-
-    return (
-        center_dx <= threshold
-        and center_dy <= threshold
-        and width_delta <= threshold
-        and height_delta <= threshold
+    same = (
+        np.all(current == cached, axis=-1) if current.ndim == 3 else current == cached
     )
+    return float(np.mean(same[mask]))
+
+
+def is_outside_viewport_mostly_unchanged(
+    current: np.ndarray,
+    cached: np.ndarray,
+    viewport: BoundingBox,
+    threshold: float = 0.95,
+) -> bool:
+    """True when most pixels outside viewport are unchanged."""
+    return outside_viewport_match_ratio(current, cached, viewport) >= threshold
 
 
 def ratios_match(a: float, b: float) -> bool:

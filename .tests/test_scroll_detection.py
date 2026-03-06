@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from conftest import create_scrolled_image, create_text_pattern_image
 
-from scroll_detection import BoundingBox, detect_scroll
+from scroll_detection import detect_scroll
 
 
 class TestBasicScrollDetection:
@@ -257,42 +257,4 @@ class TestScrollUpDirection:
         )
         assert abs(result_up.scroll_distance - scroll_dist) <= 5, (
             f"Scroll-up: expected {scroll_dist}, got {result_up.scroll_distance}"
-        )
-
-
-class TestInitialViewportExposure:
-    """Tests for exposing unrefined initial viewport in detection results."""
-
-    def test_returns_initial_viewport_without_existing_viewport(self):
-        height, width = 1000, 1280
-        img_before = create_text_pattern_image(height, width, "text")
-        img_after = create_scrolled_image(img_before, 200, direction="down")
-
-        result = detect_scroll(img_before, img_after, (width // 2, height // 2))
-
-        assert result is not None, "Expected successful detection"
-        assert result.initial_viewport is not None, (
-            "Expected initial_viewport when no existing_viewport is provided"
-        )
-
-    def test_initial_viewport_none_with_existing_viewport(self):
-        height, width = 1000, 1280
-        img_before = create_text_pattern_image(height, width, "text")
-        img_after = create_scrolled_image(img_before, 200, direction="down")
-        cursor_pos = (width // 2, height // 2)
-
-        first = detect_scroll(img_before, img_after, cursor_pos)
-        assert first is not None, "Expected baseline detection to succeed"
-
-        second = detect_scroll(
-            img_before,
-            img_after,
-            cursor_pos,
-            existing_viewport=BoundingBox.from_tuple(first.viewport.as_tuple()),
-        )
-        assert second is not None, (
-            "Expected detection with existing viewport to succeed"
-        )
-        assert second.initial_viewport is None, (
-            "initial_viewport should remain unset when existing_viewport is provided"
         )
