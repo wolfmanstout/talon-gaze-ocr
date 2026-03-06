@@ -20,12 +20,10 @@ from .scroll_detection import (
     BoundingBox,
     ScrollResult,
     detect_scroll,
-    estimate_initial_viewport,
 )
 from .scroll_probe_cache import (
     ScrollProbeCacheEntry,
-    is_full_frame_mostly_unchanged,
-    is_viewport_close,
+    is_outside_viewport_mostly_unchanged,
     update_ratio_stability,
 )
 from .timestamped_captures import TextRange, TimestampedText
@@ -766,37 +764,6 @@ def _get_scroll_cache_key(window: ui.Window | None) -> str | None:
     return str(app_name)
 
 
-def _to_grayscale_float(img: np.ndarray) -> np.ndarray:
-    """Convert RGB or grayscale image array to float grayscale."""
-    if img.ndim == 2:
-        return img.astype(float)
-    if img.ndim == 3:
-        return (
-            0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
-        ).astype(float)
-    raise ValueError(f"Unsupported image shape: {img.shape}")
-
-
-def _estimate_initial_viewport_from_reference(
-    current_before: np.ndarray,
-    cached_before: np.ndarray,
-    cursor_pos: tuple[float, float],
-) -> BoundingBox | None:
-    """Estimate initial viewport from full-frame diff against cached reference."""
-    if current_before.shape != cached_before.shape:
-        return None
-    same_pos_diff = np.abs(
-        _to_grayscale_float(current_before) - _to_grayscale_float(cached_before)
-    )
-    viewport_tuple = estimate_initial_viewport(
-        (int(cursor_pos[0]), int(cursor_pos[1])),
-        same_pos_diff,
-    )
-    if viewport_tuple is None:
-        return None
-    return BoundingBox.from_tuple(viewport_tuple)
-
-
 def reset_state():
     global \
         ambiguous_matches, \
@@ -1100,6 +1067,7 @@ class GazeOcrActions:
         line_y: int,
         viewport: BoundingBox,
         scroll_distance: int,
+        probe_skipped: bool = False,
     ):
         """Display fading horizontal line at scroll boundary.
 
@@ -1109,6 +1077,7 @@ class GazeOcrActions:
             line_y: Y-coordinate for the scroll seam line
             viewport: Bounding box of the detected viewport
             scroll_distance: Pixels scrolled (for debug label)
+            probe_skipped: Whether the initial probe scroll was skipped
         """
         global scroll_indicator_canvas
 
@@ -1132,7 +1101,8 @@ class GazeOcrActions:
             if debug_mode:
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.stroke_width = 3.0
-                c.paint.color = f"00FF00{alpha_byte:02X}"
+                viewport_color = "800080" if probe_skipped else "00FF00"
+                c.paint.color = f"{viewport_color}{alpha_byte:02X}"
                 c.draw_rect(
                     rect.Rect(
                         x=viewport.x,
@@ -1143,8 +1113,11 @@ class GazeOcrActions:
                 )
                 c.paint.style = c.paint.Style.FILL
                 c.paint.textsize = 20
+                mode_label = " (probe skipped)" if probe_skipped else ""
                 c.draw_text(
-                    f"VIEWPORT (scroll={scroll_distance}px)", viewport.x, viewport.y - 5
+                    f"VIEWPORT{mode_label} (scroll={scroll_distance}px)",
+                    viewport.x,
+                    viewport.y - 5,
                 )
 
             # Draw scroll seam line
@@ -1423,24 +1396,11 @@ class GazeOcrActions:
         use_cached_probe = False
         if can_attempt_skip:
             assert cache_entry is not None
-            if is_full_frame_mostly_unchanged(
-                before_ctx.array, cache_entry.reference_before_full
-            ):
-                use_cached_probe = True
-            else:
-                estimated_viewport = _estimate_initial_viewport_from_reference(
-                    before_ctx.array,
-                    cache_entry.reference_before_full,
-                    cursor_pos,
-                )
-                if estimated_viewport is not None:
-                    frame_h, frame_w = before_ctx.array.shape[:2]
-                    use_cached_probe = is_viewport_close(
-                        cache_entry.viewport_unrefined_img,
-                        estimated_viewport,
-                        frame_w,
-                        frame_h,
-                    )
+            use_cached_probe = is_outside_viewport_mostly_unchanged(
+                before_ctx.array,
+                cache_entry.reference_before_full,
+                cache_entry.viewport_refined_img,
+            )
 
         if use_cached_probe:
             assert cache_entry is not None
@@ -1470,6 +1430,8 @@ class GazeOcrActions:
 
             if not probe.succeeded:
                 probe.save_screenshots()
+                if app_cache_key:
+                    scroll_probe_cache_by_app.pop(app_cache_key, None)
                 fallback_scroll()
                 return
 
@@ -1480,21 +1442,16 @@ class GazeOcrActions:
             phase2_before_screenshot = probe.after_screenshot
             phase2_before_array = probe.after_array
 
-            # Update app-scoped probe cache on successful probe only when
-            # unrefined viewport is available.
-            if app_cache_key and probe.detection and probe.detection.initial_viewport:
+            # Update app-scoped probe cache after successful probe detection.
+            if app_cache_key and probe.detection:
                 if cache_entry is None:
                     cache_entry = ScrollProbeCacheEntry(
                         viewport_refined_img=vp_img,
-                        viewport_unrefined_img=probe.detection.initial_viewport,
                         reference_before_full=before_ctx.array.copy(),
                     )
                     scroll_probe_cache_by_app[app_cache_key] = cache_entry
                 else:
                     cache_entry.viewport_refined_img = vp_img
-                    cache_entry.viewport_unrefined_img = (
-                        probe.detection.initial_viewport
-                    )
                     cache_entry.reference_before_full = before_ctx.array.copy()
                 update_ratio_stability(cache_entry, scroll_ratio, probe_scroll_amount)
 
@@ -1523,7 +1480,14 @@ class GazeOcrActions:
 
             if completion.succeeded:
                 total_scroll = probe_distance + completion.get_scroll_distance()
+                if app_cache_key:
+                    entry = scroll_probe_cache_by_app.get(app_cache_key)
+                    if entry is not None:
+                        entry.viewport_refined_img = vp_img
+                        entry.reference_before_full = phase2_before_array.copy()
             else:
+                if app_cache_key:
+                    scroll_probe_cache_by_app.pop(app_cache_key, None)
                 total_scroll = probe_distance + int(remaining_pixels)
         else:
             total_scroll = probe_distance
@@ -1536,7 +1500,9 @@ class GazeOcrActions:
             line_y = viewport.y + total_scroll
 
         # Show visualization using probe's viewport
-        actions.user.show_scroll_indicator(line_y, viewport, total_scroll)
+        actions.user.show_scroll_indicator(
+            line_y, viewport, total_scroll, probe_skipped=use_cached_probe
+        )
 
         # Save screenshots after visualization is shown
         if probe is not None:
