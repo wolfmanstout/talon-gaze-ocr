@@ -10,11 +10,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scroll_detection import BoundingBox
 from scroll_probe_cache import (
     ScrollProbeCacheEntry,
-    full_frame_match_ratio,
+    can_reuse_cached_viewport,
     is_outside_viewport_mostly_unchanged,
     outside_viewport_match_ratio,
     ratios_match,
     update_ratio_stability,
+    viewport_contains_point,
 )
 
 
@@ -23,18 +24,6 @@ def _make_entry() -> ScrollProbeCacheEntry:
         viewport_refined_img=BoundingBox(100, 150, 800, 600),
         reference_before_full=np.zeros((720, 1280, 3), dtype=np.uint8),
     )
-
-
-def test_full_frame_match_ratio_identical():
-    img = np.zeros((10, 10, 3), dtype=np.uint8)
-    assert full_frame_match_ratio(img, img.copy()) == 1.0
-
-
-def test_full_frame_match_ratio_partial_change():
-    a = np.zeros((10, 10, 3), dtype=np.uint8)
-    b = a.copy()
-    b[0:2, :, :] = 255
-    assert full_frame_match_ratio(a, b) == 0.8
 
 
 def test_outside_viewport_match_ratio_only_considers_outside():
@@ -105,3 +94,26 @@ def test_outside_viewport_check_uses_refined_viewport():
     assert is_outside_viewport_mostly_unchanged(
         current, cached, entry.viewport_refined_img, threshold=1.0
     )
+
+
+def test_viewport_contains_point():
+    viewport = BoundingBox(100, 150, 800, 600)
+    assert viewport_contains_point(viewport, (100, 150))
+    assert viewport_contains_point(viewport, (899, 749))
+    assert not viewport_contains_point(viewport, (99, 150))
+    assert not viewport_contains_point(viewport, (900, 750))
+
+
+def test_can_reuse_cached_viewport_requires_cursor_inside_and_stable_outside():
+    entry = ScrollProbeCacheEntry(
+        viewport_refined_img=BoundingBox(2, 2, 6, 6),
+        reference_before_full=np.zeros((10, 10, 3), dtype=np.uint8),
+    )
+    current = entry.reference_before_full.copy()
+
+    assert can_reuse_cached_viewport(entry, current, (3, 3))
+    assert not can_reuse_cached_viewport(entry, current, (0, 0))
+
+    changed = current.copy()
+    changed[0, :, :] = 255
+    assert not can_reuse_cached_viewport(entry, changed, (3, 3))
