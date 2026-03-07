@@ -23,7 +23,7 @@ from .scroll_detection import (
 )
 from .scroll_probe_cache import (
     ScrollProbeCacheEntry,
-    is_outside_viewport_mostly_unchanged,
+    can_reuse_cached_viewport,
     update_ratio_stability,
 )
 from .timestamped_captures import TextRange, TimestampedText
@@ -1396,10 +1396,10 @@ class GazeOcrActions:
         use_cached_probe = False
         if can_attempt_skip:
             assert cache_entry is not None
-            use_cached_probe = is_outside_viewport_mostly_unchanged(
+            use_cached_probe = can_reuse_cached_viewport(
+                cache_entry,
                 before_ctx.array,
-                cache_entry.reference_before_full,
-                cache_entry.viewport_refined_img,
+                cursor_pos,
             )
 
         if use_cached_probe:

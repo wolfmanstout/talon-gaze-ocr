@@ -25,18 +25,6 @@ class ScrollProbeCacheEntry:
     pending_probe_amount: int | None = None
 
 
-def full_frame_match_ratio(current: np.ndarray, cached: np.ndarray) -> float:
-    """Return exact per-pixel match ratio for two full-frame screenshots."""
-    if current.shape != cached.shape:
-        return 0.0
-    if current.size == 0:
-        return 0.0
-    same = (
-        np.all(current == cached, axis=-1) if current.ndim == 3 else current == cached
-    )
-    return float(np.mean(same))
-
-
 def outside_viewport_match_ratio(
     current: np.ndarray, cached: np.ndarray, viewport: BoundingBox
 ) -> float:
@@ -72,6 +60,32 @@ def is_outside_viewport_mostly_unchanged(
 ) -> bool:
     """True when most pixels outside viewport are unchanged."""
     return outside_viewport_match_ratio(current, cached, viewport) >= threshold
+
+
+def viewport_contains_point(viewport: BoundingBox, point: tuple[float, float]) -> bool:
+    """True when the point lies inside the viewport rectangle."""
+    px, py = point
+    return (
+        viewport.x <= px < viewport.x + viewport.width
+        and viewport.y <= py < viewport.y + viewport.height
+    )
+
+
+def can_reuse_cached_viewport(
+    entry: ScrollProbeCacheEntry,
+    current: np.ndarray,
+    cursor_pos: tuple[float, float],
+    threshold: float = 0.95,
+) -> bool:
+    """True when the current cursor and surrounding frame still match the cache."""
+    return viewport_contains_point(
+        entry.viewport_refined_img, cursor_pos
+    ) and is_outside_viewport_mostly_unchanged(
+        current,
+        entry.reference_before_full,
+        entry.viewport_refined_img,
+        threshold=threshold,
+    )
 
 
 def ratios_match(a: float, b: float) -> bool:
