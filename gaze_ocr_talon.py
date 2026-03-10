@@ -1396,6 +1396,7 @@ class GazeOcrActions:
             scroll_probe_cache_by_app.get(app_cache_key) if app_cache_key else None
         )
         probe_skip_enabled: bool = settings.get("user.ocr_scroll_probe_skip_enabled")
+        debug_mode: bool = settings.get("user.ocr_scroll_debug_mode")
 
         probe: ScrollPhaseResult | None = None
         vp_img: BoundingBox
@@ -1426,6 +1427,13 @@ class GazeOcrActions:
             cache_debug_reason = "no cached viewport"
         else:
             cache_debug_reason = "scroll ratio not stable yet"
+
+        if debug_mode and cache_debug_reason:
+            cache_status = "hit" if use_cached_probe else "miss"
+            logging.info(
+                f"Scroll cache {cache_status}: {cache_debug_reason}"
+                f" (app={app_cache_key or 'none'}, cursor=({cursor_pos[0]:.1f}, {cursor_pos[1]:.1f}))"
+            )
 
         if use_cached_probe:
             assert cache_entry is not None
