@@ -166,7 +166,7 @@ mod.setting(
 mod.setting(
     "ocr_scroll_wait_ms",
     type=int,
-    default=50,
+    default=100,
     desc="Milliseconds to wait after scroll before capturing 'after' screenshot.",
 )
 mod.setting(
