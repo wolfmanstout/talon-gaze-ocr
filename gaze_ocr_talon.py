@@ -22,6 +22,7 @@ from .scroll_detection import (
     detect_scroll,
 )
 from .scroll_probe_cache import (
+    CachedViewportReuseDecision,
     ScrollProbeCacheEntry,
     can_reuse_cached_viewport,
     update_ratio_stability,
@@ -1068,6 +1069,7 @@ class GazeOcrActions:
         viewport: BoundingBox,
         scroll_distance: int,
         probe_skipped: bool = False,
+        cache_debug_reason: str | None = None,
     ):
         """Display fading horizontal line at scroll boundary.
 
@@ -1078,6 +1080,7 @@ class GazeOcrActions:
             viewport: Bounding box of the detected viewport
             scroll_distance: Pixels scrolled (for debug label)
             probe_skipped: Whether the initial probe scroll was skipped
+            cache_debug_reason: Optional debug text describing cache hit/miss reason
         """
         global scroll_indicator_canvas
 
@@ -1119,6 +1122,12 @@ class GazeOcrActions:
                     viewport.x,
                     viewport.y - 5,
                 )
+                if cache_debug_reason:
+                    c.draw_text(
+                        f"CACHE: {cache_debug_reason}",
+                        viewport.x,
+                        viewport.y - 28,
+                    )
 
             # Draw scroll seam line
             c.paint.color = f"{indicator_color}{alpha_byte:02X}"
@@ -1387,6 +1396,7 @@ class GazeOcrActions:
         probe_distance: int
         phase2_before_screenshot = before_ctx.screenshot
         phase2_before_array = before_ctx.array
+        cache_debug_reason: str | None = None
 
         can_attempt_skip = (
             probe_skip_enabled
@@ -1396,11 +1406,19 @@ class GazeOcrActions:
         use_cached_probe = False
         if can_attempt_skip:
             assert cache_entry is not None
-            use_cached_probe = can_reuse_cached_viewport(
+            reuse_decision: CachedViewportReuseDecision = can_reuse_cached_viewport(
                 cache_entry,
                 before_ctx.array,
                 cursor_pos,
             )
+            use_cached_probe = reuse_decision.can_reuse
+            cache_debug_reason = reuse_decision.reason
+        elif not probe_skip_enabled:
+            cache_debug_reason = "probe skip disabled"
+        elif cache_entry is None:
+            cache_debug_reason = "no cached viewport"
+        else:
+            cache_debug_reason = "scroll ratio not stable yet"
 
         if use_cached_probe:
             assert cache_entry is not None
@@ -1501,7 +1519,11 @@ class GazeOcrActions:
 
         # Show visualization using probe's viewport
         actions.user.show_scroll_indicator(
-            line_y, viewport, total_scroll, probe_skipped=use_cached_probe
+            line_y,
+            viewport,
+            total_scroll,
+            probe_skipped=use_cached_probe,
+            cache_debug_reason=cache_debug_reason,
         )
 
         # Save screenshots after visualization is shown

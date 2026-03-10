@@ -111,9 +111,17 @@ def test_can_reuse_cached_viewport_requires_cursor_inside_and_stable_outside():
     )
     current = entry.reference_before_full.copy()
 
-    assert can_reuse_cached_viewport(entry, current, (3, 3))
-    assert not can_reuse_cached_viewport(entry, current, (0, 0))
+    hit = can_reuse_cached_viewport(entry, current, (3, 3))
+    assert hit.can_reuse
+    assert hit.reason == "outside match 1.00"
+
+    cursor_miss = can_reuse_cached_viewport(entry, current, (0, 0))
+    assert not cursor_miss.can_reuse
+    assert cursor_miss.reason == "cursor outside cached viewport"
 
     changed = current.copy()
     changed[0, :, :] = 255
-    assert not can_reuse_cached_viewport(entry, changed, (3, 3))
+    outside_miss = can_reuse_cached_viewport(entry, changed, (3, 3))
+    assert not outside_miss.can_reuse
+    assert outside_miss.reason.startswith("outside match ")
+    assert outside_miss.outside_match_ratio is not None
