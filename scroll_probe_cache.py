@@ -25,6 +25,15 @@ class ScrollProbeCacheEntry:
     pending_probe_amount: int | None = None
 
 
+@dataclass(frozen=True)
+class CachedViewportReuseDecision:
+    """Decision details for whether a cached viewport can be reused."""
+
+    can_reuse: bool
+    reason: str
+    outside_match_ratio: float | None = None
+
+
 def outside_viewport_match_ratio(
     current: np.ndarray, cached: np.ndarray, viewport: BoundingBox
 ) -> float:
@@ -76,15 +85,30 @@ def can_reuse_cached_viewport(
     current: np.ndarray,
     cursor_pos: tuple[float, float],
     threshold: float = 0.95,
-) -> bool:
-    """True when the current cursor and surrounding frame still match the cache."""
-    return viewport_contains_point(
-        entry.viewport_refined_img, cursor_pos
-    ) and is_outside_viewport_mostly_unchanged(
+) -> CachedViewportReuseDecision:
+    """Return whether the current cursor and surrounding frame still match the cache."""
+    if not viewport_contains_point(entry.viewport_refined_img, cursor_pos):
+        return CachedViewportReuseDecision(
+            can_reuse=False,
+            reason="cursor outside cached viewport",
+        )
+
+    match_ratio = outside_viewport_match_ratio(
         current,
         entry.reference_before_full,
         entry.viewport_refined_img,
-        threshold=threshold,
+    )
+    if match_ratio < threshold:
+        return CachedViewportReuseDecision(
+            can_reuse=False,
+            reason=f"outside match {match_ratio:.2f} < {threshold:.2f}",
+            outside_match_ratio=match_ratio,
+        )
+
+    return CachedViewportReuseDecision(
+        can_reuse=True,
+        reason=f"outside match {match_ratio:.2f}",
+        outside_match_ratio=match_ratio,
     )
 
 
