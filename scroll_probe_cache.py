@@ -65,7 +65,7 @@ def is_outside_viewport_mostly_unchanged(
     current: np.ndarray,
     cached: np.ndarray,
     viewport: BoundingBox,
-    threshold: float = 0.95,
+    threshold: float = 0.90,
 ) -> bool:
     """True when most pixels outside viewport are unchanged."""
     return outside_viewport_match_ratio(current, cached, viewport) >= threshold
@@ -84,7 +84,7 @@ def can_reuse_cached_viewport(
     entry: ScrollProbeCacheEntry,
     current: np.ndarray,
     cursor_pos: tuple[float, float],
-    threshold: float = 0.95,
+    threshold: float = 0.90,
 ) -> CachedViewportReuseDecision:
     """Return whether the current cursor and surrounding frame still match the cache."""
     if not viewport_contains_point(entry.viewport_refined_img, cursor_pos):
