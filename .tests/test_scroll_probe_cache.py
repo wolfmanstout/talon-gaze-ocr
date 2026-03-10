@@ -45,7 +45,8 @@ def test_is_outside_viewport_mostly_unchanged_threshold():
     a = np.zeros((10, 10, 3), dtype=np.uint8)
     b = a.copy()
     viewport = BoundingBox(2, 2, 6, 6)
-    b[0, :, :] = 1
+    b[0, 0:4, :] = 1
+    assert is_outside_viewport_mostly_unchanged(a, b, viewport)
     assert is_outside_viewport_mostly_unchanged(a, b, viewport, threshold=0.6)
     assert not is_outside_viewport_mostly_unchanged(a, b, viewport, threshold=0.95)
 
