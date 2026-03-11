@@ -27,17 +27,30 @@ class TextPosition:
     position: str
 
 
+def _timestamp_or_default(match, attribute: str) -> float:
+    value = getattr(match, attribute, None)
+    return value if value is not None else 0.0
+
+
 @mod.capture(rule="<user.prose>")
 def timestamped_prose_only(m) -> TimestampedText:
     """user.prose with timestamps."""
-    return TimestampedText(text=m.prose, start=m.prose_start, end=m.prose_end)
+    return TimestampedText(
+        text=m.prose,
+        # mimic() and some test environments provide prose without audio timestamps.
+        # A zero range tells the controller to fall back to non-timestamped OCR.
+        start=_timestamp_or_default(m, "prose_start"),
+        end=_timestamp_or_default(m, "prose_end"),
+    )
 
 
 @mod.capture(rule="{user.onscreen_ocr_text}")
 def onscreen_text(m) -> TimestampedText:
     """Timestamped text appearing onscreen."""
     return TimestampedText(
-        text=m[0], start=m.onscreen_ocr_text_start, end=m.onscreen_ocr_text_end
+        text=m[0],
+        start=_timestamp_or_default(m, "onscreen_ocr_text_start"),
+        end=_timestamp_or_default(m, "onscreen_ocr_text_end"),
     )
 
 
