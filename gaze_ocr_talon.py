@@ -769,6 +769,8 @@ def _get_scroll_cache_key(window: ui.Window | None) -> str | None:
         return None
     if not app_name:
         return None
+    if app_name == "Notification Center":
+        return None
     return str(app_name)
 
 
@@ -1406,6 +1408,12 @@ class GazeOcrActions:
             cursor_screen[0] - before_ctx.offset_x,
             cursor_screen[1] - before_ctx.offset_y,
         )
+        window_app_name: str | None = None
+        if window is not None:
+            try:
+                window_app_name = window.app.name
+            except Exception:
+                window_app_name = None
         app_cache_key = _get_scroll_cache_key(window)
         cache_entry = (
             scroll_probe_cache_by_app.get(app_cache_key) if app_cache_key else None
@@ -1448,6 +1456,8 @@ class GazeOcrActions:
                 )
         elif not probe_skip_enabled:
             cache_debug_reason = "probe skip disabled"
+        elif window_app_name == "Notification Center":
+            cache_debug_reason = "cache bypassed for Notification Center"
         elif cache_entry is None:
             cache_debug_reason = "no cached viewport"
         else:
