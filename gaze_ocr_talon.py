@@ -1070,6 +1070,7 @@ class GazeOcrActions:
         scroll_distance: int,
         probe_skipped: bool = False,
         cache_debug_reason: str | None = None,
+        cached_viewport: BoundingBox | None = None,
     ):
         """Display fading horizontal line at scroll boundary.
 
@@ -1081,6 +1082,7 @@ class GazeOcrActions:
             scroll_distance: Pixels scrolled (for debug label)
             probe_skipped: Whether the initial probe scroll was skipped
             cache_debug_reason: Optional debug text describing cache hit/miss reason
+            cached_viewport: Optional cached viewport to show in debug mode
         """
         global scroll_indicator_canvas
 
@@ -1102,6 +1104,19 @@ class GazeOcrActions:
             alpha_byte = int((1.0 - elapsed / fade_duration) * 255)
 
             if debug_mode:
+                if cached_viewport is not None:
+                    c.paint.style = c.paint.Style.STROKE
+                    c.paint.stroke_width = 3.0
+                    c.paint.color = f"800080{alpha_byte:02X}"
+                    c.draw_rect(
+                        rect.Rect(
+                            x=cached_viewport.x,
+                            y=cached_viewport.y,
+                            width=cached_viewport.width,
+                            height=cached_viewport.height,
+                        )
+                    )
+
                 c.paint.style = c.paint.Style.STROKE
                 c.paint.stroke_width = 3.0
                 viewport_color = "800080" if probe_skipped else "00FF00"
@@ -1398,6 +1413,7 @@ class GazeOcrActions:
         phase2_before_screenshot = before_ctx.screenshot
         phase2_before_array = before_ctx.array
         cache_debug_reason: str | None = None
+        cached_viewport_overlay: BoundingBox | None = None
 
         can_attempt_skip = (
             probe_skip_enabled
@@ -1414,6 +1430,15 @@ class GazeOcrActions:
             )
             use_cached_probe = reuse_decision.can_reuse
             cache_debug_reason = reuse_decision.reason
+            if not use_cached_probe and reuse_decision.reason.startswith(
+                "outside match "
+            ):
+                cached_viewport_overlay = BoundingBox(
+                    x=cache_entry.viewport_refined_img.x + before_ctx.offset_x,
+                    y=cache_entry.viewport_refined_img.y + before_ctx.offset_y,
+                    width=cache_entry.viewport_refined_img.width,
+                    height=cache_entry.viewport_refined_img.height,
+                )
         elif not probe_skip_enabled:
             cache_debug_reason = "probe skip disabled"
         elif cache_entry is None:
@@ -1490,14 +1515,17 @@ class GazeOcrActions:
         if remaining_pixels > 0 and scroll_ratio > 0:
             remaining_wheel_units = remaining_pixels / scroll_ratio
 
-            # Pass viewport (image coords) to skip viewport detection
+            completion_existing_viewport = None if use_cached_probe else vp_img
+
+            # On a cache hit, rerun the full detection pipeline so the viewport
+            # can be corrected for future scrolls if it has drifted.
             completion = perform_scroll_and_detect(
                 phase2_before_screenshot,
                 phase2_before_array,
                 remaining_wheel_units,
                 cursor_pos,
                 phase_name="completion",
-                existing_viewport=vp_img,
+                existing_viewport=completion_existing_viewport,
                 scroll_direction=direction,
                 window=window,
                 offset_x=before_ctx.offset_x,
@@ -1506,11 +1534,13 @@ class GazeOcrActions:
 
             if completion.succeeded:
                 total_scroll = probe_distance + completion.get_scroll_distance()
+                vp_img = completion.get_viewport()
+                viewport = completion.get_viewport_screen_coords()
                 if app_cache_key:
                     entry = scroll_probe_cache_by_app.get(app_cache_key)
                     if entry is not None:
                         entry.viewport_refined_img = vp_img
-                        entry.reference_before_full = phase2_before_array.copy()
+                        entry.reference_before_full = completion.after_array.copy()
             else:
                 if app_cache_key:
                     scroll_probe_cache_by_app.pop(app_cache_key, None)
@@ -1532,6 +1562,7 @@ class GazeOcrActions:
             total_scroll,
             probe_skipped=use_cached_probe,
             cache_debug_reason=cache_debug_reason,
+            cached_viewport=cached_viewport_overlay,
         )
 
         # Save screenshots after visualization is shown
