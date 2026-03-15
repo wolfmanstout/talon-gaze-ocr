@@ -34,6 +34,15 @@ class BoundingBox:
         """Return (x, y, width, height) tuple for compatibility."""
         return (self.x, self.y, self.width, self.height)
 
+    def translated(self, dx: int = 0, dy: int = 0) -> "BoundingBox":
+        """Return a copy translated by the given offset."""
+        return type(self)(
+            x=self.x + dx,
+            y=self.y + dy,
+            width=self.width,
+            height=self.height,
+        )
+
     @classmethod
     def from_tuple(cls, t: tuple[int, int, int, int]) -> "BoundingBox":
         """Create from (x, y, width, height) tuple."""
@@ -41,7 +50,7 @@ class BoundingBox:
 
 
 @dataclass(frozen=True)
-class ScrollResult:
+class DetectedScroll:
     """Result from successful scroll detection."""
 
     scroll_distance: int
@@ -527,7 +536,7 @@ def detect_scroll(
     cursor_pos: tuple[float, float],
     existing_viewport: BoundingBox | None = None,
     scroll_direction: str = "down",
-) -> ScrollResult | None:
+) -> DetectedScroll | None:
     """
     Detects vertical scrolling using a three-phase approach:
     1. Initial viewport estimation (find changed region)
@@ -544,7 +553,7 @@ def detect_scroll(
         scroll_direction: "down" (content moves up) or "up" (content moves down)
 
     Returns:
-        ScrollResult with scroll_distance, after_bbox, and viewport.
+        DetectedScroll with scroll_distance, after_bbox, and viewport.
         Returns None if no valid scroll is found.
     """
     # Convert cursor position to integers for array indexing
@@ -630,7 +639,7 @@ def detect_scroll(
     if not _validate_viewport_size(refined_viewport, "Refined"):
         return None
 
-    return ScrollResult(
+    return DetectedScroll(
         scroll_distance=int(scroll_distance),
         after_bbox=BoundingBox.from_tuple(after_bbox),
         viewport=BoundingBox.from_tuple(refined_viewport),

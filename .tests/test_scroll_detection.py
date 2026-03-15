@@ -14,7 +14,12 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from conftest import create_scrolled_image, create_text_pattern_image
 
-from scroll_detection import detect_scroll
+from scroll_detection import BoundingBox, detect_scroll
+
+
+def test_bounding_box_translated():
+    viewport = BoundingBox(100, 150, 800, 600)
+    assert viewport.translated(10, 20) == BoundingBox(110, 170, 800, 600)
 
 
 class TestBasicScrollDetection:

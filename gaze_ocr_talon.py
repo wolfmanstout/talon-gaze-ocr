@@ -18,14 +18,12 @@ from talon.types import rect
 
 from .scroll_detection import (
     BoundingBox,
-    ScrollResult,
+    DetectedScroll,
     detect_scroll,
 )
 from .scroll_probe_cache import (
-    CachedViewportReuseDecision,
-    ScrollProbeCacheEntry,
-    can_reuse_cached_viewport,
-    update_ratio_stability,
+    AppScrollCache,
+    ProbeSkipDecision,
 )
 from .timestamped_captures import TextRange, TimestampedText
 
@@ -441,19 +439,15 @@ def has_light_background(screenshot) -> bool:
 
 
 @dataclass
-class ScrollPhaseResult:
-    """Result from a single scroll phase (probe or completion)."""
+class ScrollResult:
+    """Result from a single executed scroll step."""
 
-    detection: ScrollResult | None
-    before_screenshot: Any
-    after_screenshot: Any
-    before_array: np.ndarray
-    after_array: np.ndarray
-    cursor_pos: tuple[float, float]
+    detection: DetectedScroll | None
+    before_frame: "ScreenshotFrame"
+    after_frame: "ScreenshotFrame"
+    cursor_screen: tuple[float, float]
     existing_viewport: BoundingBox | None = None
     scroll_direction: str = "down"
-    offset_x: int = 0
-    offset_y: int = 0
 
     @property
     def succeeded(self) -> bool:
@@ -471,16 +465,6 @@ class ScrollPhaseResult:
             raise ValueError("Cannot get viewport from failed detection")
         return self.detection.viewport
 
-    def get_viewport_screen_coords(self) -> BoundingBox:
-        """Get viewport in screen coordinates (adjusts for cropped screenshots)."""
-        vp = self.get_viewport()
-        return BoundingBox(
-            x=vp.x + self.offset_x,
-            y=vp.y + self.offset_y,
-            width=vp.width,
-            height=vp.height,
-        )
-
     def save_screenshots(self) -> None:
         """Save before/after screenshots and metadata if logging is enabled."""
         logging_dir = settings.get("user.ocr_logging_dir")
@@ -495,7 +479,10 @@ class ScrollPhaseResult:
                 "status": "failure",
                 "timestamp": timestamp,
                 "scroll_direction": self.scroll_direction,
-                "cursor_position": {"x": self.cursor_pos[0], "y": self.cursor_pos[1]},
+                "cursor_position": {
+                    "x": self.cursor_screen[0],
+                    "y": self.cursor_screen[1],
+                },
             }
         else:
             bbox = self.detection.after_bbox
@@ -513,7 +500,10 @@ class ScrollPhaseResult:
                 "timestamp": timestamp,
                 "scroll_direction": self.scroll_direction,
                 "scroll_distance_px": self.detection.scroll_distance,
-                "cursor_position": {"x": self.cursor_pos[0], "y": self.cursor_pos[1]},
+                "cursor_position": {
+                    "x": self.cursor_screen[0],
+                    "y": self.cursor_screen[1],
+                },
                 "after_bbox": {
                     "x": bbox.x,
                     "y": bbox.y,
@@ -541,8 +531,8 @@ class ScrollPhaseResult:
         json_path = os.path.join(logging_dir, f"{file_prefix}.json")
 
         for screenshot, path in [
-            (self.before_screenshot, before_path),
-            (self.after_screenshot, after_path),
+            (self.before_frame.screenshot, before_path),
+            (self.after_frame.screenshot, after_path),
         ]:
             if hasattr(screenshot, "save"):
                 screenshot.save(path)
@@ -554,17 +544,25 @@ class ScrollPhaseResult:
 
 
 @dataclass
-class CaptureContext:
-    """Context for screenshot capture, tracking coordinate offsets."""
+class ScreenshotFrame:
+    """Context for screenshot capture and conversions between local and screen space."""
 
     screenshot: Any  # Talon screenshot
     array: np.ndarray
-    offset_x: int  # Screen X offset (window.rect.x or 0)
-    offset_y: int  # Screen Y offset (window.rect.y or 0)
+    origin_x: int  # Screen X origin of the capture rect
+    origin_y: int  # Screen Y origin of the capture rect
     window: ui.Window | None
 
+    def screen_to_local_point(self, point: tuple[float, float]) -> tuple[float, float]:
+        """Convert a screen-space point into this capture's local coordinates."""
+        return (point[0] - self.origin_x, point[1] - self.origin_y)
 
-def _capture_screenshot(window: ui.Window | None) -> CaptureContext:
+    def local_to_screen_bbox(self, bbox: BoundingBox) -> BoundingBox:
+        """Convert a local bounding box into screen coordinates."""
+        return bbox.translated(self.origin_x, self.origin_y)
+
+
+def _capture_screenshot(window: ui.Window | None) -> ScreenshotFrame:
     """Capture screenshot, optionally cropped to window."""
     capture_rect = window.rect if window else screen.main().rect
 
@@ -574,44 +572,46 @@ def _capture_screenshot(window: ui.Window | None) -> CaptureContext:
     finally:
         ctrl.cursor_visible(True)
 
-    return CaptureContext(
+    return ScreenshotFrame(
         screenshot=screenshot,
         array=np.array(screenshot),
-        offset_x=int(capture_rect.x),
-        offset_y=int(capture_rect.y),
+        origin_x=int(capture_rect.x),
+        origin_y=int(capture_rect.y),
         window=window,
     )
 
 
+def _get_window_app_name(window: ui.Window | None) -> str | None:
+    """Return window.app.name if available."""
+    if window is None:
+        return None
+    try:
+        return window.app.name
+    except Exception:
+        return None
+
+
 def perform_scroll_and_detect(
-    before_screenshot,
-    before_array: np.ndarray,
+    before_frame: ScreenshotFrame,
     scroll_amount: float,
-    cursor_pos: tuple[float, float],
+    cursor_screen: tuple[float, float],
     phase_name: str = "",
     existing_viewport: BoundingBox | None = None,
     scroll_direction: str = "down",
-    window: ui.Window | None = None,
-    offset_x: int = 0,
-    offset_y: int = 0,
-) -> ScrollPhaseResult:
+) -> ScrollResult:
     """Perform a scroll, capture the result, and run scroll detection.
 
     Args:
-        before_screenshot: Talon screen capture from before the scroll
-        before_array: Numpy array of the before image
+        before_frame: Captured frame from before the scroll
         scroll_amount: Wheel units to scroll (positive value, direction handled separately)
-        cursor_pos: (x, y) cursor position (in image coordinates)
-        phase_name: Label for logging (e.g., "probe", "completion")
+        cursor_screen: (x, y) cursor position in screen coordinates
+        phase_name: Label for logging (e.g., "probe", "calibrated")
         existing_viewport: Optional viewport from previous detection
-            (for second scroll, skips viewport detection/refinement)
+            (for calibrated scroll after a real probe, skips viewport detection/refinement)
         scroll_direction: "down" (content moves up) or "up" (content moves down)
-        window: Optional window to crop screenshot to
-        offset_x: Screen X offset for cropped screenshots
-        offset_y: Screen Y offset for cropped screenshots
 
     Returns:
-        ScrollPhaseResult with detection results and screenshots
+        ScrollResult with detection results and screenshots
     """
     # Scroll direction: positive = down (content moves up), negative = up (content moves down)
     actual_scroll = scroll_amount if scroll_direction == "down" else -scroll_amount
@@ -621,29 +621,27 @@ def perform_scroll_and_detect(
     wait_ms: int = settings.get("user.ocr_scroll_wait_ms")
     actions.sleep(f"{wait_ms}ms")
 
-    # Capture after screenshot (cropped to window if provided)
-    after_ctx = _capture_screenshot(window)
-    after_screenshot = after_ctx.screenshot
-    after_array = after_ctx.array
+    after_frame = _capture_screenshot(before_frame.window)
+    cursor_local = before_frame.screen_to_local_point(cursor_screen)
 
     detection = detect_scroll(
-        before_array, after_array, cursor_pos, existing_viewport, scroll_direction
+        before_frame.array,
+        after_frame.array,
+        cursor_local,
+        existing_viewport,
+        scroll_direction,
     )
 
     if phase_name and not detection:
         logging.info(f"Scroll {phase_name}: detection failed")
 
-    return ScrollPhaseResult(
+    return ScrollResult(
         detection=detection,
-        before_screenshot=before_screenshot,
-        after_screenshot=after_screenshot,
-        before_array=before_array,
-        after_array=after_array,
-        cursor_pos=cursor_pos,
+        before_frame=before_frame,
+        after_frame=after_frame,
+        cursor_screen=cursor_screen,
         existing_viewport=existing_viewport,
         scroll_direction=scroll_direction,
-        offset_x=offset_x,
-        offset_y=offset_y,
     )
 
 
@@ -709,7 +707,7 @@ debug_canvas = None
 scroll_indicator_canvas = None
 ambiguous_matches: Optional[Sequence[gaze_ocr.CursorLocation]] = None
 disambiguation_generator = None
-scroll_probe_cache_by_app: dict[str, ScrollProbeCacheEntry] = {}
+app_scroll_cache = AppScrollCache()
 
 
 def _clamp_rect_to_screen(r: rect.Rect) -> rect.Rect:
@@ -759,19 +757,20 @@ def _get_window_under_cursor() -> tuple[ui.Window | None, tuple[float, float]]:
         return None, cursor_pos
 
 
-def _get_scroll_cache_key(window: ui.Window | None) -> str | None:
-    """Get cache key for scroll probe caching from window app name."""
-    if window is None:
-        return None
-    try:
-        app_name = window.app.name
-    except Exception:
-        return None
-    if not app_name:
-        return None
-    if app_name == "Notification Center":
-        return None
-    return str(app_name)
+def _log_scroll_cache_decision(
+    debug_mode: bool,
+    cache_key: str | None,
+    cursor_screen: tuple[float, float],
+    cache_decision: ProbeSkipDecision,
+) -> None:
+    """Log cache hit/miss information when scroll debug mode is enabled."""
+    if not debug_mode or not cache_decision.cache_debug_reason:
+        return
+    cache_status = "hit" if cache_decision.use_cached_probe else "miss"
+    logging.info(
+        f"Scroll cache {cache_status}: {cache_decision.cache_debug_reason}"
+        f" (app={cache_key or 'none'}, cursor=({cursor_screen[0]:.1f}, {cursor_screen[1]:.1f}))"
+    )
 
 
 def reset_state():
@@ -1403,190 +1402,124 @@ class GazeOcrActions:
         reset_state()
 
         window, cursor_screen = _get_window_under_cursor()
-        before_ctx = _capture_screenshot(window)
-        cursor_pos = (
-            cursor_screen[0] - before_ctx.offset_x,
-            cursor_screen[1] - before_ctx.offset_y,
-        )
-        window_app_name: str | None = None
-        if window is not None:
-            try:
-                window_app_name = window.app.name
-            except Exception:
-                window_app_name = None
-        app_cache_key = _get_scroll_cache_key(window)
-        cache_entry = (
-            scroll_probe_cache_by_app.get(app_cache_key) if app_cache_key else None
-        )
+        before_frame = _capture_screenshot(window)
+        window_app_name = _get_window_app_name(window)
         probe_skip_enabled: bool = settings.get("user.ocr_scroll_probe_skip_enabled")
         debug_mode: bool = settings.get("user.ocr_scroll_debug_mode")
 
-        probe: ScrollPhaseResult | None = None
-        vp_img: BoundingBox
-        scroll_ratio: float
-        probe_distance: int
-        phase2_before_screenshot = before_ctx.screenshot
-        phase2_before_array = before_ctx.array
-        cache_debug_reason: str | None = None
-        cached_viewport_overlay: BoundingBox | None = None
-
-        can_attempt_skip = (
-            probe_skip_enabled
-            and cache_entry is not None
-            and cache_entry.stable_scroll_ratio is not None
+        cache_decision = app_scroll_cache.evaluate_reuse(
+            probe_skip_enabled,
+            window_app_name,
+            before_frame.array,
+            before_frame.screen_to_local_point(cursor_screen),
         )
-        use_cached_probe = False
-        if can_attempt_skip:
-            assert cache_entry is not None
-            reuse_decision: CachedViewportReuseDecision = can_reuse_cached_viewport(
-                cache_entry,
-                before_ctx.array,
-                cursor_pos,
-            )
-            use_cached_probe = reuse_decision.can_reuse
-            cache_debug_reason = reuse_decision.reason
-            if not use_cached_probe and reuse_decision.reason.startswith(
-                "outside match "
-            ):
-                cached_viewport_overlay = BoundingBox(
-                    x=cache_entry.viewport_refined_img.x + before_ctx.offset_x,
-                    y=cache_entry.viewport_refined_img.y + before_ctx.offset_y,
-                    width=cache_entry.viewport_refined_img.width,
-                    height=cache_entry.viewport_refined_img.height,
-                )
-        elif not probe_skip_enabled:
-            cache_debug_reason = "probe skip disabled"
-        elif window_app_name == "Notification Center":
-            cache_debug_reason = "cache bypassed for Notification Center"
-        elif cache_entry is None:
-            cache_debug_reason = "no cached viewport"
-        else:
-            cache_debug_reason = "scroll ratio not stable yet"
+        _log_scroll_cache_decision(
+            debug_mode,
+            cache_decision.cache_key,
+            cursor_screen,
+            cache_decision,
+        )
 
-        if debug_mode and cache_debug_reason:
-            cache_status = "hit" if use_cached_probe else "miss"
-            logging.info(
-                f"Scroll cache {cache_status}: {cache_debug_reason}"
-                f" (app={app_cache_key or 'none'}, cursor=({cursor_pos[0]:.1f}, {cursor_pos[1]:.1f}))"
-            )
-
-        if use_cached_probe:
-            assert cache_entry is not None
-            vp_img = cache_entry.viewport_refined_img
-            scroll_ratio = cache_entry.stable_scroll_ratio or 0.0
+        probe_result = None
+        if cache_decision.use_cached_probe:
+            assert cache_decision.cache_entry is not None
+            current_viewport = cache_decision.cache_entry.viewport_refined_img
+            current_frame = before_frame
+            scroll_ratio = cache_decision.cache_entry.stable_scroll_ratio or 0.0
             probe_distance = 0
-            viewport = BoundingBox(
-                x=vp_img.x + before_ctx.offset_x,
-                y=vp_img.y + before_ctx.offset_y,
-                width=vp_img.width,
-                height=vp_img.height,
-            )
         else:
-            # Phase 1: Probe scroll to detect viewport and calibrate
             probe_scroll_amount: int = settings.get("user.ocr_scroll_probe_amount")
-            probe = perform_scroll_and_detect(
-                before_ctx.screenshot,
-                before_ctx.array,
+            probe_result = perform_scroll_and_detect(
+                before_frame,
                 probe_scroll_amount,
-                cursor_pos,
+                cursor_screen,
                 phase_name="probe",
                 scroll_direction=direction,
-                window=window,
-                offset_x=before_ctx.offset_x,
-                offset_y=before_ctx.offset_y,
             )
-
-            if not probe.succeeded:
-                probe.save_screenshots()
-                if app_cache_key:
-                    scroll_probe_cache_by_app.pop(app_cache_key, None)
+            if not probe_result.succeeded:
+                app_scroll_cache.invalidate(cache_decision.cache_key)
+                probe_result.save_screenshots()
                 fallback_scroll()
                 return
 
-            probe_distance = probe.get_scroll_distance()
+            probe_distance = probe_result.get_scroll_distance()
             scroll_ratio = probe_distance / probe_scroll_amount
-            vp_img = probe.get_viewport()
-            viewport = probe.get_viewport_screen_coords()
-            phase2_before_screenshot = probe.after_screenshot
-            phase2_before_array = probe.after_array
+            current_viewport = probe_result.get_viewport()
+            current_frame = probe_result.after_frame
+            app_scroll_cache.record_probe(
+                cache_decision.cache_key,
+                current_viewport,
+                before_frame.array,
+                scroll_ratio,
+            )
 
-            # Update app-scoped probe cache after successful probe detection.
-            if app_cache_key and probe.detection:
-                if cache_entry is None:
-                    cache_entry = ScrollProbeCacheEntry(
-                        viewport_refined_img=vp_img,
-                        reference_before_full=before_ctx.array.copy(),
-                    )
-                    scroll_probe_cache_by_app[app_cache_key] = cache_entry
-                else:
-                    cache_entry.viewport_refined_img = vp_img
-                    cache_entry.reference_before_full = before_ctx.array.copy()
-                update_ratio_stability(cache_entry, scroll_ratio, probe_scroll_amount)
-
-        # Phase 2: Calculate and execute remaining scroll
         viewport_fraction: float = settings.get("user.ocr_scroll_viewport_fraction")
-        total_desired_pixels = vp_img.height * viewport_fraction * amount
+        total_desired_pixels = current_viewport.height * viewport_fraction * amount
         remaining_pixels = max(0, total_desired_pixels - probe_distance)
-        completion = None
+        calibrated_result = None
 
         if remaining_pixels > 0 and scroll_ratio > 0:
             remaining_wheel_units = remaining_pixels / scroll_ratio
-
-            completion_existing_viewport = None if use_cached_probe else vp_img
+            calibrated_existing_viewport = (
+                None if cache_decision.use_cached_probe else current_viewport
+            )
 
             # On a cache hit, rerun the full detection pipeline so the viewport
             # can be corrected for future scrolls if it has drifted.
-            completion = perform_scroll_and_detect(
-                phase2_before_screenshot,
-                phase2_before_array,
+            calibrated_result = perform_scroll_and_detect(
+                current_frame,
                 remaining_wheel_units,
-                cursor_pos,
-                phase_name="completion",
-                existing_viewport=completion_existing_viewport,
+                cursor_screen,
+                phase_name="calibrated",
+                existing_viewport=calibrated_existing_viewport,
                 scroll_direction=direction,
-                window=window,
-                offset_x=before_ctx.offset_x,
-                offset_y=before_ctx.offset_y,
             )
-
-            if completion.succeeded:
-                total_scroll = probe_distance + completion.get_scroll_distance()
-                vp_img = completion.get_viewport()
-                viewport = completion.get_viewport_screen_coords()
-                if app_cache_key:
-                    entry = scroll_probe_cache_by_app.get(app_cache_key)
-                    if entry is not None:
-                        entry.viewport_refined_img = vp_img
-                        entry.reference_before_full = completion.after_array.copy()
-            else:
-                if app_cache_key:
-                    scroll_probe_cache_by_app.pop(app_cache_key, None)
+            if not calibrated_result.succeeded:
+                app_scroll_cache.invalidate(cache_decision.cache_key)
                 total_scroll = probe_distance + int(remaining_pixels)
+            else:
+                total_scroll = probe_distance + calibrated_result.get_scroll_distance()
+                current_viewport = calibrated_result.get_viewport()
+                current_frame = calibrated_result.after_frame
+                app_scroll_cache.record_calibrated(
+                    cache_decision.cache_key,
+                    current_viewport,
+                    calibrated_result.after_frame.array,
+                )
         else:
             total_scroll = probe_distance
 
-        # Calculate line_y in screen coordinates
-        # Line shows where content from before the scroll ends (the "seam")
+        viewport_screen = current_frame.local_to_screen_bbox(current_viewport)
         if direction == "down":
-            line_y = viewport.y + viewport.height - total_scroll
+            line_y = viewport_screen.y + viewport_screen.height - total_scroll
         else:
-            line_y = viewport.y + total_scroll
+            line_y = viewport_screen.y + total_scroll
+
+        if (
+            cache_decision.outside_viewport_changed
+            and cache_decision.cache_entry is not None
+        ):
+            cached_viewport = before_frame.local_to_screen_bbox(
+                cache_decision.cache_entry.viewport_refined_img
+            )
+        else:
+            cached_viewport = None
 
         # Show visualization using probe's viewport
         actions.user.show_scroll_indicator(
             line_y,
-            viewport,
+            viewport_screen,
             total_scroll,
-            probe_skipped=use_cached_probe,
-            cache_debug_reason=cache_debug_reason,
-            cached_viewport=cached_viewport_overlay,
+            probe_skipped=cache_decision.use_cached_probe,
+            cache_debug_reason=cache_decision.cache_debug_reason,
+            cached_viewport=cached_viewport,
         )
 
         # Save screenshots after visualization is shown
-        if probe is not None:
-            probe.save_screenshots()
-        if completion is not None:
-            completion.save_screenshots()
+        if probe_result is not None:
+            probe_result.save_screenshots()
+        if calibrated_result is not None:
+            calibrated_result.save_screenshots()
 
     def enhanced_scroll_down(amount: float = 1.0):
         """Scroll down with dynamic calibration and visual indicator.
