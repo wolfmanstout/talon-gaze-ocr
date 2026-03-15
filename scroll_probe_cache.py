@@ -22,8 +22,8 @@ NOTIFICATION_CENTER_APP_NAME = "Notification Center"
 class ScrollCacheEntry:
     """Cache entry keyed by app name for enhanced scrolling."""
 
-    viewport_refined_img: BoundingBox
-    reference_before_full: np.ndarray
+    viewport: BoundingBox
+    reference_before_array: np.ndarray
     stable_scroll_ratio: float | None = None
     pending_probe_ratio: float | None = None
 
@@ -43,6 +43,7 @@ def outside_viewport_match_ratio(
     current: np.ndarray, cached: np.ndarray, viewport: BoundingBox
 ) -> float:
     """Return exact per-pixel match ratio outside the viewport rectangle."""
+    # Reuse only applies when both captured arrays have identical dimensions.
     if current.shape != cached.shape:
         return 0.0
     if current.size == 0:
@@ -66,36 +67,12 @@ def outside_viewport_match_ratio(
     return float(np.mean(same[mask]))
 
 
-def is_outside_viewport_mostly_unchanged(
-    current: np.ndarray,
-    cached: np.ndarray,
-    viewport: BoundingBox,
-    threshold: float = DEFAULT_OUTSIDE_MATCH_THRESHOLD,
-) -> bool:
-    """True when most pixels outside viewport are unchanged."""
-    return outside_viewport_match_ratio(current, cached, viewport) >= threshold
-
-
-def viewport_contains_point(viewport: BoundingBox, point: tuple[float, float]) -> bool:
-    """True when the point lies inside the viewport rectangle."""
-    px, py = point
-    return (
-        viewport.x <= px < viewport.x + viewport.width
-        and viewport.y <= py < viewport.y + viewport.height
-    )
-
-
-def ratios_match(a: float, b: float) -> bool:
-    """Float-tolerant ratio equality check."""
-    return math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-9)
-
-
 def update_ratio_stability(entry: ScrollCacheEntry, current_ratio: float) -> None:
     """Promote ratio to stable after two consecutive matching probe readings."""
     if entry.stable_scroll_ratio is not None:
         return
 
-    if entry.pending_probe_ratio is not None and ratios_match(
+    if entry.pending_probe_ratio is not None and math.isclose(
         entry.pending_probe_ratio, current_ratio
     ):
         entry.stable_scroll_ratio = current_ratio
@@ -143,7 +120,7 @@ class AppScrollCache:
             return ProbeSkipDecision(
                 use_cached_probe=False,
                 cache_key=None,
-                cache_debug_reason="no cached viewport",
+                cache_debug_reason="app unavailable for cache",
             )
 
         cache_entry = self.entries.get(cache_key)
@@ -160,7 +137,7 @@ class AppScrollCache:
                 cache_entry=cache_entry,
                 cache_debug_reason="scroll ratio not stable yet",
             )
-        if not viewport_contains_point(cache_entry.viewport_refined_img, cursor_local):
+        if not cache_entry.viewport.contains_point(cursor_local):
             return ProbeSkipDecision(
                 use_cached_probe=False,
                 cache_key=cache_key,
@@ -170,8 +147,8 @@ class AppScrollCache:
 
         match_ratio = outside_viewport_match_ratio(
             current,
-            cache_entry.reference_before_full,
-            cache_entry.viewport_refined_img,
+            cache_entry.reference_before_array,
+            cache_entry.viewport,
         )
         if match_ratio < threshold:
             return ProbeSkipDecision(
@@ -192,8 +169,8 @@ class AppScrollCache:
     def record_probe(
         self,
         cache_key: str | None,
-        viewport_refined_img: BoundingBox,
-        reference_before_full: np.ndarray,
+        viewport: BoundingBox,
+        reference_before_array: np.ndarray,
         scroll_ratio: float,
     ) -> None:
         """Store probe results for a cache key, creating the entry if needed."""
@@ -203,20 +180,20 @@ class AppScrollCache:
         entry = self.entries.get(cache_key)
         if entry is None:
             entry = ScrollCacheEntry(
-                viewport_refined_img=viewport_refined_img,
-                reference_before_full=reference_before_full.copy(),
+                viewport=viewport,
+                reference_before_array=reference_before_array.copy(),
             )
             self.entries[cache_key] = entry
         else:
-            entry.viewport_refined_img = viewport_refined_img
-            entry.reference_before_full = reference_before_full.copy()
+            entry.viewport = viewport
+            entry.reference_before_array = reference_before_array.copy()
         update_ratio_stability(entry, scroll_ratio)
 
     def record_calibrated(
         self,
         cache_key: str | None,
-        viewport_refined_img: BoundingBox,
-        reference_before_full: np.ndarray,
+        viewport: BoundingBox,
+        reference_before_array: np.ndarray,
     ) -> None:
         """Refresh an existing cache entry after successful calibrated detection."""
         if not cache_key:
@@ -225,8 +202,8 @@ class AppScrollCache:
         entry = self.entries.get(cache_key)
         if entry is None:
             return
-        entry.viewport_refined_img = viewport_refined_img
-        entry.reference_before_full = reference_before_full.copy()
+        entry.viewport = viewport
+        entry.reference_before_array = reference_before_array.copy()
 
     def invalidate(self, cache_key: str | None) -> None:
         """Remove a cache entry if it exists."""

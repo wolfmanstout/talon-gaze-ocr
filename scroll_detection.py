@@ -43,6 +43,13 @@ class BoundingBox:
             height=self.height,
         )
 
+    def contains_point(self, point: tuple[float, float]) -> bool:
+        """Return True when the point lies inside this rectangle."""
+        px, py = point
+        return (
+            self.x <= px < self.x + self.width and self.y <= py < self.y + self.height
+        )
+
     @classmethod
     def from_tuple(cls, t: tuple[int, int, int, int]) -> "BoundingBox":
         """Create from (x, y, width, height) tuple."""
