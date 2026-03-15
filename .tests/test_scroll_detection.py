@@ -22,6 +22,14 @@ def test_bounding_box_translated():
     assert viewport.translated(10, 20) == BoundingBox(110, 170, 800, 600)
 
 
+def test_bounding_box_contains_point():
+    viewport = BoundingBox(100, 150, 800, 600)
+    assert viewport.contains_point((100, 150))
+    assert viewport.contains_point((899, 749))
+    assert not viewport.contains_point((99, 150))
+    assert not viewport.contains_point((900, 750))
+
+
 class TestBasicScrollDetection:
     """Tests for basic scroll detection functionality."""
 
