@@ -30,6 +30,28 @@ def test_bounding_box_contains_point():
     assert not viewport.contains_point((900, 750))
 
 
+def test_detect_scroll_marks_no_change_for_identical_images(sample_text_image):
+    result = detect_scroll(
+        sample_text_image,
+        sample_text_image.copy(),
+        (640, 360),
+    )
+    assert result is not None
+    assert result.no_change
+
+
+def test_detect_scroll_marks_change_for_scrolled_images(sample_text_image):
+    img_after = create_scrolled_image(sample_text_image, 120)
+    result = detect_scroll(sample_text_image, img_after, (640, 360))
+    assert result is not None
+    assert not result.no_change
+
+
+def _assert_detected(result):
+    assert result is not None and not result.no_change
+    return result
+
+
 class TestBasicScrollDetection:
     """Tests for basic scroll detection functionality."""
 
@@ -39,9 +61,10 @@ class TestBasicScrollDetection:
         img_after = create_scrolled_image(sample_text_image, scroll_dist)
         cursor_pos = (640, 500)
 
-        result = detect_scroll(sample_text_image, img_after, cursor_pos)
+        result = _assert_detected(
+            detect_scroll(sample_text_image, img_after, cursor_pos)
+        )
 
-        assert result is not None, "No scroll detected"
         assert abs(result.scroll_distance - scroll_dist) <= 5, (
             f"Expected {scroll_dist}, got {result.scroll_distance}"
         )
@@ -53,7 +76,24 @@ class TestBasicScrollDetection:
 
         result = detect_scroll(sample_text_image, img_after, cursor_pos)
 
-        assert result is None, "Should return None for identical images"
+        assert result is not None, "Should mark identical images as no_change"
+        assert result.no_change
+
+    def test_no_scroll_identical_images_with_existing_viewport(self, sample_text_image):
+        """Test that identical images still return None when given a cached viewport."""
+        img_after = sample_text_image.copy()
+        cursor_pos = (640, 360)
+        existing_viewport = BoundingBox(100, 100, 1000, 500)
+
+        result = detect_scroll(
+            sample_text_image,
+            img_after,
+            cursor_pos,
+            existing_viewport=existing_viewport,
+        )
+
+        assert result is not None, "Should mark identical images as no_change"
+        assert result.no_change
 
     def test_different_images_low_match(self):
         """Test that completely different images have low match percentage if detected."""
@@ -67,7 +107,7 @@ class TestBasicScrollDetection:
         # With very different images, the algorithm might still find some correlation
         # at certain offsets. The test verifies it doesn't produce obviously wrong results.
         # A None result is acceptable, as is a result with low confidence.
-        if result is not None:
+        if result is not None and not result.no_change:
             # If a result is returned, verify the viewport is reasonable
             assert result.viewport.width > 0 and result.viewport.height > 0, (
                 "Viewport dimensions should be positive"
@@ -85,9 +125,7 @@ class TestScrollDistances:
         img_after = create_scrolled_image(img_before, scroll_dist)
         cursor_pos = (640, 360)
 
-        result = detect_scroll(img_before, img_after, cursor_pos)
-
-        assert result is not None, f"Should detect scroll of {scroll_dist}px"
+        result = _assert_detected(detect_scroll(img_before, img_after, cursor_pos))
         error = abs(result.scroll_distance - scroll_dist)
         assert error <= 30, f"Error too large: {error}px"
 
@@ -99,9 +137,7 @@ class TestScrollDistances:
         img_after = create_scrolled_image(img_before, scroll_dist)
         cursor_pos = (640, 600)
 
-        result = detect_scroll(img_before, img_after, cursor_pos)
-
-        assert result is not None, "Should detect scroll with 50% overlap"
+        result = _assert_detected(detect_scroll(img_before, img_after, cursor_pos))
         error = abs(result.scroll_distance - scroll_dist)
         assert error <= 10, f"Expected {scroll_dist}, got {result.scroll_distance}"
 
@@ -113,9 +149,7 @@ class TestScrollDistances:
         img_after = create_scrolled_image(img_before, scroll_dist)
         cursor_pos = (640, 700)
 
-        result = detect_scroll(img_before, img_after, cursor_pos)
-
-        assert result is not None, "Should detect large scroll"
+        result = _assert_detected(detect_scroll(img_before, img_after, cursor_pos))
         error = abs(result.scroll_distance - scroll_dist)
         assert error <= 10, f"Expected {scroll_dist}, got {result.scroll_distance}"
 
@@ -144,9 +178,7 @@ class TestCursorPositions:
         # Place cursor in left margin (empty area)
         cursor_pos = (50, 500)
 
-        result = detect_scroll(img_before, img_after, cursor_pos)
-
-        assert result is not None, "Should detect scroll even with cursor in margin"
+        result = _assert_detected(detect_scroll(img_before, img_after, cursor_pos))
 
         # Verify content area is included in detected bbox
         bbox = result.after_bbox
@@ -157,6 +189,37 @@ class TestCursorPositions:
             f"Bbox should include content area [{content_start}, {content_end}], "
             f"got [{bbox.x}, {bbox_x_end}]"
         )
+
+    def test_existing_viewport_is_used_without_refinement(self):
+        """Test that an existing viewport is reused as-is when provided."""
+        height, width = 1000, 1280
+        img_before = create_text_pattern_image(height, width, "text")
+        scroll_dist = 220
+        img_after = create_scrolled_image(img_before, scroll_dist)
+        cursor_pos = (640, 500)
+
+        baseline_result = _assert_detected(
+            detect_scroll(img_before, img_after, cursor_pos)
+        )
+
+        perturbed_viewport = BoundingBox(
+            baseline_result.viewport.x + 20,
+            baseline_result.viewport.y + 15,
+            baseline_result.viewport.width - 30,
+            baseline_result.viewport.height + 10,
+        )
+
+        refined_result = _assert_detected(
+            detect_scroll(
+                img_before,
+                img_after,
+                cursor_pos,
+                existing_viewport=perturbed_viewport,
+            )
+        )
+
+        assert abs(refined_result.scroll_distance - scroll_dist) <= 10
+        assert refined_result.viewport == perturbed_viewport
 
 
 class TestArrayShapeSafety:
@@ -182,11 +245,11 @@ class TestArrayShapeSafety:
         result = detect_scroll(img_before, img_after, cursor_pos)
 
         if expected_distance is None:
-            assert result is None, (
+            assert result is None or result.no_change, (
                 f"Expected None for {scroll_dist}px scroll on {height}px image"
             )
         else:
-            assert result is not None, f"Should detect {scroll_dist}px scroll"
+            result = _assert_detected(result)
             assert result.scroll_distance == expected_distance, (
                 f"Expected {expected_distance}px, got {result.scroll_distance}px"
             )
@@ -203,11 +266,12 @@ class TestScrollUpDirection:
         )
         cursor_pos = (640, 500)
 
-        result = detect_scroll(
-            sample_text_image, img_after, cursor_pos, scroll_direction="up"
+        result = _assert_detected(
+            detect_scroll(
+                sample_text_image, img_after, cursor_pos, scroll_direction="up"
+            )
         )
 
-        assert result is not None, "No scroll detected for scroll-up"
         assert abs(result.scroll_distance - scroll_dist) <= 5, (
             f"Expected {scroll_dist}, got {result.scroll_distance}"
         )
@@ -220,9 +284,9 @@ class TestScrollUpDirection:
         img_after = create_scrolled_image(img_before, scroll_dist, direction="up")
         cursor_pos = (640, 360)
 
-        result = detect_scroll(img_before, img_after, cursor_pos, scroll_direction="up")
-
-        assert result is not None, f"Should detect scroll-up of {scroll_dist}px"
+        result = _assert_detected(
+            detect_scroll(img_before, img_after, cursor_pos, scroll_direction="up")
+        )
         error = abs(result.scroll_distance - scroll_dist)
         assert error <= 30, f"Error too large: {error}px"
 
@@ -234,9 +298,9 @@ class TestScrollUpDirection:
         img_after = create_scrolled_image(img_before, scroll_dist, direction="up")
         cursor_pos = (640, 600)
 
-        result = detect_scroll(img_before, img_after, cursor_pos, scroll_direction="up")
-
-        assert result is not None, "Should detect scroll-up with 50% overlap"
+        result = _assert_detected(
+            detect_scroll(img_before, img_after, cursor_pos, scroll_direction="up")
+        )
         error = abs(result.scroll_distance - scroll_dist)
         assert error <= 10, f"Expected {scroll_dist}, got {result.scroll_distance}"
 
@@ -251,18 +315,19 @@ class TestScrollUpDirection:
         img_scroll_down = create_scrolled_image(
             img_original, scroll_dist, direction="down"
         )
-        result_down = detect_scroll(
-            img_original, img_scroll_down, cursor_pos, scroll_direction="down"
+        result_down = _assert_detected(
+            detect_scroll(
+                img_original, img_scroll_down, cursor_pos, scroll_direction="down"
+            )
         )
 
         # Create scroll-up image (content moves down)
         img_scroll_up = create_scrolled_image(img_original, scroll_dist, direction="up")
-        result_up = detect_scroll(
-            img_original, img_scroll_up, cursor_pos, scroll_direction="up"
+        result_up = _assert_detected(
+            detect_scroll(
+                img_original, img_scroll_up, cursor_pos, scroll_direction="up"
+            )
         )
-
-        assert result_down is not None, "Scroll-down detection failed"
-        assert result_up is not None, "Scroll-up detection failed"
 
         # Both should detect the same scroll distance
         assert abs(result_down.scroll_distance - scroll_dist) <= 5, (

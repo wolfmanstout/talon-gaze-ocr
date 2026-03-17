@@ -58,11 +58,12 @@ class BoundingBox:
 
 @dataclass(frozen=True)
 class DetectedScroll:
-    """Result from successful scroll detection."""
+    """Result from a scroll detection attempt."""
 
     scroll_distance: int
     after_bbox: BoundingBox
     viewport: BoundingBox
+    no_change: bool = False
 
 
 # --- Kadane's Algorithm Variants (O(N) 1D Solvers) ---
@@ -187,10 +188,6 @@ def estimate_initial_viewport(
     # Step 3-4: Sum changed pixels per row and normalize
     row_sums = np.sum(changed, axis=1).astype(float)
     active_rows = row_sums > 0
-
-    if not np.any(active_rows):
-        logging.debug("Initial viewport: no changed pixels detected")
-        return None
 
     mean_row_activity = np.mean(row_sums[active_rows])
     row_weights = row_sums - (CHANGE_THRESHOLD_RATIO * mean_row_activity)
@@ -550,7 +547,7 @@ def detect_scroll(
     2. Scroll distance calculation (cross-correlation)
     3. Viewport refinement (find matching pixels)
 
-    When existing_viewport is provided, skips Phase 1 and 3 (for second scroll detection).
+    When existing_viewport is provided, skips Phase 1 and 3.
 
     Args:
         img_before: Numpy array (H, W, 3) or (H, W) - image before scroll
@@ -560,8 +557,9 @@ def detect_scroll(
         scroll_direction: "down" (content moves up) or "up" (content moves down)
 
     Returns:
-        DetectedScroll with scroll_distance, after_bbox, and viewport.
-        Returns None if no valid scroll is found.
+        DetectedScroll describing the detected scroll. Returns None for ordinary
+        detection failures. When the images are unchanged, returns a DetectedScroll
+        with no_change=True.
     """
     # Convert cursor position to integers for array indexing
     cx, cy = int(cursor_pos[0]), int(cursor_pos[1])
@@ -571,11 +569,21 @@ def detect_scroll(
     ga = _to_grayscale(img_after)
     H, _ = gb.shape
 
-    # Precompute same-position diff once for reuse in Phase 1 and Phase 3
-    # This avoids redundant computation of |after - before| in multiple places
-    same_pos_diff: NDArray[np.floating[Any]] | None = None
-    if existing_viewport is None:
-        same_pos_diff = np.abs(ga - gb)
+    # Precompute same-position diff once for reuse in Phase 1 and Phase 3.
+    # This avoids redundant computation of |after - before| in multiple places.
+    same_pos_diff = np.abs(ga - gb)
+    if not np.any(same_pos_diff > PIXEL_TOLERANCE):
+        unchanged_viewport = (
+            existing_viewport
+            if existing_viewport is not None
+            else BoundingBox(0, 0, 0, 0)
+        )
+        return DetectedScroll(
+            scroll_distance=0,
+            after_bbox=BoundingBox(0, 0, 0, 0),
+            viewport=unchanged_viewport,
+            no_change=True,
+        )
 
     # --- Phase 1: Initial Viewport Estimation ---
     # Internal functions use tuples; convert at API boundary
@@ -584,7 +592,6 @@ def detect_scroll(
         viewport = existing_viewport.as_tuple()
     else:
         # Estimate initial viewport by finding changed pixels
-        assert same_pos_diff is not None
         viewport = estimate_initial_viewport((cx, cy), same_pos_diff)
         if viewport is None:
             logging.info("Scroll detection failed: Could not estimate initial viewport")
@@ -610,10 +617,10 @@ def detect_scroll(
 
     # --- Phase 3: Viewport Refinement ---
     if existing_viewport is not None:
-        # Skip refinement when using existing viewport (second scroll)
-        # Use existing viewport as refined viewport
+        # Skip refinement when using existing viewport (second scroll).
+        # Use existing viewport as refined viewport.
         refined_viewport = viewport
-        # Compute after_bbox from viewport and scroll distance
+        # Compute after_bbox from viewport and scroll distance.
         x, y, w, h = viewport
         h_overlap = h - scroll_distance
         if h_overlap <= 0:
@@ -621,13 +628,12 @@ def detect_scroll(
                 f"Scroll detection failed: Invalid overlap height ({h_overlap})"
             )
             return None
-        # For scroll-down: overlap is at top (y unchanged)
-        # For scroll-up: overlap is at bottom (y + scroll_distance)
+        # For scroll-down: overlap is at top (y unchanged).
+        # For scroll-up: overlap is at bottom (y + scroll_distance).
         overlap_y = y if scroll_direction == "down" else y + scroll_distance
         after_bbox = (x, overlap_y, w, h_overlap)
     else:
-        # Refine viewport by finding matching pixels
-        assert same_pos_diff is not None
+        # Refine viewport by finding matching pixels.
         result = refine_viewport(
             gb,
             ga,
