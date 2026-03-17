@@ -4,7 +4,7 @@ This module is Talon-free so behavior can be unit tested directly.
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -18,12 +18,12 @@ DEFAULT_OUTSIDE_MATCH_THRESHOLD = 0.90
 NOTIFICATION_CENTER_APP_NAME = "Notification Center"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ScrollCacheEntry:
     """Cache entry keyed by app name for enhanced scrolling."""
 
-    viewport: BoundingBox
-    reference_before_array: np.ndarray
+    viewport: BoundingBox | None
+    reference_before_array: np.ndarray | None
     stable_scroll_ratio: float | None = None
     pending_probe_ratio: float | None = None
 
@@ -67,18 +67,19 @@ def outside_viewport_match_ratio(
     return float(np.mean(same[mask]))
 
 
-def update_ratio_stability(entry: ScrollCacheEntry, current_ratio: float) -> None:
+def update_ratio_stability(
+    entry: ScrollCacheEntry, current_ratio: float
+) -> ScrollCacheEntry:
     """Promote ratio to stable after two consecutive matching probe readings."""
     if entry.stable_scroll_ratio is not None:
-        return
+        return entry
 
     if entry.pending_probe_ratio is not None and math.isclose(
         entry.pending_probe_ratio, current_ratio
     ):
-        entry.stable_scroll_ratio = current_ratio
-        return
+        return replace(entry, stable_scroll_ratio=current_ratio)
 
-    entry.pending_probe_ratio = current_ratio
+    return replace(entry, pending_probe_ratio=current_ratio)
 
 
 @dataclass
@@ -137,6 +138,13 @@ class AppScrollCache:
                 cache_entry=cache_entry,
                 cache_debug_reason="scroll ratio not stable yet",
             )
+        if cache_entry.viewport is None or cache_entry.reference_before_array is None:
+            return ProbeSkipDecision(
+                use_cached_probe=False,
+                cache_key=cache_key,
+                cache_entry=cache_entry,
+                cache_debug_reason="no cached viewport",
+            )
         if not cache_entry.viewport.contains_point(cursor_local):
             return ProbeSkipDecision(
                 use_cached_probe=False,
@@ -183,11 +191,13 @@ class AppScrollCache:
                 viewport=viewport,
                 reference_before_array=reference_before_array.copy(),
             )
-            self.entries[cache_key] = entry
         else:
-            entry.viewport = viewport
-            entry.reference_before_array = reference_before_array.copy()
-        update_ratio_stability(entry, scroll_ratio)
+            entry = replace(
+                entry,
+                viewport=viewport,
+                reference_before_array=reference_before_array.copy(),
+            )
+        self.entries[cache_key] = update_ratio_stability(entry, scroll_ratio)
 
     def record_calibrated(
         self,
@@ -202,10 +212,21 @@ class AppScrollCache:
         entry = self.entries.get(cache_key)
         if entry is None:
             return
-        entry.viewport = viewport
-        entry.reference_before_array = reference_before_array.copy()
+        self.entries[cache_key] = replace(
+            entry,
+            viewport=viewport,
+            reference_before_array=reference_before_array.copy(),
+        )
 
-    def invalidate(self, cache_key: str | None) -> None:
-        """Remove a cache entry if it exists."""
-        if cache_key and cache_key in self.entries:
-            del self.entries[cache_key]
+    def invalidate_viewport(self, cache_key: str | None) -> None:
+        """Clear cached viewport state while keeping any stable scroll ratio."""
+        if not cache_key:
+            return
+        entry = self.entries.get(cache_key)
+        if entry is None:
+            return
+        self.entries[cache_key] = replace(
+            entry,
+            viewport=None,
+            reference_before_array=None,
+        )

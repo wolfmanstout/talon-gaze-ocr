@@ -31,6 +31,25 @@ def test_cache_key_for_app():
     assert cache.cache_key_for_app(None) is None
 
 
+def test_invalidate_viewport_keeps_stable_scroll_ratio():
+    cache = AppScrollCache(
+        entries={
+            "Google Chrome": ScrollCacheEntry(
+                viewport=BoundingBox(2, 2, 6, 6),
+                reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
+                stable_scroll_ratio=1.0,
+            )
+        }
+    )
+
+    cache.invalidate_viewport("Google Chrome")
+
+    entry = cache.entries["Google Chrome"]
+    assert entry.viewport is None
+    assert entry.reference_before_array is None
+    assert entry.stable_scroll_ratio == 1.0
+
+
 def test_outside_viewport_match_ratio_only_considers_outside():
     a = np.zeros((10, 10, 3), dtype=np.uint8)
     b = a.copy()
@@ -59,31 +78,55 @@ def test_outside_viewport_match_ratio_threshold():
 
 def test_update_ratio_stability_requires_two_consecutive_matches():
     entry = _make_entry()
-    update_ratio_stability(entry, 1.23)
+    entry = update_ratio_stability(entry, 1.23)
     assert entry.stable_scroll_ratio is None
     assert entry.pending_probe_ratio == 1.23
 
-    update_ratio_stability(entry, 1.23 + 1e-12)
+    entry = update_ratio_stability(entry, 1.23 + 1e-12)
     assert entry.stable_scroll_ratio is not None
     assert entry.stable_scroll_ratio == 1.23 + 1e-12
 
 
 def test_update_ratio_stability_resets_pending_on_mismatch():
     entry = _make_entry()
-    update_ratio_stability(entry, 1.0)
-    update_ratio_stability(entry, 1.1)
+    entry = update_ratio_stability(entry, 1.0)
+    entry = update_ratio_stability(entry, 1.1)
     assert entry.stable_scroll_ratio is None
     assert entry.pending_probe_ratio == 1.1
 
 
 def test_stable_ratio_remains_valid_after_mismatch():
     entry = _make_entry()
-    update_ratio_stability(entry, 1.0)
-    update_ratio_stability(entry, 1.0)
+    entry = update_ratio_stability(entry, 1.0)
+    entry = update_ratio_stability(entry, 1.0)
     assert entry.stable_scroll_ratio == 1.0
 
-    update_ratio_stability(entry, 1.2)
+    entry = update_ratio_stability(entry, 1.2)
     assert entry.stable_scroll_ratio == 1.0
+
+
+def test_cache_decision_keeps_entry_snapshot_after_cache_update():
+    cache = AppScrollCache()
+    before = np.zeros((10, 10, 3), dtype=np.uint8)
+    after = np.ones((10, 10, 3), dtype=np.uint8)
+    original_viewport = BoundingBox(2, 2, 6, 6)
+    updated_viewport = BoundingBox(3, 3, 5, 5)
+
+    cache.record_probe("Google Chrome", original_viewport, before, scroll_ratio=1.0)
+    cache.record_probe("Google Chrome", original_viewport, before, scroll_ratio=1.0)
+
+    decision = cache.evaluate_reuse(
+        probe_skip_enabled=True,
+        app_name="Google Chrome",
+        current=after,
+        cursor_local=(5, 5),
+    )
+    assert decision.cache_entry is not None
+
+    cache.record_calibrated("Google Chrome", updated_viewport, after)
+
+    assert decision.cache_entry.viewport == original_viewport
+    assert cache.entries["Google Chrome"].viewport == updated_viewport
 
 
 def test_outside_viewport_check_uses_refined_viewport():
@@ -91,6 +134,7 @@ def test_outside_viewport_check_uses_refined_viewport():
         viewport=BoundingBox(2, 2, 6, 6),
         reference_before_array=np.zeros((720, 1280, 3), dtype=np.uint8),
     )
+    assert entry.viewport is not None
     current = np.zeros((10, 10, 3), dtype=np.uint8)
     cached = current.copy()
     cached[2:8, 2:8, :] = 255
@@ -120,6 +164,32 @@ def test_evaluate_reuse_reports_cursor_outside_reason():
         cache_key="Google Chrome",
         cache_entry=cache.entries["Google Chrome"],
         cache_debug_reason="cursor outside cached viewport",
+    )
+
+
+def test_evaluate_reuse_reports_missing_viewport_after_viewport_invalidation():
+    cache = AppScrollCache(
+        entries={
+            "Google Chrome": ScrollCacheEntry(
+                viewport=None,
+                reference_before_array=None,
+                stable_scroll_ratio=1.0,
+            )
+        }
+    )
+
+    decision = cache.evaluate_reuse(
+        probe_skip_enabled=True,
+        app_name="Google Chrome",
+        current=np.zeros((10, 10, 3), dtype=np.uint8),
+        cursor_local=(5, 5),
+    )
+
+    assert decision == ProbeSkipDecision(
+        use_cached_probe=False,
+        cache_key="Google Chrome",
+        cache_entry=cache.entries["Google Chrome"],
+        cache_debug_reason="no cached viewport",
     )
 
 
@@ -164,5 +234,6 @@ def test_record_probe_and_calibrated_update_cache():
     assert cache.entries["Google Chrome"].viewport == BoundingBox(3, 3, 5, 5)
     assert np.array_equal(cache.entries["Google Chrome"].reference_before_array, after)
 
-    cache.invalidate("Google Chrome")
-    assert "Google Chrome" not in cache.entries
+    cache.invalidate_viewport("Google Chrome")
+    assert cache.entries["Google Chrome"].viewport is None
+    assert cache.entries["Google Chrome"].reference_before_array is None

@@ -1412,10 +1412,20 @@ class GazeOcrActions:
             cursor_screen,
             cache_decision,
         )
+        rejected_cached_viewport = (
+            cache_decision.cache_entry.viewport
+            if (
+                cache_decision.outside_viewport_changed
+                and cache_decision.cache_entry is not None
+                and cache_decision.cache_entry.viewport is not None
+            )
+            else None
+        )
 
         probe_result = None
         if cache_decision.use_cached_probe:
             assert cache_decision.cache_entry is not None
+            assert cache_decision.cache_entry.viewport is not None
             current_viewport = cache_decision.cache_entry.viewport
             current_frame = before_frame
             scroll_ratio = cache_decision.cache_entry.stable_scroll_ratio or 0.0
@@ -1430,7 +1440,7 @@ class GazeOcrActions:
                 scroll_direction=direction,
             )
             if not probe_result.succeeded:
-                app_scroll_cache.invalidate(cache_decision.cache_key)
+                app_scroll_cache.invalidate_viewport(cache_decision.cache_key)
                 probe_result.save_screenshots()
                 fallback_scroll()
                 return
@@ -1468,7 +1478,7 @@ class GazeOcrActions:
                 scroll_direction=direction,
             )
             if not calibrated_result.succeeded:
-                app_scroll_cache.invalidate(cache_decision.cache_key)
+                app_scroll_cache.invalidate_viewport(cache_decision.cache_key)
                 total_scroll = probe_distance + int(remaining_pixels)
             else:
                 total_scroll = probe_distance + calibrated_result.get_scroll_distance()
@@ -1488,15 +1498,11 @@ class GazeOcrActions:
         else:
             line_y = viewport_screen.y + total_scroll
 
-        if (
-            cache_decision.outside_viewport_changed
-            and cache_decision.cache_entry is not None
-        ):
-            cached_viewport = before_frame.local_to_screen_bbox(
-                cache_decision.cache_entry.viewport
-            )
-        else:
-            cached_viewport = None
+        cached_viewport = (
+            before_frame.local_to_screen_bbox(rejected_cached_viewport)
+            if rejected_cached_viewport is not None
+            else None
+        )
 
         # Show visualization using probe's viewport
         actions.user.show_scroll_indicator(
