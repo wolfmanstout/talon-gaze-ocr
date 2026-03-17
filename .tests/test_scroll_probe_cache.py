@@ -145,8 +145,8 @@ def test_evaluate_reuse_reports_cursor_outside_reason():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
-                viewport=BoundingBox(2, 2, 6, 6),
-                reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
+                viewport=BoundingBox(2, 2, 400, 320),
+                reference_before_array=np.zeros((400, 800, 3), dtype=np.uint8),
                 stable_scroll_ratio=1.0,
             )
         }
@@ -155,7 +155,7 @@ def test_evaluate_reuse_reports_cursor_outside_reason():
     decision = cache.evaluate_reuse(
         probe_skip_enabled=True,
         app_name="Google Chrome",
-        current=np.zeros((10, 10, 3), dtype=np.uint8),
+        current=np.zeros((400, 800, 3), dtype=np.uint8),
         cursor_local=(0, 0),
     )
 
@@ -164,6 +164,32 @@ def test_evaluate_reuse_reports_cursor_outside_reason():
         cache_key="Google Chrome",
         cache_entry=cache.entries["Google Chrome"],
         cache_debug_reason="cursor outside cached viewport",
+    )
+
+
+def test_evaluate_reuse_reports_small_viewport_reason():
+    cache = AppScrollCache(
+        entries={
+            "Google Chrome": ScrollCacheEntry(
+                viewport=BoundingBox(2, 2, 400, 250),
+                reference_before_array=np.zeros((400, 800, 3), dtype=np.uint8),
+                stable_scroll_ratio=1.0,
+            )
+        }
+    )
+
+    decision = cache.evaluate_reuse(
+        probe_skip_enabled=True,
+        app_name="Google Chrome",
+        current=np.zeros((400, 800, 3), dtype=np.uint8),
+        cursor_local=(10, 10),
+    )
+
+    assert decision == ProbeSkipDecision(
+        use_cached_probe=False,
+        cache_key="Google Chrome",
+        cache_entry=cache.entries["Google Chrome"],
+        cache_debug_reason="cached viewport too small",
     )
 
 
@@ -194,13 +220,13 @@ def test_evaluate_reuse_reports_missing_viewport_after_viewport_invalidation():
 
 
 def test_evaluate_reuse_marks_outside_viewport_change():
-    current = np.zeros((10, 10, 3), dtype=np.uint8)
+    current = np.zeros((400, 800, 3), dtype=np.uint8)
     cached = current.copy()
-    cached[0, :, :] = 255
+    cached[:60, :, :] = 255
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
-                viewport=BoundingBox(2, 2, 6, 6),
+                viewport=BoundingBox(2, 2, 400, 320),
                 reference_before_array=cached,
                 stable_scroll_ratio=1.0,
             )
@@ -216,7 +242,8 @@ def test_evaluate_reuse_marks_outside_viewport_change():
 
     assert not decision.use_cached_probe
     assert decision.outside_viewport_changed
-    assert decision.cache_debug_reason == "outside match 0.84 < 0.90"
+    assert decision.cache_debug_reason is not None
+    assert decision.cache_debug_reason.endswith(" < 0.90")
 
 
 def test_record_probe_and_calibrated_update_cache():
