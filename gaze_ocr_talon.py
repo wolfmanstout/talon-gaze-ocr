@@ -444,19 +444,27 @@ class ScrollResult:
 
     @property
     def succeeded(self) -> bool:
-        return self.detection is not None
+        return self.detection is not None and not self.detection.no_change
+
+    @property
+    def no_change(self) -> bool:
+        return self.detection is not None and self.detection.no_change
 
     def get_scroll_distance(self) -> int:
         """Get scroll distance. Raises ValueError if detection failed."""
-        if self.detection is None:
+        if not self.succeeded:
             raise ValueError("Cannot get scroll_distance from failed detection")
-        return self.detection.scroll_distance
+        detection = self.detection
+        assert detection is not None
+        return detection.scroll_distance
 
     def get_viewport(self) -> BoundingBox:
         """Get viewport in image coordinates. Raises ValueError if detection failed."""
-        if self.detection is None:
+        if not self.succeeded:
             raise ValueError("Cannot get viewport from failed detection")
-        return self.detection.viewport
+        detection = self.detection
+        assert detection is not None
+        return detection.viewport
 
     def save_screenshots(self) -> None:
         """Save before/after screenshots and metadata if logging is enabled."""
@@ -466,10 +474,11 @@ class ScrollResult:
 
         timestamp = time.time()
 
-        if self.detection is None:
-            file_prefix = f"scroll_failure_{timestamp:.2f}"
+        if not self.succeeded:
+            status = "no_change" if self.no_change else "failure"
+            file_prefix = f"scroll_{status}_{timestamp:.2f}"
             metadata: dict = {
-                "status": "failure",
+                "status": status,
                 "timestamp": timestamp,
                 "scroll_direction": self.scroll_direction,
                 "cursor_position": {
@@ -478,21 +487,23 @@ class ScrollResult:
                 },
             }
         else:
-            bbox = self.detection.after_bbox
+            detection = self.detection
+            assert detection is not None
+            bbox = detection.after_bbox
             file_prefix = (
-                f"scroll_success_{self.detection.scroll_distance}px_{timestamp:.2f}"
+                f"scroll_success_{detection.scroll_distance}px_{timestamp:.2f}"
             )
             # For scroll-down: before_bbox is at y + scroll_distance (content moved up)
             # For scroll-up: before_bbox is at y - scroll_distance (content moved down)
             if self.scroll_direction == "down":
-                before_bbox_y = bbox.y + self.detection.scroll_distance
+                before_bbox_y = bbox.y + detection.scroll_distance
             else:
-                before_bbox_y = bbox.y - self.detection.scroll_distance
+                before_bbox_y = bbox.y - detection.scroll_distance
             metadata = {
                 "status": "success",
                 "timestamp": timestamp,
                 "scroll_direction": self.scroll_direction,
-                "scroll_distance_px": self.detection.scroll_distance,
+                "scroll_distance_px": detection.scroll_distance,
                 "cursor_position": {
                     "x": self.cursor_screen[0],
                     "y": self.cursor_screen[1],
@@ -600,7 +611,7 @@ def perform_scroll_and_detect(
         cursor_screen: (x, y) cursor position in screen coordinates
         phase_name: Label for logging (e.g., "probe", "calibrated")
         existing_viewport: Optional viewport from previous detection
-            (for calibrated scroll after a real probe, skips viewport detection/refinement)
+            (skips viewport detection and refinement)
         scroll_direction: "down" (content moves up) or "up" (content moves down)
 
     Returns:
@@ -616,7 +627,6 @@ def perform_scroll_and_detect(
 
     after_frame = _capture_screenshot(before_frame.window)
     cursor_local = before_frame.screen_to_local_point(cursor_screen)
-
     detection = detect_scroll(
         before_frame.array,
         after_frame.array,
@@ -625,7 +635,7 @@ def perform_scroll_and_detect(
         scroll_direction,
     )
 
-    if phase_name and not detection:
+    if phase_name and (detection is None or detection.no_change):
         logging.info(f"Scroll {phase_name}: detection failed")
 
     return ScrollResult(
@@ -1479,7 +1489,11 @@ class GazeOcrActions:
             )
             if not calibrated_result.succeeded:
                 app_scroll_cache.invalidate_viewport(cache_decision.cache_key)
-                total_scroll = probe_distance + int(remaining_pixels)
+                total_scroll = (
+                    probe_distance
+                    if calibrated_result.no_change
+                    else probe_distance + int(remaining_pixels)
+                )
             else:
                 total_scroll = probe_distance + calibrated_result.get_scroll_distance()
                 current_viewport = calibrated_result.get_viewport()
@@ -1505,14 +1519,15 @@ class GazeOcrActions:
         )
 
         # Show visualization using probe's viewport
-        actions.user.show_scroll_indicator(
-            line_y,
-            viewport_screen,
-            total_scroll,
-            probe_skipped=cache_decision.use_cached_probe,
-            cache_debug_reason=cache_decision.cache_debug_reason,
-            cached_viewport=cached_viewport,
-        )
+        if total_scroll > 0:
+            actions.user.show_scroll_indicator(
+                line_y,
+                viewport_screen,
+                total_scroll,
+                probe_skipped=cache_decision.use_cached_probe,
+                cache_debug_reason=cache_decision.cache_debug_reason,
+                cached_viewport=cached_viewport,
+            )
 
         # Save screenshots after visualization is shown
         if probe_result is not None:

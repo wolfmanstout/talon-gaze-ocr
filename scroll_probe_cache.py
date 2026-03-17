@@ -15,6 +15,7 @@ except ImportError:
 
 
 DEFAULT_OUTSIDE_MATCH_THRESHOLD = 0.90
+MIN_CACHED_VIEWPORT_HEIGHT = 300
 NOTIFICATION_CENTER_APP_NAME = "Notification Center"
 
 
@@ -144,6 +145,13 @@ class AppScrollCache:
                 cache_key=cache_key,
                 cache_entry=cache_entry,
                 cache_debug_reason="no cached viewport",
+            )
+        if cache_entry.viewport.height < MIN_CACHED_VIEWPORT_HEIGHT:
+            return ProbeSkipDecision(
+                use_cached_probe=False,
+                cache_key=cache_key,
+                cache_entry=cache_entry,
+                cache_debug_reason="cached viewport too small",
             )
         if not cache_entry.viewport.contains_point(cursor_local):
             return ProbeSkipDecision(
