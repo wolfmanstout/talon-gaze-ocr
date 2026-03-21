@@ -16,6 +16,7 @@ except ImportError:
 
 DEFAULT_OUTSIDE_MATCH_THRESHOLD = 0.90
 MIN_CACHED_VIEWPORT_HEIGHT = 300
+SCROLL_RATIO_ALIGNMENT_REL_TOL = 0.05
 NOTIFICATION_CENTER_APP_NAME = "Notification Center"
 
 
@@ -81,6 +82,16 @@ def update_ratio_stability(
         return replace(entry, stable_scroll_ratio=current_ratio)
 
     return replace(entry, pending_probe_ratio=current_ratio)
+
+
+def ratios_align(expected_ratio: float, actual_ratio: float) -> bool:
+    """Return True when two scroll ratios are close enough to be treated as aligned."""
+    return math.isclose(
+        expected_ratio,
+        actual_ratio,
+        rel_tol=SCROLL_RATIO_ALIGNMENT_REL_TOL,
+        abs_tol=0.01,
+    )
 
 
 @dataclass
@@ -200,6 +211,14 @@ class AppScrollCache:
                 reference_before_array=reference_before_array.copy(),
             )
         else:
+            if entry.stable_scroll_ratio is not None and not ratios_align(
+                entry.stable_scroll_ratio, scroll_ratio
+            ):
+                entry = replace(
+                    entry,
+                    stable_scroll_ratio=None,
+                    pending_probe_ratio=None,
+                )
             entry = replace(
                 entry,
                 viewport=viewport,
@@ -212,6 +231,7 @@ class AppScrollCache:
         cache_key: str | None,
         viewport: BoundingBox,
         reference_before_array: np.ndarray,
+        actual_scroll_ratio: float | None = None,
     ) -> None:
         """Refresh an existing cache entry after successful calibrated detection."""
         if not cache_key:
@@ -220,6 +240,21 @@ class AppScrollCache:
         entry = self.entries.get(cache_key)
         if entry is None:
             return
+        if (
+            actual_scroll_ratio is not None
+            and entry.stable_scroll_ratio is not None
+            and not ratios_align(entry.stable_scroll_ratio, actual_scroll_ratio)
+        ):
+            # This calibrated-step ratio check is only used on cache hits,
+            # where we skipped the smaller probe measurement. The calibrated
+            # scroll can be clipped near the top or bottom of the document,
+            # but invalidating is still preferable to continuing to reuse a
+            # stale cached ratio on future scrolls.
+            entry = replace(
+                entry,
+                stable_scroll_ratio=None,
+                pending_probe_ratio=None,
+            )
         self.entries[cache_key] = replace(
             entry,
             viewport=viewport,
