@@ -13,6 +13,7 @@ from scroll_probe_cache import (
     ProbeSkipDecision,
     ScrollCacheEntry,
     outside_viewport_match_ratio,
+    ratios_align,
     update_ratio_stability,
 )
 
@@ -103,6 +104,61 @@ def test_stable_ratio_remains_valid_after_mismatch():
 
     entry = update_ratio_stability(entry, 1.2)
     assert entry.stable_scroll_ratio == 1.0
+
+
+def test_ratios_align_tolerates_small_noise():
+    assert ratios_align(4.0, 4.01)
+
+
+def test_ratios_align_rejects_larger_drift():
+    assert not ratios_align(4.0, 4.3)
+
+
+def test_record_probe_invalidates_misaligned_stable_ratio():
+    cache = AppScrollCache(
+        entries={
+            "Google Chrome": ScrollCacheEntry(
+                viewport=BoundingBox(2, 2, 6, 6),
+                reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
+                stable_scroll_ratio=1.0,
+            )
+        }
+    )
+
+    cache.record_probe(
+        "Google Chrome",
+        BoundingBox(3, 3, 5, 5),
+        np.ones((10, 10, 3), dtype=np.uint8),
+        scroll_ratio=1.4,
+    )
+
+    entry = cache.entries["Google Chrome"]
+    assert entry.stable_scroll_ratio is None
+    assert entry.pending_probe_ratio == 1.4
+
+
+def test_record_calibrated_invalidates_misaligned_stable_ratio():
+    cache = AppScrollCache(
+        entries={
+            "Google Chrome": ScrollCacheEntry(
+                viewport=BoundingBox(2, 2, 6, 6),
+                reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
+                stable_scroll_ratio=1.0,
+            )
+        }
+    )
+
+    cache.record_calibrated(
+        "Google Chrome",
+        BoundingBox(3, 3, 5, 5),
+        np.ones((10, 10, 3), dtype=np.uint8),
+        actual_scroll_ratio=1.2,
+    )
+
+    entry = cache.entries["Google Chrome"]
+    assert entry.viewport == BoundingBox(3, 3, 5, 5)
+    assert entry.stable_scroll_ratio is None
+    assert entry.pending_probe_ratio is None
 
 
 def test_cache_decision_keeps_entry_snapshot_after_cache_update():
