@@ -8,7 +8,9 @@ updates:
   - package-ecosystem: "uv"
     directory: "/" # Location of package manifests
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    cooldown:
+      default-days: 7
     groups:
       python-dependencies:
         patterns:
@@ -20,7 +22,9 @@ updates:
     # You don't need to specify `/.github/workflows` for `directory`. You can use `directory: "/"`.
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns:
