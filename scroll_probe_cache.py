@@ -15,6 +15,7 @@ except ImportError:
 
 
 DEFAULT_OUTSIDE_MATCH_THRESHOLD = 0.90
+OUTSIDE_MATCH_PIXEL_TOLERANCE = 1
 MIN_CACHED_VIEWPORT_HEIGHT = 300
 SCROLL_RATIO_ALIGNMENT_REL_TOL = 0.05
 NOTIFICATION_CENTER_APP_NAME = "Notification Center"
@@ -44,7 +45,7 @@ class ProbeSkipDecision:
 def outside_viewport_match_ratio(
     current: np.ndarray, cached: np.ndarray, viewport: BoundingBox
 ) -> float:
-    """Return exact per-pixel match ratio outside the viewport rectangle."""
+    """Return tolerant per-pixel match ratio outside the viewport rectangle."""
     # Reuse only applies when both captured arrays have identical dimensions.
     if current.shape != cached.shape:
         return 0.0
@@ -63,9 +64,12 @@ def outside_viewport_match_ratio(
     if not np.any(mask):
         return 1.0
 
-    same = (
-        np.all(current == cached, axis=-1) if current.ndim == 3 else current == cached
-    )
+    if current.ndim == 3:
+        diff = np.abs(current.astype(np.int16) - cached.astype(np.int16))
+        same = np.all(diff <= OUTSIDE_MATCH_PIXEL_TOLERANCE, axis=-1)
+    else:
+        diff = np.abs(current.astype(np.int16) - cached.astype(np.int16))
+        same = diff <= OUTSIDE_MATCH_PIXEL_TOLERANCE
     return float(np.mean(same[mask]))
 
 

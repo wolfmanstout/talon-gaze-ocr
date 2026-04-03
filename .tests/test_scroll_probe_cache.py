@@ -61,7 +61,7 @@ def test_outside_viewport_match_ratio_only_considers_outside():
     assert outside_viewport_match_ratio(a, b, viewport) == 1.0
 
     # Change part of outside region too.
-    b[0, :, :] = 255
+    b[0, :, :] = 3
     ratio = outside_viewport_match_ratio(a, b, viewport)
     assert 0.0 < ratio < 1.0
 
@@ -70,11 +70,20 @@ def test_outside_viewport_match_ratio_threshold():
     a = np.zeros((10, 10, 3), dtype=np.uint8)
     b = a.copy()
     viewport = BoundingBox(2, 2, 6, 6)
-    b[0, 0:4, :] = 1
+    b[0, 0:4, :] = 2
     ratio = outside_viewport_match_ratio(a, b, viewport)
     assert ratio >= 0.90
     assert ratio >= 0.6
     assert ratio < 0.95
+
+
+def test_outside_viewport_match_ratio_tolerates_tiny_rgb_drift():
+    a = np.zeros((10, 10, 3), dtype=np.uint8)
+    b = a.copy()
+    viewport = BoundingBox(2, 2, 6, 6)
+    b[0, :, :] = 1
+
+    assert outside_viewport_match_ratio(a, b, viewport) == 1.0
 
 
 def test_update_ratio_stability_requires_two_consecutive_matches():
@@ -299,7 +308,8 @@ def test_evaluate_reuse_marks_outside_viewport_change():
     assert not decision.use_cached_probe
     assert decision.outside_viewport_changed
     assert decision.cache_debug_reason is not None
-    assert decision.cache_debug_reason.endswith(" < 0.90")
+    assert decision.cache_debug_reason.startswith("outside match ")
+    assert " < 0.90" in decision.cache_debug_reason
 
 
 def test_record_probe_and_calibrated_update_cache():
