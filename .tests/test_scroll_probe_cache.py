@@ -159,14 +159,38 @@ def test_record_calibrated_invalidates_misaligned_stable_ratio():
 
     cache.record_calibrated(
         "Google Chrome",
-        BoundingBox(3, 3, 5, 5),
+        BoundingBox(20, 20, 5, 5),
         np.ones((10, 10, 3), dtype=np.uint8),
         actual_scroll_ratio=1.2,
     )
 
     entry = cache.entries["Google Chrome"]
-    assert entry.viewport == BoundingBox(3, 3, 5, 5)
+    assert entry.viewport == BoundingBox(20, 20, 5, 5)
     assert entry.stable_scroll_ratio is None
+    assert entry.pending_probe_ratio is None
+
+
+def test_record_calibrated_keeps_stable_ratio_when_viewport_is_unchanged():
+    cache = AppScrollCache(
+        entries={
+            "Google Chrome": ScrollCacheEntry(
+                viewport=BoundingBox(2, 2, 6, 6),
+                reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
+                stable_scroll_ratio=1.0,
+            )
+        }
+    )
+
+    cache.record_calibrated(
+        "Google Chrome",
+        BoundingBox(2, 2, 6, 6),
+        np.ones((10, 10, 3), dtype=np.uint8),
+        actual_scroll_ratio=1.2,
+    )
+
+    entry = cache.entries["Google Chrome"]
+    assert entry.viewport == BoundingBox(2, 2, 6, 6)
+    assert entry.stable_scroll_ratio == 1.0
     assert entry.pending_probe_ratio is None
 
 

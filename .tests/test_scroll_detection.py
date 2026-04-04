@@ -30,6 +30,25 @@ def test_bounding_box_contains_point():
     assert not viewport.contains_point((900, 750))
 
 
+def test_bounding_box_has_similar_vertical_bounds():
+    viewport = BoundingBox(100, 150, 800, 600)
+    assert viewport.has_similar_vertical_bounds(
+        BoundingBox(150, 148, 700, 602), tolerance=12
+    )
+    assert viewport.has_similar_vertical_bounds(
+        BoundingBox(100, 154, 800, 600), tolerance=12
+    )
+    assert viewport.has_similar_vertical_bounds(
+        BoundingBox(100, 150, 800, 604), tolerance=12
+    )
+    assert not viewport.has_similar_vertical_bounds(
+        BoundingBox(100, 163, 800, 600), tolerance=12
+    )
+    assert not viewport.has_similar_vertical_bounds(
+        BoundingBox(100, 150, 800, 613), tolerance=12
+    )
+
+
 def test_detect_scroll_marks_no_change_for_identical_images(sample_text_image):
     result = detect_scroll(
         sample_text_image,

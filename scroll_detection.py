@@ -50,6 +50,13 @@ class BoundingBox:
             self.x <= px < self.x + self.width and self.y <= py < self.y + self.height
         )
 
+    def has_similar_vertical_bounds(self, other: "BoundingBox", tolerance: int) -> bool:
+        """Return True when the top and bottom bounds differ by only a few pixels."""
+        return (
+            abs(self.y - other.y) <= tolerance
+            and abs((self.y + self.height) - (other.y + other.height)) <= tolerance
+        )
+
     @classmethod
     def from_tuple(cls, t: tuple[int, int, int, int]) -> "BoundingBox":
         """Create from (x, y, width, height) tuple."""
