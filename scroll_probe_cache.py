@@ -18,6 +18,7 @@ DEFAULT_OUTSIDE_MATCH_THRESHOLD = 0.90
 OUTSIDE_MATCH_PIXEL_TOLERANCE = 1
 MIN_CACHED_VIEWPORT_HEIGHT = 300
 SCROLL_RATIO_ALIGNMENT_REL_TOL = 0.05
+VIEWPORT_VERTICAL_BOUNDS_TOLERANCE = 12
 NOTIFICATION_CENTER_APP_NAME = "Notification Center"
 
 
@@ -244,16 +245,22 @@ class AppScrollCache:
         entry = self.entries.get(cache_key)
         if entry is None:
             return
+        assert entry.viewport is not None
+        viewport_changed = not viewport.has_similar_vertical_bounds(
+            entry.viewport, tolerance=VIEWPORT_VERTICAL_BOUNDS_TOLERANCE
+        )
         if (
-            actual_scroll_ratio is not None
+            viewport_changed
+            and actual_scroll_ratio is not None
             and entry.stable_scroll_ratio is not None
             and not ratios_align(entry.stable_scroll_ratio, actual_scroll_ratio)
         ):
             # This calibrated-step ratio check is only used on cache hits,
-            # where we skipped the smaller probe measurement. The calibrated
-            # scroll can be clipped near the top or bottom of the document,
-            # but invalidating is still preferable to continuing to reuse a
-            # stale cached ratio on future scrolls.
+            # where we skipped the smaller probe measurement. We only
+            # invalidate the ratio when the viewport changed too; otherwise a
+            # mismatched calibrated ratio is more likely to mean we hit the
+            # top or bottom of the document than that the cached ratio went
+            # stale.
             entry = replace(
                 entry,
                 stable_scroll_ratio=None,
