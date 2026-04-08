@@ -4,18 +4,19 @@ import re
 import sys
 
 import numpy as np
+from talon import skia
 from talon.experimental import ocr
 
 from . import _base
 
 
 class TalonBackend(_base.OcrBackend):
-    def run_ocr(self, image):
+    def __init__(self, invert_dark_images: bool = False):
+        self.invert_dark_images = invert_dark_images
+
+    def run_ocr(self, image: skia.Image):
+        image, grayscale = self._preprocess(image)
         results = ocr.ocr(image)
-        array = np.array(image)
-        grayscale = (
-            0.299 * array[:, :, 0] + 0.587 * array[:, :, 1] + 0.114 * array[:, :, 2]
-        )
         lines = [
             _base.OcrLine(
                 [
@@ -37,6 +38,29 @@ class TalonBackend(_base.OcrBackend):
             for result in results
         ]
         return _base.OcrResult(lines)
+
+    def _preprocess(self, image: skia.Image) -> tuple[skia.Image, np.ndarray]:
+        data = np.array(image)
+        grayscale = self._grayscale(data)
+        if not self.invert_dark_images or np.mean(grayscale) >= 128:
+            return image, grayscale
+
+        inverted = data.copy()
+        inverted[:, :, :3] = 255 - inverted[:, :, :3]
+        new_image = skia.Image.from_pixels(
+            inverted.tobytes(),
+            inverted.strides[0],
+            image.width,
+            image.height,
+            color_type=image.color_type,
+            alpha_type=image.alpha_type,
+        )
+        new_image.rect = image.rect
+        return new_image, 255 - grayscale
+
+    @staticmethod
+    def _grayscale(data: np.ndarray) -> np.ndarray:
+        return 0.299 * data[:, :, 0] + 0.587 * data[:, :, 1] + 0.114 * data[:, :, 2]
 
     @staticmethod
     def _adjust_box(rect, image, x_offset, y_offset):

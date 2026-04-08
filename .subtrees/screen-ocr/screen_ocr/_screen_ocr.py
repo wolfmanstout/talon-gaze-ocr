@@ -124,6 +124,7 @@ class Reader:
         correction_block_size: Optional[int] = 31,
         convert_grayscale: Optional[bool] = True,
         shift_channels: Optional[bool] = True,
+        invert_dark_images: bool = False,
         debug_image_callback: Optional[DebugImageCallback] = None,
         language_tag: Optional[str] = None,
         **kwargs,
@@ -186,7 +187,7 @@ class Reader:
                 raise ValueError(
                     "Talon backend unavailable. Requires installing and running in Talon (see talonvoice.com)."
                 )
-            backend = _talon.TalonBackend()
+            backend = _talon.TalonBackend(invert_dark_images=invert_dark_images)
             return cls(backend, debug_image_callback=debug_image_callback, **kwargs)
         raise RuntimeError(f"Unsupported backend: {backend}")
 
