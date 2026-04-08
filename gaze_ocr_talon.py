@@ -53,6 +53,12 @@ mod.setting(
     desc="If true, use Talon backend, otherwise use default fast backend from screen_ocr.",
 )
 mod.setting(
+    "ocr_talon_invert_dark_images",
+    type=bool,
+    default=False,
+    desc="If true, invert dark OCR regions before running the Talon OCR backend. This is generally not needed on macOS, but may improve OCR performance on Windows.",
+)
+mod.setting(
     "ocr_connect_tracker",
     type=bool,
     default=True,
@@ -377,6 +383,7 @@ def reload_backend(name, flags):
             backend="talon",
             radius=settings.get("user.ocr_gaze_point_padding"),
             homophones=homophones,
+            invert_dark_images=settings.get("user.ocr_talon_invert_dark_images"),
         )
     else:
         if setting_ocr_use_talon_backend and not ocr:
