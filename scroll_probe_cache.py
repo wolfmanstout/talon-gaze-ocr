@@ -77,14 +77,18 @@ def outside_viewport_match_ratio(
 def update_ratio_stability(
     entry: ScrollCacheEntry, current_ratio: float
 ) -> ScrollCacheEntry:
-    """Promote ratio to stable after two consecutive matching probe readings."""
+    """Record a probe ratio, promoting it after a matching second measurement."""
     if entry.stable_scroll_ratio is not None:
         return entry
 
-    if entry.pending_probe_ratio is not None and math.isclose(
+    if entry.pending_probe_ratio is not None and ratios_align(
         entry.pending_probe_ratio, current_ratio
     ):
-        return replace(entry, stable_scroll_ratio=current_ratio)
+        return replace(
+            entry,
+            stable_scroll_ratio=entry.pending_probe_ratio,
+            pending_probe_ratio=None,
+        )
 
     return replace(entry, pending_probe_ratio=current_ratio)
 
@@ -236,7 +240,8 @@ class AppScrollCache:
         cache_key: str | None,
         viewport: BoundingBox,
         reference_before_array: np.ndarray,
-        actual_scroll_ratio: float | None = None,
+        actual_scroll_ratio: float,
+        used_cached_probe: bool = False,
     ) -> None:
         """Refresh an existing cache entry after successful calibrated detection."""
         if not cache_key:
@@ -249,23 +254,32 @@ class AppScrollCache:
         viewport_changed = not viewport.has_similar_vertical_bounds(
             entry.viewport, tolerance=VIEWPORT_VERTICAL_BOUNDS_TOLERANCE
         )
-        if (
-            viewport_changed
-            and actual_scroll_ratio is not None
-            and entry.stable_scroll_ratio is not None
-            and not ratios_align(entry.stable_scroll_ratio, actual_scroll_ratio)
-        ):
-            # This calibrated-step ratio check is only used on cache hits,
-            # where we skipped the smaller probe measurement. We only
-            # invalidate the ratio when the viewport changed too; otherwise a
-            # mismatched calibrated ratio is more likely to mean we hit the
-            # top or bottom of the document than that the cached ratio went
-            # stale.
-            entry = replace(
-                entry,
-                stable_scroll_ratio=None,
-                pending_probe_ratio=None,
-            )
+        if used_cached_probe:
+            assert entry.stable_scroll_ratio is not None
+            if viewport_changed and not ratios_align(
+                entry.stable_scroll_ratio, actual_scroll_ratio
+            ):
+                # This calibrated-step ratio check is only used on cache
+                # hits, where we skipped the smaller probe measurement. We
+                # only invalidate the ratio when the viewport changed too;
+                # otherwise a mismatched calibrated ratio is more likely to
+                # mean we hit the top or bottom of the document than that
+                # the cached ratio went stale.
+                entry = replace(
+                    entry,
+                    stable_scroll_ratio=None,
+                    pending_probe_ratio=None,
+                )
+        elif entry.pending_probe_ratio is not None:
+            # A successful calibrated scroll can confirm the immediately
+            # preceding probe measurement, so we do not need to wait for a
+            # second probe scroll to trust the ratio.
+            if ratios_align(entry.pending_probe_ratio, actual_scroll_ratio):
+                entry = replace(
+                    entry,
+                    stable_scroll_ratio=entry.pending_probe_ratio,
+                    pending_probe_ratio=None,
+                )
         self.entries[cache_key] = replace(
             entry,
             viewport=viewport,

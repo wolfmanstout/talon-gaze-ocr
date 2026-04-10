@@ -1504,9 +1504,8 @@ class GazeOcrActions:
                     calibrated_result.after_frame.array,
                     actual_scroll_ratio=(
                         calibrated_result.get_scroll_distance() / remaining_wheel_units
-                        if cache_decision.use_cached_probe
-                        else None
                     ),
+                    used_cached_probe=cache_decision.use_cached_probe,
                 )
         else:
             total_scroll = probe_distance
