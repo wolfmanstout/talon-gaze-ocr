@@ -1438,7 +1438,7 @@ class GazeOcrActions:
             assert cache_decision.cache_entry.viewport is not None
             current_viewport = cache_decision.cache_entry.viewport
             current_frame = before_frame
-            scroll_ratio = cache_decision.cache_entry.stable_scroll_ratio or 0.0
+            scroll_ratio = cache_decision.cache_entry.scroll_ratio or 0.0
             probe_distance = 0
         else:
             probe_scroll_amount: int = settings.get("user.ocr_scroll_probe_amount")
@@ -1459,11 +1459,12 @@ class GazeOcrActions:
             scroll_ratio = probe_distance / probe_scroll_amount
             current_viewport = probe_result.get_viewport()
             current_frame = probe_result.after_frame
-            app_scroll_cache.record_probe(
+            app_scroll_cache.record_scroll_measurement(
                 cache_decision.cache_key,
                 current_viewport,
                 before_frame.array,
                 scroll_ratio,
+                is_probe=True,
             )
 
         viewport_fraction: float = settings.get("user.ocr_scroll_viewport_fraction")
@@ -1498,13 +1499,12 @@ class GazeOcrActions:
                 total_scroll = probe_distance + calibrated_result.get_scroll_distance()
                 current_viewport = calibrated_result.get_viewport()
                 current_frame = calibrated_result.after_frame
-                app_scroll_cache.record_calibrated(
+                app_scroll_cache.record_scroll_measurement(
                     cache_decision.cache_key,
                     current_viewport,
                     calibrated_result.after_frame.array,
-                    actual_scroll_ratio=(
-                        calibrated_result.get_scroll_distance() / remaining_wheel_units
-                    ),
+                    calibrated_result.get_scroll_distance() / remaining_wheel_units,
+                    is_probe=False,
                     used_cached_probe=cache_decision.use_cached_probe,
                 )
         else:
