@@ -14,7 +14,7 @@ from scroll_probe_cache import (
     ScrollCacheEntry,
     outside_viewport_match_ratio,
     ratios_align,
-    update_ratio_stability,
+    update_ratio_state,
 )
 
 
@@ -32,13 +32,14 @@ def test_cache_key_for_app():
     assert cache.cache_key_for_app(None) is None
 
 
-def test_invalidate_viewport_keeps_stable_scroll_ratio():
+def test_invalidate_viewport_keeps_confirmed_scroll_ratio():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 6, 6),
                 reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
@@ -48,7 +49,8 @@ def test_invalidate_viewport_keeps_stable_scroll_ratio():
     entry = cache.entries["Google Chrome"]
     assert entry.viewport is None
     assert entry.reference_before_array is None
-    assert entry.stable_scroll_ratio == 1.0
+    assert entry.scroll_ratio == 1.0
+    assert entry.scroll_ratio_confirmed
 
 
 def test_outside_viewport_match_ratio_only_considers_outside():
@@ -86,34 +88,53 @@ def test_outside_viewport_match_ratio_tolerates_tiny_rgb_drift():
     assert outside_viewport_match_ratio(a, b, viewport) == 1.0
 
 
-def test_update_ratio_stability_requires_two_consecutive_matches():
+def test_update_ratio_state_requires_two_consecutive_matches():
     entry = _make_entry()
-    entry = update_ratio_stability(entry, 1.23)
-    assert entry.stable_scroll_ratio is None
-    assert entry.pending_probe_ratio == 1.23
+    entry = update_ratio_state(
+        entry,
+        1.23,
+        allow_confirmed_reset_on_mismatch=True,
+    )
+    assert entry.scroll_ratio == 1.23
+    assert not entry.scroll_ratio_confirmed
 
-    entry = update_ratio_stability(entry, 1.23 + 1e-12)
-    assert entry.stable_scroll_ratio is not None
-    assert entry.stable_scroll_ratio == 1.23
-    assert entry.pending_probe_ratio is None
+    entry = update_ratio_state(
+        entry,
+        1.23 + 1e-12,
+        allow_confirmed_reset_on_mismatch=True,
+    )
+    assert entry.scroll_ratio == 1.23
+    assert entry.scroll_ratio_confirmed
 
 
-def test_update_ratio_stability_resets_pending_on_mismatch():
+def test_update_ratio_state_replaces_pending_on_mismatch():
     entry = _make_entry()
-    entry = update_ratio_stability(entry, 1.0)
-    entry = update_ratio_stability(entry, 1.1)
-    assert entry.stable_scroll_ratio is None
-    assert entry.pending_probe_ratio == 1.1
+    entry = update_ratio_state(entry, 1.0, allow_confirmed_reset_on_mismatch=True)
+    entry = update_ratio_state(entry, 1.1, allow_confirmed_reset_on_mismatch=True)
+    assert entry.scroll_ratio == 1.1
+    assert not entry.scroll_ratio_confirmed
 
 
-def test_stable_ratio_remains_valid_after_mismatch():
+def test_update_ratio_state_keeps_stable_ratio_without_reset_permission():
     entry = _make_entry()
-    entry = update_ratio_stability(entry, 1.0)
-    entry = update_ratio_stability(entry, 1.0)
-    assert entry.stable_scroll_ratio == 1.0
+    entry = update_ratio_state(entry, 1.0, allow_confirmed_reset_on_mismatch=True)
+    entry = update_ratio_state(entry, 1.0, allow_confirmed_reset_on_mismatch=True)
+    assert entry.scroll_ratio == 1.0
+    assert entry.scroll_ratio_confirmed
 
-    entry = update_ratio_stability(entry, 1.2)
-    assert entry.stable_scroll_ratio == 1.0
+    entry = update_ratio_state(entry, 1.2, allow_confirmed_reset_on_mismatch=False)
+    assert entry.scroll_ratio == 1.0
+    assert entry.scroll_ratio_confirmed
+
+
+def test_update_ratio_state_demotes_stable_ratio_when_allowed():
+    entry = _make_entry()
+    entry = update_ratio_state(entry, 1.0, allow_confirmed_reset_on_mismatch=True)
+    entry = update_ratio_state(entry, 1.0, allow_confirmed_reset_on_mismatch=True)
+
+    entry = update_ratio_state(entry, 1.2, allow_confirmed_reset_on_mismatch=True)
+    assert entry.scroll_ratio == 1.2
+    assert not entry.scroll_ratio_confirmed
 
 
 def test_ratios_align_tolerates_small_noise():
@@ -124,170 +145,184 @@ def test_ratios_align_rejects_larger_drift():
     assert not ratios_align(4.0, 4.3)
 
 
-def test_record_probe_invalidates_misaligned_stable_ratio():
+def test_probe_measurement_demotes_misaligned_confirmed_ratio():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 6, 6),
                 reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
 
-    cache.record_probe(
+    cache.record_scroll_measurement(
         "Google Chrome",
         BoundingBox(3, 3, 5, 5),
         np.ones((10, 10, 3), dtype=np.uint8),
-        scroll_ratio=1.4,
+        1.4,
+        is_probe=True,
     )
 
     entry = cache.entries["Google Chrome"]
-    assert entry.stable_scroll_ratio is None
-    assert entry.pending_probe_ratio == 1.4
+    assert entry.scroll_ratio == 1.4
+    assert not entry.scroll_ratio_confirmed
 
 
-def test_record_calibrated_invalidates_misaligned_stable_ratio():
+def test_cached_calibrated_measurement_demotes_changed_confirmed_ratio():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 6, 6),
                 reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
 
-    cache.record_calibrated(
+    cache.record_scroll_measurement(
         "Google Chrome",
         BoundingBox(20, 20, 5, 5),
         np.ones((10, 10, 3), dtype=np.uint8),
-        actual_scroll_ratio=1.2,
+        1.2,
+        is_probe=False,
         used_cached_probe=True,
     )
 
     entry = cache.entries["Google Chrome"]
     assert entry.viewport == BoundingBox(20, 20, 5, 5)
-    assert entry.stable_scroll_ratio is None
-    assert entry.pending_probe_ratio is None
+    assert entry.scroll_ratio == 1.2
+    assert not entry.scroll_ratio_confirmed
 
 
-def test_record_calibrated_keeps_stable_ratio_when_viewport_is_unchanged():
+def test_cached_calibrated_measurement_keeps_confirmed_ratio_when_viewport_unchanged():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 6, 6),
                 reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
 
-    cache.record_calibrated(
+    cache.record_scroll_measurement(
         "Google Chrome",
         BoundingBox(2, 2, 6, 6),
         np.ones((10, 10, 3), dtype=np.uint8),
-        actual_scroll_ratio=1.2,
+        1.2,
+        is_probe=False,
         used_cached_probe=True,
     )
 
     entry = cache.entries["Google Chrome"]
     assert entry.viewport == BoundingBox(2, 2, 6, 6)
-    assert entry.stable_scroll_ratio == 1.0
-    assert entry.pending_probe_ratio is None
+    assert entry.scroll_ratio == 1.0
+    assert entry.scroll_ratio_confirmed
 
 
-def test_record_calibrated_promotes_pending_probe_ratio_when_aligned():
+def test_calibrated_measurement_confirms_pending_ratio_when_aligned():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 6, 6),
                 reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
-                pending_probe_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=False,
             )
         }
     )
 
-    cache.record_calibrated(
+    cache.record_scroll_measurement(
         "Google Chrome",
         BoundingBox(2, 2, 6, 6),
         np.ones((10, 10, 3), dtype=np.uint8),
-        actual_scroll_ratio=1.02,
+        1.02,
+        is_probe=False,
     )
 
     entry = cache.entries["Google Chrome"]
-    assert entry.stable_scroll_ratio == 1.0
-    assert entry.pending_probe_ratio is None
+    assert entry.scroll_ratio == 1.0
+    assert entry.scroll_ratio_confirmed
 
 
-def test_record_calibrated_keeps_pending_probe_ratio_when_misaligned():
+def test_calibrated_measurement_replaces_pending_ratio_when_misaligned():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 6, 6),
                 reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
-                pending_probe_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=False,
             )
         }
     )
 
-    cache.record_calibrated(
+    cache.record_scroll_measurement(
         "Google Chrome",
         BoundingBox(2, 2, 6, 6),
         np.ones((10, 10, 3), dtype=np.uint8),
-        actual_scroll_ratio=1.2,
+        1.2,
+        is_probe=False,
     )
 
     entry = cache.entries["Google Chrome"]
-    assert entry.stable_scroll_ratio is None
-    assert entry.pending_probe_ratio == 1.0
+    assert entry.scroll_ratio == 1.2
+    assert not entry.scroll_ratio_confirmed
 
 
-def test_record_calibrated_keeps_pending_probe_ratio_when_viewport_changed():
+def test_calibrated_measurement_replaces_pending_ratio_when_viewport_changed():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 6, 6),
                 reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
-                pending_probe_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=False,
             )
         }
     )
 
-    cache.record_calibrated(
+    cache.record_scroll_measurement(
         "Google Chrome",
         BoundingBox(20, 20, 5, 5),
         np.ones((10, 10, 3), dtype=np.uint8),
-        actual_scroll_ratio=1.2,
+        1.2,
+        is_probe=False,
     )
 
     entry = cache.entries["Google Chrome"]
-    assert entry.stable_scroll_ratio is None
-    assert entry.pending_probe_ratio == 1.0
+    assert entry.scroll_ratio == 1.2
+    assert not entry.scroll_ratio_confirmed
 
 
-def test_record_calibrated_non_cached_probe_does_not_invalidate_stable_ratio():
+def test_non_cached_calibrated_measurement_keeps_confirmed_ratio():
     cache = AppScrollCache(
         entries={
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 6, 6),
                 reference_before_array=np.zeros((10, 10, 3), dtype=np.uint8),
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
 
-    cache.record_calibrated(
+    cache.record_scroll_measurement(
         "Google Chrome",
         BoundingBox(20, 20, 5, 5),
         np.ones((10, 10, 3), dtype=np.uint8),
-        actual_scroll_ratio=1.2,
+        1.2,
+        is_probe=False,
         used_cached_probe=False,
     )
 
     entry = cache.entries["Google Chrome"]
-    assert entry.stable_scroll_ratio == 1.0
-    assert entry.pending_probe_ratio is None
+    assert entry.scroll_ratio == 1.0
+    assert entry.scroll_ratio_confirmed
 
 
 def test_cache_decision_keeps_entry_snapshot_after_cache_update():
@@ -297,8 +332,20 @@ def test_cache_decision_keeps_entry_snapshot_after_cache_update():
     original_viewport = BoundingBox(2, 2, 6, 6)
     updated_viewport = BoundingBox(3, 3, 5, 5)
 
-    cache.record_probe("Google Chrome", original_viewport, before, scroll_ratio=1.0)
-    cache.record_probe("Google Chrome", original_viewport, before, scroll_ratio=1.0)
+    cache.record_scroll_measurement(
+        "Google Chrome",
+        original_viewport,
+        before,
+        1.0,
+        is_probe=True,
+    )
+    cache.record_scroll_measurement(
+        "Google Chrome",
+        original_viewport,
+        before,
+        1.0,
+        is_probe=True,
+    )
 
     decision = cache.evaluate_reuse(
         probe_skip_enabled=True,
@@ -308,11 +355,12 @@ def test_cache_decision_keeps_entry_snapshot_after_cache_update():
     )
     assert decision.cache_entry is not None
 
-    cache.record_calibrated(
+    cache.record_scroll_measurement(
         "Google Chrome",
         updated_viewport,
         after,
-        actual_scroll_ratio=1.0,
+        1.0,
+        is_probe=False,
     )
 
     assert decision.cache_entry.viewport == original_viewport
@@ -337,7 +385,8 @@ def test_evaluate_reuse_reports_cursor_outside_reason():
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 400, 320),
                 reference_before_array=np.zeros((400, 800, 3), dtype=np.uint8),
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
@@ -363,7 +412,8 @@ def test_evaluate_reuse_reports_small_viewport_reason():
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 400, 250),
                 reference_before_array=np.zeros((400, 800, 3), dtype=np.uint8),
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
@@ -389,7 +439,8 @@ def test_evaluate_reuse_reports_missing_viewport_after_viewport_invalidation():
             "Google Chrome": ScrollCacheEntry(
                 viewport=None,
                 reference_before_array=None,
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
@@ -418,7 +469,8 @@ def test_evaluate_reuse_marks_outside_viewport_change():
             "Google Chrome": ScrollCacheEntry(
                 viewport=BoundingBox(2, 2, 400, 320),
                 reference_before_array=cached,
-                stable_scroll_ratio=1.0,
+                scroll_ratio=1.0,
+                scroll_ratio_confirmed=True,
             )
         }
     )
@@ -437,22 +489,29 @@ def test_evaluate_reuse_marks_outside_viewport_change():
     assert " < 0.90" in decision.cache_debug_reason
 
 
-def test_record_probe_and_calibrated_update_cache():
+def test_scroll_measurements_update_cache():
     cache = AppScrollCache()
     viewport = BoundingBox(2, 2, 6, 6)
     before = np.zeros((10, 10, 3), dtype=np.uint8)
     after = np.ones((10, 10, 3), dtype=np.uint8)
 
-    cache.record_probe("Google Chrome", viewport, before, scroll_ratio=1.2)
+    cache.record_scroll_measurement(
+        "Google Chrome",
+        viewport,
+        before,
+        1.2,
+        is_probe=True,
+    )
     entry = cache.entries["Google Chrome"]
     assert entry.viewport == viewport
     assert np.array_equal(entry.reference_before_array, before)
 
-    cache.record_calibrated(
+    cache.record_scroll_measurement(
         "Google Chrome",
         BoundingBox(3, 3, 5, 5),
         after,
-        actual_scroll_ratio=1.2,
+        1.2,
+        is_probe=False,
     )
     assert cache.entries["Google Chrome"].viewport == BoundingBox(3, 3, 5, 5)
     assert np.array_equal(cache.entries["Google Chrome"].reference_before_array, after)
