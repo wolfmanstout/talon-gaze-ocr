@@ -17,4 +17,5 @@ repos:
   - id: pyright
 
 ci:
+  autoupdate_schedule: monthly
   skip: [pyright]
