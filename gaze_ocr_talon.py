@@ -242,7 +242,12 @@ _OCR_MODIFIERS: dict[str, Callable[[], None]] = {
 def onscreen_ocr_text(phrase) -> str | list[str] | dict[str, str]:
     global gaze_ocr_controller, punctuation_table
     reset_state()
-    gaze_ocr_controller.read_nearby((phrase[0].start, phrase[-1].end))
+    try:
+        rect = actions.word.gaze_bounds(phrase, padding=0.5)
+    except (TypeError, KeyError, AttributeError):
+        rect = None
+    gaze_bounds = talon_adapter.rect_to_pixel_bounding_box(rect)
+    gaze_ocr_controller.read_nearby(gaze_bounds=gaze_bounds)
     selection_list = gaze_ocr_controller.latest_screen_contents().as_string()
     # Split camel-casing.
     selection_list = re.sub(r"([a-z])([A-Z])", r"\1 \2", selection_list)
@@ -849,7 +854,7 @@ def move_cursor_to_word_generator(text: TimestampedText, disambiguate: bool = Tr
     result = yield from gaze_ocr_controller.move_cursor_to_words_generator(
         text.text,
         disambiguate=disambiguate,
-        time_range=(text.start, text.end),
+        gaze_bounds=text.gaze_bounds,
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
     )
     if not result:
@@ -866,7 +871,7 @@ def move_text_cursor_to_word_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        time_range=(text.start, text.end),
+        gaze_bounds=text.gaze_bounds,
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
@@ -885,7 +890,7 @@ def move_text_cursor_to_longest_prefix_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        time_range=(text.start, text.end),
+        gaze_bounds=text.gaze_bounds,
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
@@ -905,7 +910,7 @@ def move_text_cursor_to_longest_suffix_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        time_range=(text.start, text.end),
+        gaze_bounds=text.gaze_bounds,
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
@@ -919,7 +924,7 @@ def move_text_cursor_to_difference(text: TimestampedText):
     result = yield from gaze_ocr_controller.move_text_cursor_to_difference_generator(
         text.text,
         disambiguate=True,
-        time_range=(text.start, text.end),
+        gaze_bounds=text.gaze_bounds,
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
     )
     if not result:
@@ -942,8 +947,8 @@ def select_text_generator(
         disambiguate=True,
         end_words=end_text,
         for_deletion=for_deletion,
-        start_time_range=(start.start, start.end),
-        end_time_range=(end.start, end.end) if end else None,
+        start_gaze_bounds=start.gaze_bounds,
+        end_gaze_bounds=end.gaze_bounds if end else None,
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         after_start=after_start,
         before_end=before_end,
@@ -960,7 +965,7 @@ def select_matching_text_generator(text: TimestampedText):
     result = yield from gaze_ocr_controller.select_matching_text_generator(
         text.text,
         disambiguate=True,
-        time_range=(text.start, text.end),
+        gaze_bounds=text.gaze_bounds,
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         select_pause_seconds=lambda: settings.get("user.ocr_select_pause_seconds"),
     )
@@ -1036,7 +1041,7 @@ class GazeOcrActions:
         reset_state()
         if refresh:
             if near:
-                gaze_ocr_controller.read_nearby((near.start, near.end))
+                gaze_ocr_controller.read_nearby(gaze_bounds=near.gaze_bounds)
             else:
                 gaze_ocr_controller.read_nearby()
         actions.user.show_ocr_overlay_for_query(type, "", True)
@@ -1296,12 +1301,23 @@ class GazeOcrActions:
     # Actions operating on the gaze point.
     #
 
-    def move_cursor_to_gaze_point(offset_right: int = 0, offset_down: int = 0):
+    def move_cursor_to_gaze_point(
+        offset_right: int = 0,
+        offset_down: int = 0,
+        gaze_bounds: Optional[talon_adapter.BoundingBox] = None,
+    ):
         """Moves mouse cursor to gaze location.
 
-        If no gaze data available, behavior depends on
+        If gaze_bounds is provided, moves the cursor to its center. Otherwise
+        falls back to the eye tracker's live gaze point, then to the
         user.ocr_cursor_behavior_when_no_eye_tracker setting.
         """
+        if gaze_bounds is not None:
+            x = (gaze_bounds.left + gaze_bounds.right) // 2 + offset_right
+            y = (gaze_bounds.top + gaze_bounds.bottom) // 2 + offset_down
+            actions.mouse_move(x, y)
+            return
+
         gaze = tracker.get_gaze_point()
         if gaze:
             x = gaze[0] + offset_right
