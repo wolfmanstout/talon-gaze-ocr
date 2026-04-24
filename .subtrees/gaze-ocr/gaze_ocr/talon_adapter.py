@@ -1,8 +1,9 @@
 import logging
-from dataclasses import dataclass
 from typing import Optional
 
-from talon import actions, ui
+from talon import actions
+
+from gaze_ocr._gaze_ocr import BoundingBox  # noqa: F401
 
 
 class Mouse:
@@ -70,27 +71,6 @@ class AppActions:
             except KeyError:
                 logging.warning("Action user.dictation_peek is unavailable.")
                 return None
-
-
-@dataclass
-class BoundingBox:
-    left: int
-    right: int
-    top: int
-    bottom: int
-
-
-def rect_to_pixel_bounding_box(rect) -> Optional[BoundingBox]:
-    """Convert a normalized skia.Rect returned by actions.word.gaze_bounds
-    into an absolute-pixel BoundingBox on the main screen."""
-    if rect is None:
-        return None
-    screen = ui.main_screen().rect
-    left = int(screen.x + rect.x * screen.width)
-    top = int(screen.y + rect.y * screen.height)
-    right = int(screen.x + (rect.x + rect.width) * screen.width)
-    bottom = int(screen.y + (rect.y + rect.height) * screen.height)
-    return BoundingBox(left=left, right=right, top=top, bottom=bottom)
 
 
 class TalonEyeTracker:

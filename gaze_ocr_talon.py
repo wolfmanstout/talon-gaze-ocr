@@ -17,7 +17,14 @@ from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
 
 from .scroll_detection import BoundingBox, ScrollResult, detect_scroll
-from .timestamped_captures import TextRange, TimestampedText
+from .timestamped_captures import (
+    BoundingBox as SeenBoundingBox,
+)
+from .timestamped_captures import (
+    SeenText,
+    TextRange,
+    rect_to_pixel_bounding_box,
+)
 
 try:
     from talon.experimental import ocr
@@ -42,6 +49,17 @@ try:
 finally:
     # Restore the unmodified path.
     sys.path = saved_path.copy()
+
+
+def _to_gaze_bounds(
+    bb: Optional[SeenBoundingBox],
+) -> Optional[talon_adapter.BoundingBox]:
+    if bb is None:
+        return None
+    return talon_adapter.BoundingBox(
+        left=bb.left, right=bb.right, top=bb.top, bottom=bb.bottom
+    )
+
 
 mod = Module()
 ctx = Context()
@@ -246,8 +264,9 @@ def onscreen_ocr_text(phrase) -> str | list[str] | dict[str, str]:
         rect = actions.word.gaze_bounds(phrase, padding=0.5)
     except (TypeError, KeyError, AttributeError):
         rect = None
-    gaze_bounds = talon_adapter.rect_to_pixel_bounding_box(rect)
-    gaze_ocr_controller.read_nearby(gaze_bounds=gaze_bounds)
+    gaze_ocr_controller.read_nearby(
+        gaze_bounds=_to_gaze_bounds(rect_to_pixel_bounding_box(rect))
+    )
     selection_list = gaze_ocr_controller.latest_screen_contents().as_string()
     # Split camel-casing.
     selection_list = re.sub(r"([a-z])([A-Z])", r"\1 \2", selection_list)
@@ -758,6 +777,7 @@ def reset_state():
     ctx.tags = []
     ambiguous_matches = None
     disambiguation_generator = None
+    gaze_ocr_controller.invalidate_ocr_cache()
 
     had_canvas = disambiguation_canvas or debug_canvas or scroll_indicator_canvas
     for canvas in [disambiguation_canvas, debug_canvas, scroll_indicator_canvas]:
@@ -850,11 +870,11 @@ def begin_generator(generator):
         pass
 
 
-def move_cursor_to_word_generator(text: TimestampedText, disambiguate: bool = True):
+def move_cursor_to_word_generator(text: SeenText, disambiguate: bool = True):
     result = yield from gaze_ocr_controller.move_cursor_to_words_generator(
         text.text,
         disambiguate=disambiguate,
-        gaze_bounds=text.gaze_bounds,
+        gaze_bounds=_to_gaze_bounds(text.gaze_bounds),
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
     )
     if not result:
@@ -863,7 +883,7 @@ def move_cursor_to_word_generator(text: TimestampedText, disambiguate: bool = Tr
 
 
 def move_text_cursor_to_word_generator(
-    text: TimestampedText,
+    text: SeenText,
     position: str,
     hold_shift: bool = False,
 ):
@@ -871,7 +891,7 @@ def move_text_cursor_to_word_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        gaze_bounds=text.gaze_bounds,
+        gaze_bounds=_to_gaze_bounds(text.gaze_bounds),
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
@@ -881,7 +901,7 @@ def move_text_cursor_to_word_generator(
 
 
 def move_text_cursor_to_longest_prefix_generator(
-    text: TimestampedText, position: str, hold_shift: bool = False
+    text: SeenText, position: str, hold_shift: bool = False
 ):
     (
         locations,
@@ -890,7 +910,7 @@ def move_text_cursor_to_longest_prefix_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        gaze_bounds=text.gaze_bounds,
+        gaze_bounds=_to_gaze_bounds(text.gaze_bounds),
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
@@ -901,7 +921,7 @@ def move_text_cursor_to_longest_prefix_generator(
 
 
 def move_text_cursor_to_longest_suffix_generator(
-    text: TimestampedText, position: str, hold_shift: bool = False
+    text: SeenText, position: str, hold_shift: bool = False
 ):
     (
         locations,
@@ -910,7 +930,7 @@ def move_text_cursor_to_longest_suffix_generator(
         text.text,
         disambiguate=True,
         cursor_position=position,
-        gaze_bounds=text.gaze_bounds,
+        gaze_bounds=_to_gaze_bounds(text.gaze_bounds),
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         hold_shift=hold_shift,
     )
@@ -920,11 +940,11 @@ def move_text_cursor_to_longest_suffix_generator(
     return prefix_length
 
 
-def move_text_cursor_to_difference(text: TimestampedText):
+def move_text_cursor_to_difference(text: SeenText):
     result = yield from gaze_ocr_controller.move_text_cursor_to_difference_generator(
         text.text,
         disambiguate=True,
-        gaze_bounds=text.gaze_bounds,
+        gaze_bounds=_to_gaze_bounds(text.gaze_bounds),
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
     )
     if not result:
@@ -934,8 +954,8 @@ def move_text_cursor_to_difference(text: TimestampedText):
 
 
 def select_text_generator(
-    start: TimestampedText,
-    end: Optional[TimestampedText] = None,
+    start: SeenText,
+    end: Optional[SeenText] = None,
     for_deletion: bool = False,
     after_start: bool = False,
     before_end: bool = False,
@@ -947,8 +967,8 @@ def select_text_generator(
         disambiguate=True,
         end_words=end_text,
         for_deletion=for_deletion,
-        start_gaze_bounds=start.gaze_bounds,
-        end_gaze_bounds=end.gaze_bounds if end else None,
+        start_gaze_bounds=_to_gaze_bounds(start.gaze_bounds),
+        end_gaze_bounds=_to_gaze_bounds(end.gaze_bounds) if end else None,
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         after_start=after_start,
         before_end=before_end,
@@ -961,11 +981,11 @@ def select_text_generator(
         raise RuntimeError(f'Unable to select "{start}" to "{end}"')
 
 
-def select_matching_text_generator(text: TimestampedText):
+def select_matching_text_generator(text: SeenText):
     result = yield from gaze_ocr_controller.select_matching_text_generator(
         text.text,
         disambiguate=True,
-        gaze_bounds=text.gaze_bounds,
+        gaze_bounds=_to_gaze_bounds(text.gaze_bounds),
         click_offset_right=lambda: settings.get("user.ocr_click_offset_right"),
         select_pause_seconds=lambda: settings.get("user.ocr_select_pause_seconds"),
     )
@@ -1031,7 +1051,7 @@ class GazeOcrActions:
     #
 
     def show_ocr_overlay(
-        type: str, near: Optional[TimestampedText] = None, refresh: bool = True
+        type: str, near: Optional[SeenText] = None, refresh: bool = True
     ):
         """Displays OCR debug overlay over primary screen, refreshing the OCR nearby
         where the user is looking by default.
@@ -1041,7 +1061,9 @@ class GazeOcrActions:
         reset_state()
         if refresh:
             if near:
-                gaze_ocr_controller.read_nearby(gaze_bounds=near.gaze_bounds)
+                gaze_ocr_controller.read_nearby(
+                    gaze_bounds=_to_gaze_bounds(near.gaze_bounds)
+                )
             else:
                 gaze_ocr_controller.read_nearby()
         actions.user.show_ocr_overlay_for_query(type, "", True)
@@ -1302,9 +1324,9 @@ class GazeOcrActions:
     #
 
     def move_cursor_to_gaze_point(
+        gaze_bounds: Optional[SeenBoundingBox] = None,
         offset_right: int = 0,
         offset_down: int = 0,
-        gaze_bounds: Optional[talon_adapter.BoundingBox] = None,
     ):
         """Moves mouse cursor to gaze location.
 
@@ -1453,19 +1475,19 @@ class GazeOcrActions:
     # Actions operating on a single point within onscreen text.
     #
 
-    def move_cursor_to_word(text: TimestampedText):
+    def move_cursor_to_word(text: SeenText):
         """Moves cursor to onscreen word."""
         begin_generator(move_cursor_to_word_generator(text))
 
     def move_text_cursor_to_word(
-        text: TimestampedText,
+        text: SeenText,
         position: str,
     ):
         """Moves text cursor near onscreen word."""
         begin_generator(move_text_cursor_to_word_generator(text, position))
 
     def insert_adjacent_to_text(
-        find_text: TimestampedText, position: str, insertion_text: str
+        find_text: SeenText, position: str, insertion_text: str
     ):
         """Insert text adjacent to onscreen text."""
 
@@ -1479,7 +1501,7 @@ class GazeOcrActions:
         begin_generator(run())
 
     def move_cursor_to_text_and_do(
-        text: TimestampedText, action: Callable[[], None], disambiguate: bool = True
+        text: SeenText, action: Callable[[], None], disambiguate: bool = True
     ) -> None:
         """Moves cursor to onscreen word and performs an action."""
 
@@ -1489,18 +1511,18 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def click_text(text: TimestampedText):
+    def click_text(text: SeenText):
         """Click on the provided on-screen text."""
         actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click())
 
-    def click_text_without_disambiguation(text: TimestampedText):
+    def click_text_without_disambiguation(text: SeenText):
         """Click on the provided on-screen text, choosing the best match if multiple are
         found."""
         actions.user.move_cursor_to_text_and_do(
             text, lambda: actions.mouse_click(), disambiguate=False
         )
 
-    def double_click_text(text: TimestampedText):
+    def double_click_text(text: SeenText):
         """Double-lick on the provided on-screen text."""
 
         def double_click() -> None:
@@ -1509,15 +1531,15 @@ class GazeOcrActions:
 
         actions.user.move_cursor_to_text_and_do(text, double_click)
 
-    def right_click_text(text: TimestampedText):
+    def right_click_text(text: SeenText):
         """Right-click on the provided on-screen text."""
         actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(1))
 
-    def middle_click_text(text: TimestampedText):
+    def middle_click_text(text: SeenText):
         """Middle-click on the provided on-screen text."""
         actions.user.move_cursor_to_text_and_do(text, lambda: actions.mouse_click(2))
 
-    def modifier_click_text(modifier: str, text: TimestampedText):
+    def modifier_click_text(modifier: str, text: SeenText):
         """Control-click on the provided on-screen text."""
 
         def click_with_modifier() -> None:
@@ -1527,7 +1549,7 @@ class GazeOcrActions:
 
         actions.user.move_cursor_to_text_and_do(text, click_with_modifier)
 
-    def change_text_homophone(text: TimestampedText):
+    def change_text_homophone(text: SeenText):
         """Switch the on-screen text to a different homophone."""
 
         def change_homophone() -> None:
@@ -1587,7 +1609,7 @@ class GazeOcrActions:
     # Actions providing natural text editing.
     #
 
-    def append_text(text: TimestampedText):
+    def append_text(text: SeenText):
         """Finds onscreen text that matches the beginning of the provided text and
         appends the rest to it."""
 
@@ -1600,7 +1622,7 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def prepend_text(text: TimestampedText):
+    def prepend_text(text: SeenText):
         """Finds onscreen text that matches the end of the provided text and
         prepends the rest to it."""
 
@@ -1613,7 +1635,7 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def insert_text_difference(text: TimestampedText):
+    def insert_text_difference(text: SeenText):
         """Finds onscreen text that matches the start and/or end of the provided text
         and inserts the difference."""
 
@@ -1624,7 +1646,7 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def revise_text(text: TimestampedText):
+    def revise_text(text: SeenText):
         """Finds onscreen text that matches the beginning and end of the provided text
         and replaces it."""
 
@@ -1635,7 +1657,7 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def revise_text_starting_with(text: TimestampedText):
+    def revise_text_starting_with(text: SeenText):
         """Finds onscreen text that matches the beginning of the provided text
         and replaces it until the caret."""
 
@@ -1652,7 +1674,7 @@ class GazeOcrActions:
 
         begin_generator(run())
 
-    def revise_text_ending_with(text: TimestampedText):
+    def revise_text_ending_with(text: SeenText):
         """Finds onscreen text that matches the end of the provided text and
         replaces it from the caret."""
 

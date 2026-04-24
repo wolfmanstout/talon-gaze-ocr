@@ -1,56 +1,65 @@
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
-from talon import Module, actions
+from talon import Module, actions, ui
 from talon.grammar import Phrase
 
-_subtree_dir = Path(__file__).parent / ".subtrees"
-_package_paths = [
-    str(_subtree_dir / "gaze-ocr"),
-    str(_subtree_dir / "screen-ocr"),
-    str(_subtree_dir / "rapidfuzz/src"),
-]
-_saved_path = sys.path.copy()
-try:
-    sys.path.extend([p for p in _package_paths if p not in sys.path])
-    from gaze_ocr.talon_adapter import BoundingBox, rect_to_pixel_bounding_box
-finally:
-    sys.path = _saved_path.copy()
+
+@dataclass
+class BoundingBox:
+    left: int
+    right: int
+    top: int
+    bottom: int
+
+
+def rect_to_pixel_bounding_box(rect) -> Optional[BoundingBox]:
+    """Convert a normalized skia.Rect from actions.word.gaze_bounds into an
+    absolute-pixel BoundingBox on the main screen."""
+    if rect is None:
+        return None
+    screen = ui.main_screen().rect
+    left = int(screen.x + rect.x * screen.width)
+    top = int(screen.y + rect.y * screen.height)
+    right = int(screen.x + (rect.x + rect.width) * screen.width)
+    bottom = int(screen.y + (rect.y + rect.height) * screen.height)
+    return BoundingBox(left=left, right=right, top=top, bottom=bottom)
+
 
 mod = Module()
 
 
 @dataclass
-class TimestampedText:
+class SeenText:
     text: str
     gaze_bounds: Optional[BoundingBox]
 
 
 @dataclass
 class TextRange:
-    start: Optional[TimestampedText]
+    start: Optional[SeenText]
     after_start: bool
-    end: Optional[TimestampedText]
+    end: Optional[SeenText]
     before_end: bool
 
 
 @dataclass
 class TextPosition:
-    text: TimestampedText
+    text: SeenText
     position: str
 
 
-def _gaze_bounds_for(subcapture) -> Optional[BoundingBox]:
+def _gaze_bounds_for(subcapture, padding: float = 0.5) -> Optional[BoundingBox]:
     """Resolve the gaze bounding box for a capture or word subcapture.
 
     Must be called from within a capture function so Talon can look up the
     spoken word metadata. Returns None in environments that don't supply
     gaze data (e.g. mimic()). Only works with literals, lists, and
-    built-in captures like <phrase> — not arbitrary user captures."""
+    built-in captures like <phrase> — not arbitrary user captures.
+
+    Use padding=0 when the result will be reduced to a single point."""
     try:
-        rect = actions.word.gaze_bounds(subcapture, padding=0.5)
+        rect = actions.word.gaze_bounds(subcapture, padding=padding)
     except (TypeError, KeyError, AttributeError):
         return None
     return rect_to_pixel_bounding_box(rect)
@@ -77,14 +86,14 @@ def eye_gaze_bounds(m) -> Optional[BoundingBox]:
 
     Resolved at capture time so the trigger word's gaze metadata is
     available to actions.word.gaze_bounds."""
-    return _gaze_bounds_for(m[0])
+    return _gaze_bounds_for(m[0], padding=0)
 
 
 # "edit" is frequently misrecognized as "at it", and is common in UIs.
 @mod.capture(
     rule="<phrase> | {user.vocabulary} | {user.punctuation} | {user.prose_snippets} | edit"
 )
-def timestamped_phrase_default(m) -> TimestampedText:
+def timestamped_phrase_default(m) -> SeenText:
     """Dictated phrase appearing onscreen (default capture).
 
     Uses only primitives that actions.word.gaze_bounds supports (built-in
@@ -94,37 +103,37 @@ def timestamped_phrase_default(m) -> TimestampedText:
         text = " ".join(actions.dictate.replace_words(item))
     else:
         text = str(item)
-    return TimestampedText(text=text, gaze_bounds=_gaze_bounds_for(item))
+    return SeenText(text=text, gaze_bounds=_gaze_bounds_for(item))
 
 
 # Forward to enable easy extension via a Context.
 @mod.capture(rule="<user.timestamped_phrase_default>")
-def timestamped_phrase(m) -> TimestampedText:
+def timestamped_phrase(m) -> SeenText:
     """Dictated phrase appearing onscreen."""
     return m[0]
 
 
 @mod.capture(rule="<user.timestamped_phrase>+")
-def timestamped_prose_only(m) -> TimestampedText:
+def timestamped_prose_only(m) -> SeenText:
     """Dictated text appearing onscreen, with merged gaze bounds."""
     items = list(m)
-    return TimestampedText(
+    return SeenText(
         text=" ".join(item.text for item in items),
         gaze_bounds=_merge_bounds([item.gaze_bounds for item in items]),
     )
 
 
 @mod.capture(rule="{user.onscreen_ocr_text}")
-def onscreen_text(m) -> TimestampedText:
+def onscreen_text(m) -> SeenText:
     """Onscreen text match with gaze bounds resolved at capture time."""
-    return TimestampedText(
+    return SeenText(
         text=m[0],
         gaze_bounds=_gaze_bounds_for(m[0]),
     )
 
 
 @mod.capture(rule="<self.timestamped_prose_only> | <self.onscreen_text>")
-def timestamped_prose(m) -> TimestampedText:
+def timestamped_prose(m) -> SeenText:
     """Timestamped prose or onscreen text."""
     return m[0]
 
