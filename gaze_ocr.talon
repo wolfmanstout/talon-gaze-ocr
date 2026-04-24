@@ -6,50 +6,50 @@ mode: user.dictation_command
 -
 # Commands that operate wherever you are looking.
 # Example: "eye hover" to hover the cursor over where you're looking.
-(eye | i) (hover | [cursor] move): user.move_cursor_to_gaze_point()
-(eye | i) [left] (touch | click):
-    user.move_cursor_to_gaze_point()
+<user.eye_gaze_bounds> (hover | [cursor] move): user.move_cursor_to_gaze_point(0, 0, eye_gaze_bounds)
+<user.eye_gaze_bounds> [left] (touch | click):
+    user.move_cursor_to_gaze_point(0, 0, eye_gaze_bounds)
     mouse_click(0)
-(eye | i) [left] double (touch | click):
-    user.move_cursor_to_gaze_point()
+<user.eye_gaze_bounds> [left] double (touch | click):
+    user.move_cursor_to_gaze_point(0, 0, eye_gaze_bounds)
     mouse_click(0)
     mouse_click(0)
-(eye | i) right (touch | click):
-    user.move_cursor_to_gaze_point()
+<user.eye_gaze_bounds> right (touch | click):
+    user.move_cursor_to_gaze_point(0, 0, eye_gaze_bounds)
     mouse_click(1)
-(eye | i) middle (touch | click):
-    user.move_cursor_to_gaze_point()
+<user.eye_gaze_bounds> middle (touch | click):
+    user.move_cursor_to_gaze_point(0, 0, eye_gaze_bounds)
     mouse_click(2)
 # Example: "eye control click" to control-click where you're looking.
-(eye | i) <user.modifiers> (touch | click):
-    user.move_cursor_to_gaze_point()
+<user.eye_gaze_bounds> <user.modifiers> (touch | click):
+    user.move_cursor_to_gaze_point(0, 0, eye_gaze_bounds)
     key("{modifiers}:down")
     mouse_click(0)
     key("{modifiers}:up")
 
-(eye | i) scroll up:
-    user.move_cursor_to_gaze_point(0, 40)
+<user.eye_gaze_bounds> scroll up:
+    user.move_cursor_to_gaze_point(0, 40, eye_gaze_bounds)
     user.enhanced_scroll_up()
-(eye | i) scroll up half:
-    user.move_cursor_to_gaze_point(0, 40)
+<user.eye_gaze_bounds> scroll up half:
+    user.move_cursor_to_gaze_point(0, 40, eye_gaze_bounds)
     user.enhanced_scroll_up(0.5)
-(eye | i) scroll down:
-    user.move_cursor_to_gaze_point(0, -40)
+<user.eye_gaze_bounds> scroll down:
+    user.move_cursor_to_gaze_point(0, -40, eye_gaze_bounds)
     user.enhanced_scroll_down()
-(eye | i) scroll down half:
-    user.move_cursor_to_gaze_point(0, -40)
+<user.eye_gaze_bounds> scroll down half:
+    user.move_cursor_to_gaze_point(0, -40, eye_gaze_bounds)
     user.enhanced_scroll_down(0.5)
-(eye | i) scroll left:
-    user.move_cursor_to_gaze_point(40, 0)
+<user.eye_gaze_bounds> scroll left:
+    user.move_cursor_to_gaze_point(40, 0, eye_gaze_bounds)
     user.mouse_scroll_left()
-(eye | i) scroll left half:
-    user.move_cursor_to_gaze_point(40, 0)
+<user.eye_gaze_bounds> scroll left half:
+    user.move_cursor_to_gaze_point(40, 0, eye_gaze_bounds)
     user.mouse_scroll_left(0.5)
-(eye | i) scroll right:
-    user.move_cursor_to_gaze_point(-40, 0)
+<user.eye_gaze_bounds> scroll right:
+    user.move_cursor_to_gaze_point(-40, 0, eye_gaze_bounds)
     user.mouse_scroll_right()
-(eye | i) scroll right half:
-    user.move_cursor_to_gaze_point(-40, 0)
+<user.eye_gaze_bounds> scroll right half:
+    user.move_cursor_to_gaze_point(-40, 0, eye_gaze_bounds)
     user.mouse_scroll_right(0.5)
 
 # Debugging commands.
