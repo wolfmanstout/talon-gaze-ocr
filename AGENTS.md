@@ -35,8 +35,8 @@ This is a Talon voice control extension that enables advanced cursor control usi
 - Implements all user-facing actions for text manipulation
 
 **Timestamped Captures (`timestamped_captures.py`):**
-- Defines data structures for text with timing information (`TimestampedText`, `TextRange`, `TextPosition`)
-- Provides Talon capture definitions for parsing spoken commands with timestamps
+- Defines data structures for onscreen text (`SeenText`, `TextRange`, `TextPosition`)
+- Provides Talon capture definitions for parsing spoken commands with gaze bounds
 - Enables precise matching of spoken words to screen text using timing data
 
 **Talon Command Files:**
