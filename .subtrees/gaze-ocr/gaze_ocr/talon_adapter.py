@@ -71,29 +71,3 @@ class AppActions:
             except KeyError:
                 logging.warning("Action user.dictation_peek is unavailable.")
                 return None
-
-
-class TalonEyeTracker:
-    """Tracks whether gaze-based lookups are desired. Gaze bounds are resolved
-    at capture time via actions.word.gaze_bounds, so this adapter no longer
-    subscribes to a gaze stream. Talon's "Always On" tracking option is
-    controlled by the user via the tray UI (no public action exposes it)."""
-
-    def __init__(self):
-        self.is_connected = False
-        self.connect()
-
-    def connect(self):
-        self.is_connected = True
-
-    def disconnect(self):
-        self.is_connected = False
-
-    # Stubs preserved so the generic Controller can fall through to its
-    # screen/window OCR path when no gaze_bounds are supplied. Talon callers
-    # always pass gaze_bounds resolved at capture time.
-    def get_gaze_point(self):
-        return None
-
-    def get_gaze_bounds_during_time_range(self, *_args):
-        return None
