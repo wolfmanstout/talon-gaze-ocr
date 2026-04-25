@@ -362,11 +362,9 @@ def get_knausj_homophones():
 
 def reload_backend(name, flags):
     # Initialize eye tracking and OCR.
-    global tracker, ocr_reader, gaze_ocr_controller, punctuation_table
-    tracker = talon_adapter.TalonEyeTracker()
-    # Note: tracker is connected automatically in the constructor.
-    if not settings.get("user.ocr_connect_tracker"):
-        tracker.disconnect()
+    global ocr_reader, gaze_ocr_controller, punctuation_table
+    if settings.get("user.ocr_connect_tracker"):
+        actions.tracking.control_always_on_toggle(True)
     homophones = get_knausj_homophones()
     # TODO: Get this through an action to support customization.
     add_homophones(
@@ -418,7 +416,7 @@ def reload_backend(name, flags):
         )
     gaze_ocr_controller = gaze_ocr.Controller(
         ocr_reader,
-        tracker,
+        eye_tracker=None,
         mouse=talon_adapter.Mouse(),
         keyboard=talon_adapter.Keyboard(),
         app_actions=talon_adapter.AppActions(),
@@ -1040,11 +1038,11 @@ class GazeOcrActions:
 
     def connect_ocr_eye_tracker():
         """Connects eye tracker to OCR."""
-        tracker.connect()
+        actions.tracking.control_always_on_toggle(True)
 
     def disconnect_ocr_eye_tracker():
         """Disconnects eye tracker from OCR."""
-        tracker.disconnect()
+        actions.tracking.control_always_on_toggle(False)
 
     #
     # Actions related to the UI.
@@ -1331,19 +1329,11 @@ class GazeOcrActions:
         """Moves mouse cursor to gaze location.
 
         If gaze_bounds is provided, moves the cursor to its center. Otherwise
-        falls back to the eye tracker's live gaze point, then to the
-        user.ocr_cursor_behavior_when_no_eye_tracker setting.
+        uses the user.ocr_cursor_behavior_when_no_eye_tracker setting.
         """
         if gaze_bounds is not None:
             x = (gaze_bounds.left + gaze_bounds.right) // 2 + offset_right
             y = (gaze_bounds.top + gaze_bounds.bottom) // 2 + offset_down
-            actions.mouse_move(x, y)
-            return
-
-        gaze = tracker.get_gaze_point()
-        if gaze:
-            x = gaze[0] + offset_right
-            y = gaze[1] + offset_down
             actions.mouse_move(x, y)
             return
 
