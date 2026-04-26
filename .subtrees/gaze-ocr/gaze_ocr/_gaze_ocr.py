@@ -193,6 +193,7 @@ class Controller:
         """Discard any cached OCR result. Call at utterance boundaries to prevent
         a new command from reusing OCR captured during a previous utterance."""
         self._ocr_cache.invalidate()
+        self._future = None
 
     def shutdown(self, wait=True):
         self._executor.shutdown(wait)
@@ -333,7 +334,7 @@ class Controller:
         """Same as move_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
         """
-        if time_range or gaze_bounds:
+        if time_range or gaze_bounds or self._future is None:
             self.read_nearby(time_range=time_range, gaze_bounds=gaze_bounds)
         screen_contents = self.latest_screen_contents()
         matches = screen_contents.find_matching_words(words)
@@ -430,7 +431,7 @@ class Controller:
         """Same as move_text_cursor_to_words, except it supports disambiguation through a generator.
         See header comment for details.
         """
-        if time_range or gaze_bounds:
+        if time_range or gaze_bounds or self._future is None:
             self.read_nearby(time_range=time_range, gaze_bounds=gaze_bounds)
         screen_contents = self.latest_screen_contents()
         matches = screen_contents.find_matching_words(words)
@@ -511,7 +512,7 @@ class Controller:
     ]:
         """Same as move_text_cursor_to_longest_prefix, except it supports
         disambiguation through a generator. See header comment for details."""
-        if time_range or gaze_bounds:
+        if time_range or gaze_bounds or self._future is None:
             self.read_nearby(time_range=time_range, gaze_bounds=gaze_bounds)
         screen_contents = self.latest_screen_contents()
         matches, prefix_length = screen_contents.find_longest_matching_prefix(
@@ -584,7 +585,7 @@ class Controller:
     ]:
         """Same as move_text_cursor_to_longest_suffix, except it supports
         disambiguation through a generator. See header comment for details."""
-        if time_range or gaze_bounds:
+        if time_range or gaze_bounds or self._future is None:
             self.read_nearby(time_range=time_range, gaze_bounds=gaze_bounds)
         screen_contents = self.latest_screen_contents()
         matches, suffix_length = screen_contents.find_longest_matching_suffix(
@@ -628,7 +629,7 @@ class Controller:
         """Finds onscreen text that matches the start and/or end of the provided words,
         and moves the text cursor to the start of where the words differ. Returns the
         start and end indices of the differing text in the provided words, if found."""
-        if time_range or gaze_bounds:
+        if time_range or gaze_bounds or self._future is None:
             self.read_nearby(time_range=time_range, gaze_bounds=gaze_bounds)
         screen_contents = self.latest_screen_contents()
         prefix_matches, prefix_length = screen_contents.find_longest_matching_prefix(
@@ -775,7 +776,7 @@ class Controller:
         """Same as select_text, except it supports disambiguation through a generator.
         See header comment for details.
         """
-        if start_time_range or start_gaze_bounds:
+        if start_time_range or start_gaze_bounds or self._future is None:
             self.read_nearby(time_range=start_time_range, gaze_bounds=start_gaze_bounds)
         screen_contents = self.latest_screen_contents()
         start_matches = screen_contents.find_matching_words(start_words)
@@ -866,7 +867,7 @@ class Controller:
     ) -> Generator[Sequence[CursorLocation], CursorLocation, Optional[tuple[int, int]]]:
         """Same as select_matching_text, except it supports disambiguation through a
         generator. See header comment for details."""
-        if time_range or gaze_bounds:
+        if time_range or gaze_bounds or self._future is None:
             self.read_nearby(time_range=time_range, gaze_bounds=gaze_bounds)
         screen_contents = self.latest_screen_contents()
         prefix_matches, prefix_length = screen_contents.find_longest_matching_prefix(
