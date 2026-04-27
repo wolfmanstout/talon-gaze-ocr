@@ -58,10 +58,7 @@ def _gaze_bounds_for(subcapture, padding: float = 0.5) -> Optional[BoundingBox]:
     built-in captures like <phrase> — not arbitrary user captures.
 
     Use padding=0 when the result will be reduced to a single point."""
-    try:
-        rect = actions.word.gaze_bounds(subcapture, padding=padding)
-    except (TypeError, KeyError, AttributeError):
-        return None
+    rect = actions.word.gaze_bounds(subcapture, padding=padding)
     return rect_to_pixel_bounding_box(rect)
 
 
@@ -78,6 +75,11 @@ def _merge_bounds(
         top=min(b.top for b in valid),
         bottom=max(b.bottom for b in valid),
     )
+
+
+def phrase_gaze_bounds(phrase) -> Optional[BoundingBox]:
+    """Resolve merged gaze bounds for each item in a phrase-like iterable."""
+    return _merge_bounds([_gaze_bounds_for(item) for item in phrase])
 
 
 @mod.capture(rule="eye | i")

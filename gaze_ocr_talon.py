@@ -23,7 +23,7 @@ from .timestamped_captures import (
 from .timestamped_captures import (
     SeenText,
     TextRange,
-    rect_to_pixel_bounding_box,
+    phrase_gaze_bounds,
 )
 
 try:
@@ -260,13 +260,8 @@ _OCR_MODIFIERS: dict[str, Callable[[], None]] = {
 def onscreen_ocr_text(phrase) -> str | list[str] | dict[str, str]:
     global gaze_ocr_controller, punctuation_table
     reset_state()
-    try:
-        rect = actions.word.gaze_bounds(phrase, padding=0.5)
-    except (TypeError, KeyError, AttributeError):
-        rect = None
-    gaze_ocr_controller.read_nearby(
-        gaze_bounds=_to_gaze_bounds(rect_to_pixel_bounding_box(rect))
-    )
+    bounds = phrase_gaze_bounds(phrase)
+    gaze_ocr_controller.read_nearby(gaze_bounds=_to_gaze_bounds(bounds))
     selection_list = gaze_ocr_controller.latest_screen_contents().as_string()
     # Split camel-casing.
     selection_list = re.sub(r"([a-z])([A-Z])", r"\1 \2", selection_list)
