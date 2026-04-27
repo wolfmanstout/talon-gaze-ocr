@@ -3,8 +3,6 @@ from typing import Optional
 
 from talon import actions
 
-from gaze_ocr._gaze_ocr import BoundingBox  # noqa: F401
-
 
 class Mouse:
     def move(self, coordinates):
