@@ -11,7 +11,19 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 import numpy as np
-from talon import Context, Module, actions, app, cron, ctrl, fs, screen, settings, ui
+from talon import (
+    Context,
+    Module,
+    actions,
+    app,
+    cron,
+    ctrl,
+    fs,
+    screen,
+    settings,
+    speech_system,
+    ui,
+)
 from talon.canvas import Canvas, MouseEvent
 from talon.skia.typeface import Fontstyle, Typeface
 from talon.types import rect
@@ -53,10 +65,10 @@ finally:
 
 def _to_gaze_bounds(
     bb: Optional[SeenBoundingBox],
-) -> Optional[talon_adapter.BoundingBox]:
+) -> Optional[gaze_ocr.BoundingBox]:
     if bb is None:
         return None
-    return talon_adapter.BoundingBox(
+    return gaze_ocr.BoundingBox(
         left=bb.left, right=bb.right, top=bb.top, bottom=bb.bottom
     )
 
@@ -759,6 +771,13 @@ def _get_window_under_cursor() -> tuple[ui.Window | None, tuple[float, float]]:
         return None, cursor_pos
 
 
+def _on_post_phrase(_phrase):
+    gaze_ocr_controller.invalidate_ocr_cache()
+
+
+speech_system.register("post:phrase", _on_post_phrase)
+
+
 def reset_state():
     global \
         ambiguous_matches, \
@@ -770,7 +789,6 @@ def reset_state():
     ctx.tags = []
     ambiguous_matches = None
     disambiguation_generator = None
-    gaze_ocr_controller.invalidate_ocr_cache()
 
     had_canvas = disambiguation_canvas or debug_canvas or scroll_indicator_canvas
     for canvas in [disambiguation_canvas, debug_canvas, scroll_indicator_canvas]:
