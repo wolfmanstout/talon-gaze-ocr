@@ -193,7 +193,6 @@ class Controller:
         """Discard any cached OCR result. Call at utterance boundaries to prevent
         a new command from reusing OCR captured during a previous utterance."""
         self._ocr_cache.invalidate()
-        self._future = None
 
     def shutdown(self, wait=True):
         self._executor.shutdown(wait)
