@@ -63,7 +63,7 @@ def get_best_1d_anchored(arr: np.ndarray, anchor_idx: int) -> tuple[int, int, fl
 
     # Scan Left: Find max prefix sum ending at anchor
     left_scan = np.cumsum(arr[anchor_idx::-1])
-    best_left = np.argmax(left_scan)
+    best_left = int(np.argmax(left_scan))
     max_left = left_scan[best_left]
     start = anchor_idx - best_left
 
@@ -72,12 +72,12 @@ def get_best_1d_anchored(arr: np.ndarray, anchor_idx: int) -> tuple[int, int, fl
     end = anchor_idx
     if anchor_idx + 1 < N:
         right_scan = np.cumsum(arr[anchor_idx + 1 :])
-        best_right = np.argmax(right_scan)
+        best_right = int(np.argmax(right_scan))
         if right_scan[best_right] > 0:
             max_right = right_scan[best_right]
             end = (anchor_idx + 1) + best_right
 
-    return start, end, max_left + max_right
+    return int(start), int(end), float(max_left + max_right)
 
 
 def get_best_1d_unanchored(arr: np.ndarray, offset: int = 0) -> tuple[int, int, float]:

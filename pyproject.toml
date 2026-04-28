@@ -8,6 +8,7 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "basedpyright==1.39.3",
     "click>=8.1.0",
     "line-profiler>=5.0.0",
     "matplotlib>=3.8.0",
@@ -41,6 +42,7 @@ ignore = ["E501", "SIM105", "SIM116", "UP045"]
 testpaths = [".tests"]
 
 [tool.pyright]
+typeCheckingMode = "standard"
 pythonVersion = "3.11"
 # Talon action class methods don't use self so ignore the associated errors and warnings
 reportGeneralTypeIssues = false
@@ -49,4 +51,4 @@ reportSelfClsParameterName = false
 reportMissingImports = false
 extraPaths = [".subtrees/gaze-ocr", ".subtrees/screen-ocr", ".subtrees/rapidfuzz/src"]
 # Override auto-exclude for owned subtrees, but keep rapidfuzz excluded
-exclude = [".subtrees/rapidfuzz"]
+exclude = [".subtrees/rapidfuzz", ".uv-cache", ".venv", "**/__pycache__"]

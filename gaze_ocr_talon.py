@@ -415,13 +415,13 @@ def on_ready():
 app.register("ready", on_ready)
 
 
-def has_light_background(screenshot):
+def has_light_background(screenshot) -> bool:
     array = np.array(screenshot)
     # ITU-R BT.709 coefficients
     grayscale = (
         0.2126 * array[:, :, 0] + 0.7152 * array[:, :, 1] + 0.0722 * array[:, :, 2]
     )
-    return np.mean(grayscale) > 128
+    return bool(np.mean(grayscale) > 128)
 
 
 @dataclass
