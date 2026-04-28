@@ -49,4 +49,4 @@ reportSelfClsParameterName = false
 reportMissingImports = false
 extraPaths = [".subtrees/gaze-ocr", ".subtrees/screen-ocr", ".subtrees/rapidfuzz/src"]
 # Override auto-exclude for owned subtrees, but keep rapidfuzz excluded
-exclude = [".subtrees/rapidfuzz"]
+exclude = [".subtrees/rapidfuzz", ".uv-cache", ".venv", "**/__pycache__"]
