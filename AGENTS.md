@@ -4,7 +4,7 @@
 
 **Linting and Formatting:**
 
-Pre-commit will run Ruff and pycheck automatically when committing. Don't
+Pre-commit will run Ruff and basedpyright automatically when committing. Don't
 proceed until the commit is successful. Many Ruff issues will be fixed
 automatically, so if that fails simply retry the commit.
 

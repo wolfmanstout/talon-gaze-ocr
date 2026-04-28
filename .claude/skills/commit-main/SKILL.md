@@ -14,7 +14,7 @@ Commit current changes to main, merge into beta, and rebase any feature branch.
    - **Most recent commit already on current branch**: switch to `main` and cherry-pick it.
 2. **Switch to `main`** and pull latest (`git pull`).
 3. **Get changes onto `main`** per the situation above.
-4. **Commit** (if uncommitted path) — follow the project's normal commit process. Pre-commit hooks run Ruff and pycheck; retry once if auto-fixes are applied.
+4. **Commit** (if uncommitted path) — follow the project's normal commit process. Pre-commit hooks run Ruff and basedpyright; retry once if auto-fixes are applied.
 5. **Switch to `beta`** and pull latest (`git pull`).
 6. **Merge `main` into `beta`** (`git merge main`). If conflicts arise, ask the user.
 7. **If the original branch was a feature branch**:
