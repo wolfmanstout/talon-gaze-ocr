@@ -504,6 +504,7 @@ def test_scroll_measurements_update_cache():
     )
     entry = cache.entries["Google Chrome"]
     assert entry.viewport == viewport
+    assert entry.reference_before_array is not None
     assert np.array_equal(entry.reference_before_array, before)
 
     cache.record_scroll_measurement(
@@ -513,8 +514,10 @@ def test_scroll_measurements_update_cache():
         1.2,
         is_probe=False,
     )
-    assert cache.entries["Google Chrome"].viewport == BoundingBox(3, 3, 5, 5)
-    assert np.array_equal(cache.entries["Google Chrome"].reference_before_array, after)
+    updated_entry = cache.entries["Google Chrome"]
+    assert updated_entry.viewport == BoundingBox(3, 3, 5, 5)
+    assert updated_entry.reference_before_array is not None
+    assert np.array_equal(updated_entry.reference_before_array, after)
 
     cache.invalidate_viewport("Google Chrome")
     assert cache.entries["Google Chrome"].viewport is None
