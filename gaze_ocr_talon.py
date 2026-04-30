@@ -33,6 +33,9 @@ from .timestamped_captures import (
     BoundingBox as SeenBoundingBox,
 )
 from .timestamped_captures import (
+    GazePoint as SeenGazePoint,
+)
+from .timestamped_captures import (
     SeenText,
     TextRange,
     phrase_gaze_bounds,
@@ -1335,18 +1338,18 @@ class GazeOcrActions:
     #
 
     def move_cursor_to_gaze_point(
-        gaze_bounds: Optional[SeenBoundingBox] = None,
+        gaze_point: Optional[SeenGazePoint] = None,
         offset_right: int = 0,
         offset_down: int = 0,
     ):
         """Moves mouse cursor to gaze location.
 
-        If gaze_bounds is provided, moves the cursor to its center. Otherwise
+        If gaze_point is provided, moves the cursor to it. Otherwise
         uses the user.ocr_cursor_behavior_when_no_eye_tracker setting.
         """
-        if gaze_bounds is not None:
-            x = (gaze_bounds.left + gaze_bounds.right) // 2 + offset_right
-            y = (gaze_bounds.top + gaze_bounds.bottom) // 2 + offset_down
+        if gaze_point is not None:
+            x = gaze_point.x + offset_right
+            y = gaze_point.y + offset_down
             actions.mouse_move(x, y)
             return
 

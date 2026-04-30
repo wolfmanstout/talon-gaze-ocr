@@ -13,6 +13,12 @@ class BoundingBox:
     bottom: int
 
 
+@dataclass
+class GazePoint:
+    x: int
+    y: int
+
+
 def rect_to_pixel_bounding_box(rect) -> Optional[BoundingBox]:
     """Convert a normalized skia.Rect from actions.word.gaze_bounds into an
     absolute-pixel BoundingBox on the main screen."""
@@ -24,6 +30,17 @@ def rect_to_pixel_bounding_box(rect) -> Optional[BoundingBox]:
     right = int(screen.x + (rect.x + rect.width) * screen.width)
     bottom = int(screen.y + (rect.y + rect.height) * screen.height)
     return BoundingBox(left=left, right=right, top=top, bottom=bottom)
+
+
+def point_to_pixel_gaze(point) -> Optional[GazePoint]:
+    """Convert a normalized skia.Point from actions.word.gaze into an
+    absolute-pixel GazePoint on the main screen."""
+    if point is None:
+        return None
+    screen = ui.main_screen().rect
+    x = int(screen.x + point.x * screen.width)
+    y = int(screen.y + point.y * screen.height)
+    return GazePoint(x=x, y=y)
 
 
 mod = Module()
@@ -55,11 +72,15 @@ def _gaze_bounds_for(subcapture, padding: float = 0.5) -> Optional[BoundingBox]:
     Must be called from within a capture function so Talon can look up the
     spoken word metadata. Returns None in environments that don't supply
     gaze data (e.g. mimic()). Only works with literals, lists, and
-    built-in captures like <phrase> — not arbitrary user captures.
-
-    Use padding=0 when the result will be reduced to a single point."""
+    built-in captures like <phrase> — not arbitrary user captures."""
     rect = actions.word.gaze_bounds(subcapture, padding=padding)
     return rect_to_pixel_bounding_box(rect)
+
+
+def _gaze_point_for(subcapture) -> Optional[GazePoint]:
+    """Resolve the gaze point for a capture or word subcapture."""
+    point = actions.word.gaze(subcapture)
+    return point_to_pixel_gaze(point)
 
 
 def _merge_bounds(
@@ -83,12 +104,12 @@ def phrase_gaze_bounds(phrase) -> Optional[BoundingBox]:
 
 
 @mod.capture(rule="eye | i")
-def eye_gaze_bounds(m) -> Optional[BoundingBox]:
-    """Gaze bounds for direct-gaze commands (e.g. "eye touch", "eye hover").
+def eye_gaze_point(m) -> Optional[GazePoint]:
+    """Gaze point for direct-gaze commands (e.g. "eye touch", "eye hover").
 
     Resolved at capture time so the trigger word's gaze metadata is
-    available to actions.word.gaze_bounds."""
-    return _gaze_bounds_for(m[0], padding=0)
+    available to actions.word.gaze."""
+    return _gaze_point_for(m[0])
 
 
 # "edit" is frequently misrecognized as "at it", and is common in UIs.
