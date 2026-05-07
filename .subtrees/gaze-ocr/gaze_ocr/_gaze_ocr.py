@@ -108,46 +108,58 @@ class BoundingBox:
     def to_tuple(self) -> tuple[int, int, int, int]:
         return (self.left, self.top, self.right, self.bottom)
 
+    @classmethod
+    def from_tuple(cls, bounding_box: tuple[int, int, int, int]) -> "BoundingBox":
+        left, top, right, bottom = bounding_box
+        return cls(left=left, top=top, right=right, bottom=bottom)
+
 
 class OcrCache:
-    def __init__(
-        self,
-        ocr_reader: Reader,
-        fallback_when_no_eye_tracker: EyeTrackerFallback = EyeTrackerFallback.MAIN_SCREEN,
-    ):
+    def __init__(self, ocr_reader: Reader):
         self.ocr_reader = ocr_reader
         self._last_bounding_box: Optional[BoundingBox] = None
         self._last_screen_contents = None
-        self.fallback_when_no_eye_tracker = fallback_when_no_eye_tracker
+        self._last_unbounded_fallback: Optional[EyeTrackerFallback] = None
 
     def invalidate(self):
         """Discard cached OCR result. Call at utterance boundaries."""
         self._last_bounding_box = None
         self._last_screen_contents = None
+        self._last_unbounded_fallback = None
 
     def read(
         self,
         bounding_box: Optional[BoundingBox],
+        fallback_when_no_eye_tracker: EyeTrackerFallback,
     ):
-        if (
-            self._last_screen_contents is not None
-            and bounding_box is not None
-            and self._last_bounding_box is not None
-            and self._last_bounding_box.contains(bounding_box)
-        ):
-            # Bounding box is a subset of the cached one. Crop and return without
-            # updating the cache so multiple subsets can reuse the same read.
-            return self._last_screen_contents.cropped(bounding_box.to_tuple())
-        self._last_bounding_box = bounding_box
+        if self._last_screen_contents is not None:
+            if (
+                bounding_box is None
+                and self._last_unbounded_fallback == fallback_when_no_eye_tracker
+            ):
+                return self._last_screen_contents
+            if (
+                bounding_box is not None
+                and self._last_bounding_box is not None
+                and self._last_bounding_box.contains(bounding_box)
+            ):
+                # Bounding box is a subset of the cached one. Crop and return without
+                # updating the cache so multiple subsets can reuse the same read.
+                return self._last_screen_contents.cropped(bounding_box.to_tuple())
         if bounding_box:
             self._last_screen_contents = self.ocr_reader.read_screen(
                 bounding_box.to_tuple()
             )
+            self._last_unbounded_fallback = None
         else:
-            if self.fallback_when_no_eye_tracker == EyeTrackerFallback.ACTIVE_WINDOW:
+            if fallback_when_no_eye_tracker == EyeTrackerFallback.ACTIVE_WINDOW:
                 self._last_screen_contents = self.ocr_reader.read_current_window()
             else:
                 self._last_screen_contents = self.ocr_reader.read_screen()
+            self._last_unbounded_fallback = fallback_when_no_eye_tracker
+        self._last_bounding_box = BoundingBox.from_tuple(
+            self._last_screen_contents.bounding_box
+        )
         return self._last_screen_contents
 
 
@@ -184,9 +196,7 @@ class Controller:
         self.gaze_box_padding = gaze_box_padding
         self._executor = futures.ThreadPoolExecutor(max_workers=1)
         self._future = None
-        self._ocr_cache = OcrCache(
-            ocr_reader, fallback_when_no_eye_tracker=fallback_when_no_eye_tracker
-        )
+        self._ocr_cache = OcrCache(ocr_reader)
         self.fallback_when_no_eye_tracker = fallback_when_no_eye_tracker
 
     def invalidate_ocr_cache(self):
@@ -262,10 +272,14 @@ class Controller:
                 right=gaze_bounds.right + self.gaze_box_padding,
                 bottom=gaze_bounds.bottom + self.gaze_box_padding,
             )
-            self._future.set_result(self._ocr_cache.read(ocr_bounds))
+            self._future.set_result(
+                self._ocr_cache.read(ocr_bounds, self.fallback_when_no_eye_tracker)
+            )
             return
         if time_range and time_range[0] and time_range[1]:
-            self._future.set_result(self._ocr_cache.read(None))
+            self._future.set_result(
+                self._ocr_cache.read(None, self.fallback_when_no_eye_tracker)
+            )
             return
         gaze_point = (
             self.eye_tracker.get_gaze_point()
