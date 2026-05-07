@@ -9,12 +9,12 @@ dependencies = []
 [dependency-groups]
 dev = [
     "basedpyright==1.39.3",
-    "click>=8.1.0",
+    "click>=8.3.3",
     "line-profiler>=5.0.0",
-    "matplotlib>=3.8.0",
-    "numpy>=1.24.0",
-    "pillow>=10.0.0",
-    "pytest>=8.0.0",
+    "matplotlib>=3.10.9",
+    "numpy>=2.4.4",
+    "pillow>=12.2.0",
+    "pytest>=9.0.3",
     "pytest-benchmark>=4.0.0",
 ]
 
