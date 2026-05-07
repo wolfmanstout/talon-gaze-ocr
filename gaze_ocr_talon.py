@@ -39,7 +39,11 @@ from .scroll_probe_cache import (
 )
 from .timestamped_captures import (
     BoundingBox as SeenBoundingBox,
+)
+from .timestamped_captures import (
     GazePoint as SeenGazePoint,
+)
+from .timestamped_captures import (
     SeenText,
     TextRange,
     phrase_gaze_bounds,
