@@ -638,6 +638,26 @@ def _get_window_app_name(window: ui.Window | None) -> str | None:
         return None
 
 
+def _describe_active_window() -> str:
+    """Return the active app and window name for focus failure logs."""
+    try:
+        window = ui.active_window()
+    except Exception as e:
+        return f"app=<unknown>, window=<unknown>, error={e!r}"
+
+    try:
+        app_name = window.app.name
+    except Exception:
+        app_name = "<unknown>"
+
+    try:
+        window_title = window.title
+    except Exception:
+        window_title = "<unknown>"
+
+    return f"app={app_name!r}, window={window_title!r}"
+
+
 def _is_scroll_probe_skip_enabled() -> bool:
     """Return whether probe skipping is enabled and usable."""
     if not settings.get("user.ocr_scroll_probe_skip_enabled"):
@@ -1159,7 +1179,9 @@ class GazeOcrActions:
             while ui.active_window() != window:
                 if time.perf_counter() - start_time > 1:
                     logging.warning(
-                        f"Can't focus window: {window.title}. Proceeding anyway."
+                        f"Can't focus window: {window.title!r}. "
+                        f"Currently focused: {_describe_active_window()}. "
+                        "Proceeding anyway."
                     )
                     break
                 actions.sleep(0.1)
