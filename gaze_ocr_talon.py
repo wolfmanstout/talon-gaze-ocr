@@ -638,13 +638,8 @@ def _get_window_app_name(window: ui.Window | None) -> str | None:
         return None
 
 
-def _describe_active_window() -> str:
-    """Return the active app and window name for focus failure logs."""
-    try:
-        window = ui.active_window()
-    except Exception as e:
-        return f"app=<unknown>, window=<unknown>, error={e!r}"
-
+def _describe_window(window: ui.Window) -> str:
+    """Return a window's app and title for focus failure logs."""
     try:
         app_name = window.app.name
     except Exception:
@@ -656,6 +651,16 @@ def _describe_active_window() -> str:
         window_title = "<unknown>"
 
     return f"app={app_name!r}, window={window_title!r}"
+
+
+def _describe_active_window() -> str:
+    """Return the active app and window name for focus failure logs."""
+    try:
+        window = ui.active_window()
+    except Exception as e:
+        return f"app=<unknown>, window=<unknown>, error={e!r}"
+
+    return _describe_window(window)
 
 
 def _is_scroll_probe_skip_enabled() -> bool:
@@ -1179,7 +1184,7 @@ class GazeOcrActions:
             while ui.active_window() != window:
                 if time.perf_counter() - start_time > 1:
                     logging.warning(
-                        f"Can't focus window: {window.title!r}. "
+                        f"Can't focus target: {_describe_window(window)}. "
                         f"Currently focused: {_describe_active_window()}. "
                         "Proceeding anyway."
                     )
