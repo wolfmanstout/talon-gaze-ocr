@@ -103,6 +103,12 @@ def phrase_gaze_bounds(phrase) -> Optional[BoundingBox]:
     return _merge_bounds([_gaze_bounds_for(item) for item in phrase])
 
 
+@mod.capture(rule="scroll")
+def gaze_scroll_point(m) -> Optional[GazePoint]:
+    """Gaze point for unprefixed scroll commands."""
+    return _gaze_point_for(m[0])
+
+
 @mod.capture(rule="eye | i")
 def eye_gaze_point(m) -> Optional[GazePoint]:
     """Gaze point for direct-gaze commands (e.g. "eye touch", "eye hover").
