@@ -201,6 +201,10 @@ mod.tag(
     "browser_smooth_scrolling_disabled",
     desc="Set this tag if you have disabled smooth scrolling in your browser.",
 )
+mod.tag(
+    "gaze_ocr_unprefixed_scroll",
+    desc="Enables unprefixed gaze OCR scroll commands.",
+)
 mod.list("ocr_actions", desc="Actions to perform on selected text.")
 mod.list(
     "ocr_common_actions", desc="Common actions that can be used without 'seen'/'scene'."

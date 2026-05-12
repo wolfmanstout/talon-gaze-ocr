@@ -73,6 +73,12 @@ See [my blog post on voice-native
 scrolling](https://handsfreecoding.org/2026/02/15/voice-native-scrolling-in-talon-gaze-ocr/)
 for details on this feature.
 
+To enable unprefixed scroll commands (e.g. `scroll up`, `scroll down half`),
+add this tag to your Talon settings:
+```talon
+tag(): user.gaze_ocr_unprefixed_scroll
+```
+
 ### Enable faster scrolling on Windows and Linux
 
 On Windows and Linux (not Mac), browsers use smooth scrolling by default, which
