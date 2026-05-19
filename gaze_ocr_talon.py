@@ -1121,6 +1121,11 @@ class GazeOcrActions:
                 gaze_ocr_controller.read_nearby()
         actions.user.show_ocr_overlay_for_query(type, "", True)
 
+    def show_last_ocr_overlay(type: str):
+        """Displays OCR debug overlay using the latest OCR results."""
+        reset_state()
+        actions.user.show_ocr_overlay_for_query(type, "", True)
+
     def show_scroll_indicator(
         line_y: int,
         viewport: BoundingBox,
