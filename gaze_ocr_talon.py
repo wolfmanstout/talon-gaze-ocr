@@ -749,8 +749,25 @@ def _clamp_rect_to_screen(r: rect.Rect) -> rect.Rect:
     return clamped
 
 
+def _is_notification_center_window(window: ui.Window) -> bool:
+    """Return whether a window belongs to Notification Center."""
+    return _get_window_app_name(window) == "Notification Center"
+
+
+def _window_at_point(x: int, y: int) -> ui.Window | None:
+    """Get the intended window at a point, preferring an active window there."""
+    try:
+        active_window = ui.active_window()
+        if active_window.rect.contains(x, y):
+            return active_window
+    except Exception:
+        pass
+
+    return ui.window_at(x, y)
+
+
 def _get_window_under_cursor() -> tuple[ui.Window | None, tuple[float, float]]:
-    """Get window under cursor using window_at API.
+    """Get window under cursor using the window_at API.
 
     Returns:
         Tuple of (window or None, cursor_pos). Includes cursor_pos since we
@@ -764,7 +781,7 @@ def _get_window_under_cursor() -> tuple[ui.Window | None, tuple[float, float]]:
     if not settings.get("user.ocr_use_window_at_api"):
         return None, cursor_pos
     try:
-        window = ui.window_at(int(cursor_x), int(cursor_y))
+        window = _window_at_point(int(cursor_x), int(cursor_y))
         return window, cursor_pos
     except Exception:
         return None, cursor_pos
@@ -1059,7 +1076,7 @@ class GazeOcrActions:
             pass
         # Use window_at API (requires beta Talon)
         try:
-            window = ui.window_at(x, y)
+            window = _window_at_point(x, y)
         except Exception:
             # No window at this position
             logging.debug(f"No window at position ({x}, {y}); skipping focus.")
@@ -1071,12 +1088,16 @@ class GazeOcrActions:
             except Exception:
                 pass
 
+        if window is None:
+            logging.debug(f"No window at position ({x}, {y}); skipping focus.")
+            return
+
         # Focus the window if not already active
         if ui.active_window() != window:
-            # See https://github.com/talonvoice/talon/issues/700 for context.
-            if window.title == "Notification Center":
+            if _is_notification_center_window(window):
                 app.notify(
-                    "Unable to focus window with notifications active. Please dismiss notifications."
+                    "Unable to focus window with notifications active. "
+                    "Please dismiss notifications."
                 )
                 return
             window.focus()
