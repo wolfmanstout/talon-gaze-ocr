@@ -71,7 +71,7 @@ class CursorLocation:
             # well.
             if (
                 len(left_chars) >= 2
-                and left_chars[-1] == " "
+                and left_chars[-1].isspace()
                 and left_chars[-2] != "\n"
             ):
                 self.keyboard.left(1)
@@ -81,7 +81,7 @@ class CursorLocation:
             and self.app_actions
         ):
             right_chars = self.app_actions.peek_right()
-            if right_chars and right_chars[0] == " ":
+            if right_chars and right_chars[0].isspace():
                 self.keyboard.right(1)
 
 
@@ -640,7 +640,7 @@ class Controller:
             whitespace_between_matches = whitespace_between_matches_list[
                 locations.index(location)
             ]
-            if whitespace_between_matches and words[-suffix_length - 1] == " ":
+            if whitespace_between_matches and words[-suffix_length - 1].isspace():
                 return (prefix_length, len(words) - suffix_length - 1)
             else:
                 return (prefix_length, len(words) - suffix_length)
