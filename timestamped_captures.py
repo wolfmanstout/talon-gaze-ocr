@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Optional
 
 from talon import Module, actions, ui
-from talon.grammar import Phrase
 
 
 @dataclass
@@ -66,14 +65,9 @@ class TextPosition:
     position: str
 
 
-def _gaze_bounds_for(subcapture, padding: float = 0.5) -> Optional[BoundingBox]:
-    """Resolve the gaze bounding box for a capture or word subcapture.
-
-    Must be called from within a capture function so Talon can look up the
-    spoken word metadata. Returns None in environments that don't supply
-    gaze data (e.g. mimic()). Only works with literals, lists, and
-    built-in captures like <phrase> — not arbitrary user captures."""
-    rect = actions.word.gaze_bounds(subcapture, padding=padding)
+def _gaze_bounds_for(capture_or_meta, padding: float = 0.5) -> Optional[BoundingBox]:
+    """Resolve the gaze bounding box for a capture object or capture metadata."""
+    rect = actions.word.gaze_bounds(capture_or_meta, padding=padding)
     return rect_to_pixel_bounding_box(rect)
 
 
@@ -118,37 +112,12 @@ def eye_gaze_point(m) -> Optional[GazePoint]:
     return _gaze_point_for(m[0])
 
 
-# "edit" is frequently misrecognized as "at it", and is common in UIs.
-@mod.capture(
-    rule="<phrase> | {user.vocabulary} | {user.punctuation} | {user.prose_snippets} | edit"
-)
-def timestamped_phrase_default(m) -> SeenText:
-    """Dictated phrase appearing onscreen (default capture).
-
-    Uses only primitives that actions.word.gaze_bounds supports (built-in
-    captures and lists)."""
-    item = m[0]
-    if isinstance(item, Phrase):
-        text = " ".join(actions.dictate.replace_words(item))
-    else:
-        text = str(item)
-    return SeenText(text=text, gaze_bounds=_gaze_bounds_for(item))
-
-
-# Forward to enable easy extension via a Context.
-@mod.capture(rule="<user.timestamped_phrase_default>")
-def timestamped_phrase(m) -> SeenText:
-    """Dictated phrase appearing onscreen."""
-    return m[0]
-
-
-@mod.capture(rule="<user.timestamped_phrase>+")
+@mod.capture(rule="<user.prose>")
 def timestamped_prose_only(m) -> SeenText:
-    """Dictated text appearing onscreen, with merged gaze bounds."""
-    items = list(m)
+    """user.prose with gaze bounds."""
     return SeenText(
-        text=" ".join(item.text for item in items),
-        gaze_bounds=_merge_bounds([item.gaze_bounds for item in items]),
+        text=m.prose,
+        gaze_bounds=_gaze_bounds_for(m.prose_meta),
     )
 
 
@@ -157,7 +126,7 @@ def onscreen_text(m) -> SeenText:
     """Onscreen text match with gaze bounds resolved at capture time."""
     return SeenText(
         text=m[0],
-        gaze_bounds=_gaze_bounds_for(m[0]),
+        gaze_bounds=_gaze_bounds_for(m.onscreen_ocr_text_meta),
     )
 
 
