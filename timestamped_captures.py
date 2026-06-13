@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -67,13 +68,25 @@ class TextPosition:
 
 def _gaze_bounds_for(capture_or_meta, padding: float = 0.5) -> Optional[BoundingBox]:
     """Resolve the gaze bounding box for a capture object or capture metadata."""
-    rect = actions.word.gaze_bounds(capture_or_meta, padding=padding)
+    if capture_or_meta is None:
+        return None
+    try:
+        rect = actions.word.gaze_bounds(capture_or_meta, padding=padding)
+    except Exception as error:
+        logging.debug("Unable to resolve gaze bounds: %r", error)
+        return None
     return rect_to_pixel_bounding_box(rect)
 
 
 def _gaze_point_for(subcapture) -> Optional[GazePoint]:
     """Resolve the gaze point for a capture or word subcapture."""
-    point = actions.word.gaze(subcapture)
+    if subcapture is None:
+        return None
+    try:
+        point = actions.word.gaze(subcapture)
+    except Exception as error:
+        logging.debug("Unable to resolve gaze point: %r", error)
+        return None
     return point_to_pixel_gaze(point)
 
 
@@ -117,7 +130,7 @@ def timestamped_prose_only(m) -> SeenText:
     """user.prose with gaze bounds."""
     return SeenText(
         text=m.prose,
-        gaze_bounds=_gaze_bounds_for(m.prose_meta),
+        gaze_bounds=_gaze_bounds_for(getattr(m, "prose_meta", None)),
     )
 
 
@@ -126,7 +139,7 @@ def onscreen_text(m) -> SeenText:
     """Onscreen text match with gaze bounds resolved at capture time."""
     return SeenText(
         text=m[0],
-        gaze_bounds=_gaze_bounds_for(m.onscreen_ocr_text_meta),
+        gaze_bounds=_gaze_bounds_for(getattr(m, "onscreen_ocr_text_meta", None)),
     )
 
 
