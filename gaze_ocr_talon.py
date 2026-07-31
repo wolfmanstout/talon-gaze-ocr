@@ -124,7 +124,7 @@ mod.setting(
     "ocr_use_window_at_api",
     type=bool,
     default=False,
-    desc="Use ui.window_at() API for detecting window under cursor (requires beta Talon). Falls back to accessibility API if disabled or unavailable. See https://github.com/talonvoice/talon/issues/700 for known issues (only works on Mac and occasionally fails).",
+    desc="Use ui.window_at() API for detecting the window under the cursor (requires beta Talon). When disabled, macOS falls back to the accessibility API while other platforms skip explicit window focusing. See https://github.com/talonvoice/talon/issues/700 for known issues.",
 )
 mod.setting(
     "ocr_debug_display_seconds",
@@ -190,7 +190,7 @@ mod.setting(
     "ocr_scroll_probe_skip_enabled",
     type=bool,
     default=False,
-    desc="Enable caching the probe scroll in enhanced scrolling and skipping it when the viewport appears unchanged. Requires enabling ocr_use_window_at_api, which is only supported in Talon Beta on Mac. While this generally leads to smoother and faster scrolling, it is not as robust and can occasionally lead to over- or under-scrolling. Always test with this disabled before filing a bug.",
+    desc="Enable caching the probe scroll in enhanced scrolling and skipping it when the viewport appears unchanged. Requires enabling ocr_use_window_at_api in Talon Beta. While this generally leads to smoother and faster scrolling, it is not as robust and can occasionally lead to over- or under-scrolling. Always test with this disabled before filing a bug.",
 )
 mod.setting(
     "ocr_scroll_indicator_fade_seconds",
