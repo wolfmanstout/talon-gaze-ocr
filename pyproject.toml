@@ -8,12 +8,12 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-    "basedpyright==1.39.8",
+    "basedpyright==1.39.9",
     "click>=8.4.2",
     "line-profiler>=5.0.0",
-    "matplotlib>=3.11.0",
+    "matplotlib>=3.11.1",
     "numpy>=2.4.6",
-    "pillow>=12.2.0",
+    "pillow>=12.3.0",
     "pytest>=9.1.1",
     "pytest-benchmark>=4.0.0",
 ]
