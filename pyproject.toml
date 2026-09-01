@@ -8,7 +8,7 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-    "basedpyright==1.39.9",
+    "basedpyright==1.39.10",
     "click>=8.4.2",
     "line-profiler>=5.0.0",
     "matplotlib>=3.11.1",
