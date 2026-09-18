@@ -42,6 +42,21 @@ Note: This installation process is for Windows and Mac. Linux is not officially
 supported because Talon does not provide an OCR API. You may be able to get this
 working using Tesseract, but this configuration is not tested by the author.
 
+### Migrating from `beta-pi`
+
+If you use the `beta-pi` branch, switch to `beta`: `beta-pi` has been merged
+and retired. Update to the latest Talon Beta, then run these commands in
+your `talon-gaze-ocr` directory and restart Talon:
+
+```sh
+git fetch origin
+git switch beta
+git pull --ff-only
+```
+
+For single-branch clones, run `git remote set-branches origin beta` before fetching.
+If you need older Talon Beta support temporarily, check out the [`beta-before-pi` tag](https://github.com/wolfmanstout/talon-gaze-ocr/tree/beta-before-pi).
+
 ## Features:
 
 - Click, select, or position caret adjacent to any text visible onscreen.
