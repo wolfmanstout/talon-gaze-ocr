@@ -237,7 +237,6 @@ class Reader:
                     self.needs_hud_toggle = True
         except Exception:
             print("Failed to check Windows version. Will not toggle HUD.")
-            pass
 
     def read_nearby(
         self,

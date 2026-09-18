@@ -1,60 +1,151 @@
+import logging
 from dataclasses import dataclass
 
-from talon import Module
+from talon import Module, actions, ui
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BoundingBox:
+    left: int
+    right: int
+    top: int
+    bottom: int
+
+
+@dataclass
+class GazePoint:
+    x: int
+    y: int
+
+
+def rect_to_pixel_bounding_box(rect) -> BoundingBox | None:
+    """Convert a normalized skia.Rect from actions.word.gaze_bounds into an
+    absolute-pixel BoundingBox on the main screen."""
+    if rect is None:
+        return None
+    screen = ui.main_screen().rect
+    left = int(screen.x + rect.x * screen.width)
+    top = int(screen.y + rect.y * screen.height)
+    right = int(screen.x + (rect.x + rect.width) * screen.width)
+    bottom = int(screen.y + (rect.y + rect.height) * screen.height)
+    return BoundingBox(left=left, right=right, top=top, bottom=bottom)
+
+
+def point_to_pixel_gaze(point) -> GazePoint | None:
+    """Convert a normalized skia.Point from actions.word.gaze into an
+    absolute-pixel GazePoint on the main screen."""
+    if point is None:
+        return None
+    screen = ui.main_screen().rect
+    x = int(screen.x + point.x * screen.width)
+    y = int(screen.y + point.y * screen.height)
+    return GazePoint(x=x, y=y)
+
 
 mod = Module()
 
 
 @dataclass
-class TimestampedText:
+class SeenText:
     text: str
-    start: float
-    end: float
+    gaze_bounds: BoundingBox | None
 
 
 @dataclass
 class TextRange:
-    start: TimestampedText | None
+    start: SeenText | None
     after_start: bool
-    end: TimestampedText | None
+    end: SeenText | None
     before_end: bool
 
 
 @dataclass
 class TextPosition:
-    text: TimestampedText
+    text: SeenText
     position: str
 
 
-def _timestamp_or_default(match, attribute: str) -> float:
-    value = getattr(match, attribute, None)
-    return value if value is not None else 0.0
+def _gaze_bounds_for(capture_or_meta, padding: float = 0.5) -> BoundingBox | None:
+    """Resolve the gaze bounding box for a capture object or capture metadata."""
+    if capture_or_meta is None:
+        return None
+    try:
+        rect = actions.word.gaze_bounds(capture_or_meta, padding=padding)
+    except Exception as error:
+        logger.debug("Unable to resolve gaze bounds: %r", error)
+        return None
+    return rect_to_pixel_bounding_box(rect)
+
+
+def _gaze_point_for(subcapture) -> GazePoint | None:
+    """Resolve the gaze point for a capture or word subcapture."""
+    if subcapture is None:
+        return None
+    try:
+        point = actions.word.gaze(subcapture)
+    except Exception as error:
+        logger.debug("Unable to resolve gaze point: %r", error)
+        return None
+    return point_to_pixel_gaze(point)
+
+
+def _merge_bounds(
+    bounds: list[BoundingBox | None],
+) -> BoundingBox | None:
+    """Compute the union rectangle of a list of BoundingBoxes."""
+    valid = [b for b in bounds if b is not None]
+    if not valid:
+        return None
+    return BoundingBox(
+        left=min(b.left for b in valid),
+        right=max(b.right for b in valid),
+        top=min(b.top for b in valid),
+        bottom=max(b.bottom for b in valid),
+    )
+
+
+def phrase_gaze_bounds(phrase) -> BoundingBox | None:
+    """Resolve merged gaze bounds for each item in a phrase-like iterable."""
+    return _merge_bounds([_gaze_bounds_for(item) for item in phrase])
+
+
+@mod.capture(rule="scroll")
+def gaze_scroll_point(m) -> GazePoint | None:
+    """Gaze point for unprefixed scroll commands."""
+    return _gaze_point_for(m[0])
+
+
+@mod.capture(rule="eye | i")
+def eye_gaze_point(m) -> GazePoint | None:
+    """Gaze point for direct-gaze commands (e.g. "eye touch", "eye hover").
+
+    Resolved at capture time so the trigger word's gaze metadata is
+    available to actions.word.gaze."""
+    return _gaze_point_for(m[0])
 
 
 @mod.capture(rule="<user.prose>")
-def timestamped_prose_only(m) -> TimestampedText:
-    """user.prose with timestamps."""
-    return TimestampedText(
+def timestamped_prose_only(m) -> SeenText:
+    """user.prose with gaze bounds."""
+    return SeenText(
         text=m.prose,
-        # mimic() and some test environments provide prose without audio timestamps.
-        # A zero range tells the controller to fall back to non-timestamped OCR.
-        start=_timestamp_or_default(m, "prose_start"),
-        end=_timestamp_or_default(m, "prose_end"),
+        gaze_bounds=_gaze_bounds_for(getattr(m, "prose_meta", None)),
     )
 
 
 @mod.capture(rule="{user.onscreen_ocr_text}")
-def onscreen_text(m) -> TimestampedText:
-    """Timestamped text appearing onscreen."""
-    return TimestampedText(
+def onscreen_text(m) -> SeenText:
+    """Onscreen text match with gaze bounds resolved at capture time."""
+    return SeenText(
         text=m[0],
-        start=_timestamp_or_default(m, "onscreen_ocr_text_start"),
-        end=_timestamp_or_default(m, "onscreen_ocr_text_end"),
+        gaze_bounds=_gaze_bounds_for(getattr(m, "onscreen_ocr_text_meta", None)),
     )
 
 
 @mod.capture(rule="<self.timestamped_prose_only> | <self.onscreen_text>")
-def timestamped_prose(m) -> TimestampedText:
+def timestamped_prose(m) -> SeenText:
     """Timestamped prose or onscreen text."""
     return m[0]
 
